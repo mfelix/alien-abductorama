@@ -595,12 +595,10 @@ window.addEventListener('keydown', (e) => {
     }
 
     // Handle game state transitions
-    if (e.code === 'Enter') {
-        if (gameState === 'TITLE') {
-            startGame();
-        } else if (gameState === 'GAME_OVER') {
-            startGame();
-        }
+    if (gameState === 'TITLE') {
+        startGame();
+    } else if (gameState === 'GAME_OVER' && e.code === 'Enter') {
+        startGame();
     }
 });
 
@@ -2985,7 +2983,7 @@ function renderTitleScreen() {
     // Flashing "Press ENTER" text
     if (Math.floor(Date.now() / 500) % 2 === 0) {
         ctx.font = 'bold 32px monospace';
-        ctx.fillText('Press ENTER to Start', canvas.width / 2, canvas.height / 2);
+        ctx.fillText('Press any key to get started', canvas.width / 2, canvas.height / 2);
     }
 
     // High score
