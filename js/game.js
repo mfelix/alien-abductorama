@@ -2860,17 +2860,20 @@ function updateTitleHumans() {
     const ufoHeight = 60;
     const beamBottomWidth = 150;
 
-    // Spawn humans periodically when beam is about to activate or just activated
-    if (titleUfo.beamTimer > 100 && !titleUfo.beamActive && titleHumans.length === 0) {
-        // Spawn a human where the UFO will be
+    // Spawn humans from sides periodically (keep 2-4 humans on screen)
+    const activeHumans = titleHumans.filter(h => !h.beingAbducted).length;
+    if (activeHumans < 3 && Math.random() < 0.01) {
+        // Spawn from left or right edge
+        const fromLeft = Math.random() < 0.5;
         titleHumans.push({
-            x: titleUfo.x - humanWidth / 2 + (Math.random() - 0.5) * 60,
+            x: fromLeft ? -humanWidth : canvas.width,
             y: groundY - humanHeight,
             width: humanWidth,
             height: humanHeight,
             beingAbducted: false,
             abductionProgress: 0,
-            direction: Math.random() < 0.5 ? -1 : 1
+            direction: fromLeft ? 1 : -1,
+            walkSpeed: 0.8 + Math.random() * 0.6 // Vary walking speed slightly
         });
     }
 
@@ -2898,16 +2901,17 @@ function updateTitleHumans() {
                 titleHumans.splice(i, 1);
             }
         } else {
-            // Wander slowly
-            human.x += human.direction * 0.5;
+            // Walk across the screen
+            const speed = human.walkSpeed || 1;
+            human.x += human.direction * speed;
 
-            // Change direction at edges
-            if (human.x < 50) {
-                human.x = 50;
-                human.direction = 1;
-            } else if (human.x > canvas.width - 50 - human.width) {
-                human.x = canvas.width - 50 - human.width;
-                human.direction = -1;
+            // Remove human when they walk off the opposite edge
+            if (human.direction > 0 && human.x > canvas.width + human.width) {
+                titleHumans.splice(i, 1);
+                continue;
+            } else if (human.direction < 0 && human.x < -human.width * 2) {
+                titleHumans.splice(i, 1);
+                continue;
             }
 
             // Check if under the beam and beam is active
