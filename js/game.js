@@ -580,6 +580,9 @@ let titleUfo = {
     beamRotation: 0
 };
 
+// Title screen humans for beam animation
+let titleHumans = [];
+
 // ============================================
 // INPUT HANDLING
 // ============================================
@@ -2607,6 +2610,8 @@ function startGame() {
     floatingTexts = [];
     score = 0;
     combo = 0;
+    // Reset title screen state for next time
+    titleHumans = [];
     // Reset harvest counters
     harvestCount = { human: 0, cow: 0, sheep: 0, cat: 0, dog: 0, tank: 0 };
     wave = 1;
@@ -2844,6 +2849,98 @@ function updateTitleUfo() {
     }
 }
 
+function updateTitleHumans() {
+    const groundY = canvas.height - 60;
+    const humanWidth = 60;
+    const humanHeight = 90;
+    const ufoHeight = 60;
+    const beamBottomWidth = 150;
+
+    // Spawn humans periodically when beam is about to activate or just activated
+    if (titleUfo.beamTimer > 100 && !titleUfo.beamActive && titleHumans.length === 0) {
+        // Spawn a human where the UFO will be
+        titleHumans.push({
+            x: titleUfo.x - humanWidth / 2 + (Math.random() - 0.5) * 60,
+            y: groundY - humanHeight,
+            width: humanWidth,
+            height: humanHeight,
+            beingAbducted: false,
+            abductionProgress: 0,
+            direction: Math.random() < 0.5 ? -1 : 1
+        });
+    }
+
+    // Update each human
+    for (let i = titleHumans.length - 1; i >= 0; i--) {
+        const human = titleHumans[i];
+
+        if (human.beingAbducted) {
+            // Rise toward UFO
+            const targetY = titleUfo.y + ufoHeight / 2;
+            const targetX = titleUfo.x - human.width / 2;
+            const riseSpeed = 120; // pixels per second equivalent
+
+            // Move upward
+            human.y -= riseSpeed / 60; // Assuming ~60fps
+
+            // Move horizontally toward beam center
+            const dx = targetX - human.x;
+            if (Math.abs(dx) > 1) {
+                human.x += Math.sign(dx) * 2;
+            }
+
+            // Remove when reached UFO
+            if (human.y <= targetY) {
+                titleHumans.splice(i, 1);
+            }
+        } else {
+            // Wander slowly
+            human.x += human.direction * 0.5;
+
+            // Change direction at edges
+            if (human.x < 50) {
+                human.x = 50;
+                human.direction = 1;
+            } else if (human.x > canvas.width - 50 - human.width) {
+                human.x = canvas.width - 50 - human.width;
+                human.direction = -1;
+            }
+
+            // Check if under the beam and beam is active
+            if (titleUfo.beamActive) {
+                const humanCenterX = human.x + human.width / 2;
+                const beamLeft = titleUfo.x - beamBottomWidth / 2;
+                const beamRight = titleUfo.x + beamBottomWidth / 2;
+
+                if (humanCenterX > beamLeft && humanCenterX < beamRight) {
+                    human.beingAbducted = true;
+                }
+            }
+        }
+    }
+}
+
+function renderTitleHumans() {
+    for (const human of titleHumans) {
+        const img = images.human;
+        if (img && img.complete) {
+            ctx.save();
+            if (human.direction < 0 && !human.beingAbducted) {
+                ctx.translate(human.x + human.width, human.y);
+                ctx.scale(-1, 1);
+                ctx.drawImage(img, 0, 0, human.width, human.height);
+            } else {
+                ctx.drawImage(img, human.x, human.y, human.width, human.height);
+            }
+            ctx.restore();
+        } else {
+            // Fallback placeholder
+            ctx.fillStyle = '#ffccaa';
+            ctx.fillRect(human.x, human.y, human.width, human.height);
+        }
+    }
+}
+
 function renderTitleUfoBeam() {
     const ufoHeight = 60;
     const beamTop = titleUfo.y + ufoHeight / 2;
@@ -2970,6 +3067,10 @@ function renderTitleUfo() {
 
 function renderTitleScreen() {
     renderBackground();
+
+    // Update and render title screen humans
+    updateTitleHumans();
+    renderTitleHumans();
 
     // Update and render the floating UFO
     updateTitleUfo();
