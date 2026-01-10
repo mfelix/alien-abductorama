@@ -2844,8 +2844,12 @@ function updateTitleUfo() {
     // Toggle beam on/off periodically
     titleUfo.beamTimer++;
     if (titleUfo.beamTimer > 120) { // Every ~2 seconds at 60fps
-        titleUfo.beamActive = !titleUfo.beamActive;
-        titleUfo.beamTimer = 0;
+        // Don't turn off beam while a human is being abducted (prevents flickering)
+        const humanBeingAbducted = titleHumans.some(h => h.beingAbducted);
+        if (!titleUfo.beamActive || !humanBeingAbducted) {
+            titleUfo.beamActive = !titleUfo.beamActive;
+            titleUfo.beamTimer = 0;
+        }
     }
 }
 
