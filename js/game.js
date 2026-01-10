@@ -3068,12 +3068,14 @@ function renderTitleUfo() {
 function renderTitleScreen() {
     renderBackground();
 
+    // Update UFO first so humans use correct position for spawning and beam detection
+    updateTitleUfo();
+
     // Update and render title screen humans
     updateTitleHumans();
     renderTitleHumans();
 
-    // Update and render the floating UFO
-    updateTitleUfo();
+    // Render UFO (after humans so it appears on top)
     renderTitleUfo();
 
     ctx.fillStyle = '#fff';
