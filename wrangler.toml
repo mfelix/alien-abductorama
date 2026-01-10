@@ -1,0 +1,8 @@
+#:schema node_modules/wrangler/config-schema.json
+name = "alien-abductorama"
+main = "src/worker.js"
+compatibility_date = "2024-12-01"
+
+# Static assets configuration for serving the game
+[assets]
+directory = "./dist"

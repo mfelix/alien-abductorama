@@ -1,0 +1,19 @@
+{
+  "name": "alien-abductorama",
+  "version": "1.0.0",
+  "description": "Alien Abductio-rama - A browser-based arcade game",
+  "main": "src/worker.js",
+  "scripts": {
+    "build": "mkdir -p dist && cp -r index.html css js assets dist/",
+    "dev": "wrangler dev",
+    "deploy": "npm run build && wrangler deploy",
+    "login": "wrangler login"
+  },
+  "keywords": ["game", "arcade", "cloudflare-workers"],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "devDependencies": {
+    "wrangler": "^4.54.0"
+  }
+}
