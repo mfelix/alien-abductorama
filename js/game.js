@@ -583,6 +583,9 @@ let titleUfo = {
 // Title screen humans for beam animation
 let titleHumans = [];
 
+// Title animation state
+let titleAnimPhase = 0;
+
 // ============================================
 // INPUT HANDLING
 // ============================================
@@ -3086,10 +3089,54 @@ function renderTitleScreen() {
     // Render UFO (after humans so it appears on top)
     renderTitleUfo();
 
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 64px monospace';
+    // Animated title rendering
+    titleAnimPhase += 0.05;
+
+    const titleText = 'ALIEN ABDUCTO-RAMA';
+    const titleY = canvas.height / 3;
+    const titleX = canvas.width / 2;
+
+    ctx.font = 'bold 80px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('ALIEN ABDUCTO-RAMA', canvas.width / 2, canvas.height / 3);
+
+    // Measure total width to center letters properly
+    const totalWidth = ctx.measureText(titleText).width;
+    let currentX = titleX - totalWidth / 2;
+
+    // Pulsing glow effect behind title
+    const glowPulse = Math.sin(titleAnimPhase * 0.5) * 0.3 + 0.7;
+    ctx.save();
+    ctx.shadowColor = `rgba(0, 255, 255, ${glowPulse})`;
+    ctx.shadowBlur = 30 + Math.sin(titleAnimPhase) * 15;
+    ctx.fillStyle = 'transparent';
+    ctx.fillText(titleText, titleX, titleY);
+    ctx.restore();
+
+    // Draw each letter with rainbow color and wave effect
+    ctx.textAlign = 'left';
+    for (let i = 0; i < titleText.length; i++) {
+        const char = titleText[i];
+        const charWidth = ctx.measureText(char).width;
+
+        // Rainbow color cycling - each letter offset in hue
+        const hue = (titleAnimPhase * 50 + i * 20) % 360;
+        ctx.fillStyle = `hsl(${hue}, 100%, 60%)`;
+
+        // Wavy vertical offset - each letter bobs at different phase
+        const waveOffset = Math.sin(titleAnimPhase * 2 + i * 0.4) * 12;
+
+        // Add glow matching letter color
+        ctx.shadowColor = `hsl(${hue}, 100%, 50%)`;
+        ctx.shadowBlur = 20;
+
+        ctx.fillText(char, currentX, titleY + waveOffset);
+        currentX += charWidth;
+    }
+
+    // Reset styles for other text
+    ctx.shadowBlur = 0;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#fff';
 
     // Flashing "Press ENTER" text
     if (Math.floor(Date.now() / 500) % 2 === 0) {
