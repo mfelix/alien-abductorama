@@ -641,7 +641,7 @@ window.addEventListener('keydown', (e) => {
             const name = nameEntryChars.join('');
             submitScore(name).then(rank => {
                 newHighScoreRank = rank;
-                gameState = 'GAME_OVER';
+                gameState = 'TITLE';
                 fetchLeaderboard(); // Refresh leaderboard after submission
             });
         } else if (/^[A-Za-z]$/.test(e.key)) {
@@ -653,7 +653,7 @@ window.addEventListener('keydown', (e) => {
     }
 
     // Handle game state transitions
-    if (gameState === 'TITLE') {
+    if (gameState === 'TITLE' && e.code === 'Space') {
         startGame();
     } else if (gameState === 'GAME_OVER' && e.code === 'Enter') {
         startGame();
@@ -3403,7 +3403,7 @@ function renderTitleScreen() {
     if (Math.floor(Date.now() / 500) % 2 === 0) {
         ctx.fillStyle = '#fff';
         ctx.font = 'bold 32px monospace';
-        ctx.fillText('Press any key to get started', canvas.width / 2, canvas.height - 150);
+        ctx.fillText('Press SPACE to start', canvas.width / 2, canvas.height - 150);
     }
 
     // Instructions
