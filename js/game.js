@@ -3417,7 +3417,7 @@ function renderTitleScreen() {
 
         ctx.fillStyle = '#0ff';
         ctx.font = 'bold 24px monospace';
-        ctx.fillText('TOP 10', canvas.width / 2, canvas.height / 2 - 30);
+        ctx.fillText('LEADERBOARD', canvas.width / 2, canvas.height / 2 - 30);
 
         ctx.font = '18px monospace';
         const startY = canvas.height / 2 + 10;
@@ -3431,23 +3431,23 @@ function renderTitleScreen() {
             // Rank
             ctx.fillStyle = i < 3 ? '#ff0' : '#fff';
             ctx.textAlign = 'right';
-            ctx.fillText(`${i + 1}.`, canvas.width / 2 - 120, y);
+            ctx.fillText(`${i + 1}.`, canvas.width / 2 - 180, y);
 
             // Flag and Name
             ctx.textAlign = 'left';
-            ctx.fillText(`${flag} ${entry.name}`, canvas.width / 2 - 100, y);
+            ctx.fillText(`${flag} ${entry.name}`, canvas.width / 2 - 160, y);
 
             // Score
             ctx.textAlign = 'right';
-            ctx.fillText(entry.score.toLocaleString(), canvas.width / 2 + 80, y);
+            ctx.fillText(entry.score.toLocaleString(), canvas.width / 2 + 20, y);
 
             // Wave
             ctx.fillStyle = '#888';
-            ctx.fillText(`W${entry.wave}`, canvas.width / 2 + 130, y);
+            ctx.fillText(`W${entry.wave}`, canvas.width / 2 + 70, y);
 
             // Date
             ctx.fillStyle = '#666';
-            ctx.fillText(formatRelativeDate(entry.timestamp), canvas.width / 2 + 240, y);
+            ctx.fillText(formatRelativeDate(entry.timestamp), canvas.width / 2 + 180, y);
         }
         ctx.textAlign = 'center';
     }
