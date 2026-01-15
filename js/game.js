@@ -552,6 +552,16 @@ let score = 0;
 let highScore = parseInt(localStorage.getItem('alienAbductoramaHighScore')) || 0;
 let combo = 0;
 
+// Game session tracking for leaderboard
+let gameStartTime = 0;
+let leaderboard = [];
+let pendingScoreSubmission = null;
+
+// Captured at game over to avoid mutation before submission
+let finalScore = 0;
+let finalWave = 0;
+let finalGameLength = 0;
+
 // Harvest counter - tracks how many of each target type has been abducted
 let harvestCount = {
     human: 0,
@@ -2540,6 +2550,11 @@ function triggerGameOver() {
     // Stop beam sound if active
     SFX.stopBeamLoop();
 
+    // Capture final game state FIRST, before any resets can occur
+    finalScore = score;
+    finalWave = wave;
+    finalGameLength = (Date.now() - gameStartTime) / 1000;
+
     // Store UFO position before hiding it
     const ufoX = ufo.x;
     const ufoY = ufo.y;
@@ -2599,11 +2614,64 @@ function triggerGameOver() {
 }
 
 // ============================================
+// LEADERBOARD FUNCTIONS
+// ============================================
+
+async function fetchLeaderboard() {
+    try {
+        const response = await fetch('/api/scores');
+        if (response.ok) {
+            leaderboard = await response.json();
+        }
+    } catch (error) {
+        console.error('Failed to fetch leaderboard:', error);
+    }
+}
+
+async function submitScore(name) {
+    try {
+        const response = await fetch('/api/scores', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name,
+                score: finalScore,
+                wave: finalWave,
+                gameLength: finalGameLength,
+            }),
+        });
+
+        const result = await response.json();
+        // Use leaderboard from response to avoid cache staleness
+        if (result.leaderboard) {
+            leaderboard = result.leaderboard;
+        }
+        if (result.success) {
+            return result.rank;
+        }
+    } catch (error) {
+        console.error('Failed to submit score:', error);
+    }
+    return null;
+}
+
+function scoreQualifiesForLeaderboard() {
+    if (finalScore <= 0) return false;
+    if (leaderboard.length < 10) return true;
+    // Match server-side tie-breaker logic
+    const last = leaderboard[leaderboard.length - 1];
+    if (finalScore !== last.score) return finalScore > last.score;
+    if (finalWave !== last.wave) return finalWave > last.wave;
+    return true; // Same score/wave qualifies; sort will keep earlier timestamp first
+}
+
+// ============================================
 // GAME INITIALIZATION
 // ============================================
 
 function startGame() {
     gameState = 'PLAYING';
+    gameStartTime = Date.now();
     ufo = new UFO();
     targets = [];
     tanks = [];
@@ -3463,6 +3531,9 @@ function render() {
         ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
 }
+
+// Fetch leaderboard on page load
+fetchLeaderboard();
 
 // Start the game loop
 requestAnimationFrame(gameLoop);
