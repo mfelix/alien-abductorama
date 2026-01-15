@@ -3412,12 +3412,12 @@ function renderTitleScreen() {
                 : '';
             const gamesWeek = `${activityStats.gamesThisWeek} games this week`;
             const statsText = lastPlayed ? `${lastPlayed}  •  ${gamesWeek}` : gamesWeek;
-            ctx.fillText(statsText, canvas.width / 2, canvas.height / 2 - 50);
+            ctx.fillText(statsText, canvas.width / 2, canvas.height / 2 - 70);
         }
 
         ctx.fillStyle = '#0ff';
         ctx.font = 'bold 24px monospace';
-        ctx.fillText('TOP 10', canvas.width / 2, canvas.height / 2 - 20);
+        ctx.fillText('TOP 10', canvas.width / 2, canvas.height / 2 - 30);
 
         ctx.font = '18px monospace';
         const startY = canvas.height / 2 + 10;
@@ -3447,7 +3447,7 @@ function renderTitleScreen() {
 
             // Date
             ctx.fillStyle = '#666';
-            ctx.fillText(formatRelativeDate(entry.timestamp), canvas.width / 2 + 200, y);
+            ctx.fillText(formatRelativeDate(entry.timestamp), canvas.width / 2 + 240, y);
         }
         ctx.textAlign = 'center';
     }
