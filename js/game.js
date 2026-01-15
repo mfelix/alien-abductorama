@@ -3683,7 +3683,7 @@ function renderTitleScreen() {
 
             // Wave - highlighted entries keep the glow with slightly brighter color
             ctx.fillStyle = isHighlighted ? '#0aa' : '#888';
-            ctx.fillText(`W${entry.wave}`, canvas.width / 2 + 70, y);
+            ctx.fillText(`Wave ${entry.wave}`, canvas.width / 2 + 110, y);
 
             // Date
             ctx.fillStyle = isHighlighted ? '#088' : '#666';
