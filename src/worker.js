@@ -4,6 +4,10 @@
 const LEADERBOARD_KEY = 'leaderboard';
 const MAX_ENTRIES = 10;
 
+// Activity tracking constants
+const ACTIVITY_KEY = 'activity_stats';
+const MAX_RECENT_GAMES = 100; // Keep last 100 timestamps for rolling window
+
 // Anti-cheat constants
 const MAX_SCORE_PER_SECOND = 500; // Reasonable max with combos
 const MIN_GAME_LENGTH_SECONDS = 10;
@@ -28,13 +32,49 @@ export default {
 	},
 };
 
+// Activity tracking helpers
+async function getActivityStats(env) {
+	const stats = await env.ALIEN_ABDUCTORAMA_HIGH_SCORES.get(ACTIVITY_KEY, { type: 'json' });
+	return stats || { totalGames: 0, recentGames: [] };
+}
+
+async function updateActivityStats(env, timestamp) {
+	const stats = await getActivityStats(env);
+
+	// Update total count
+	stats.totalGames += 1;
+
+	// Add new timestamp and trim to max size
+	stats.recentGames.push(timestamp);
+	if (stats.recentGames.length > MAX_RECENT_GAMES) {
+		stats.recentGames = stats.recentGames.slice(-MAX_RECENT_GAMES);
+	}
+
+	await env.ALIEN_ABDUCTORAMA_HIGH_SCORES.put(ACTIVITY_KEY, JSON.stringify(stats));
+	return stats;
+}
+
+function calculateGamesThisWeek(recentGames) {
+	const oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+	return recentGames.filter(ts => ts > oneWeekAgo).length;
+}
+
 async function handleGetScores(env) {
 	try {
 		const leaderboard = await env.ALIEN_ABDUCTORAMA_HIGH_SCORES.get(LEADERBOARD_KEY, { type: 'json' });
-		return new Response(JSON.stringify(leaderboard || []), {
+		const activityStats = await getActivityStats(env);
+
+		const stats = {
+			lastGamePlayed: activityStats.recentGames.length > 0
+				? activityStats.recentGames[activityStats.recentGames.length - 1]
+				: null,
+			gamesThisWeek: calculateGamesThisWeek(activityStats.recentGames),
+		};
+
+		return new Response(JSON.stringify({ leaderboard: leaderboard || [], stats }), {
 			headers: {
 				'Content-Type': 'application/json',
-				'Cache-Control': 'public, max-age=10', // Short cache for freshness
+				'Cache-Control': 'public, max-age=10',
 			},
 		});
 	} catch (error) {
@@ -49,6 +89,10 @@ async function handlePostScore(request, env) {
 	try {
 		const body = await request.json();
 		const { name, score, wave, gameLength } = body;
+
+		// Track this game attempt (before any validation that might reject it)
+		const gameTimestamp = Date.now();
+		await updateActivityStats(env, gameTimestamp);
 
 		// Validation
 		if (!name || typeof name !== 'string' || !/^[A-Z]{3}$/.test(name)) {
@@ -100,7 +144,7 @@ async function handlePostScore(request, env) {
 			wave,
 			gameLength: Math.round(gameLength),
 			countryCode,
-			timestamp: Date.now(),
+			timestamp: gameTimestamp,
 		};
 
 		// Get current leaderboard
@@ -115,7 +159,11 @@ async function handlePostScore(request, env) {
 		})();
 
 		if (!qualifies) {
-			return new Response(JSON.stringify({ success: false, message: 'Score did not qualify', leaderboard }), {
+			const stats = {
+				lastGamePlayed: gameTimestamp,
+				gamesThisWeek: calculateGamesThisWeek((await getActivityStats(env)).recentGames),
+			};
+			return new Response(JSON.stringify({ success: false, message: 'Score did not qualify', leaderboard, stats }), {
 				headers: { 'Content-Type': 'application/json' },
 			});
 		}
@@ -139,7 +187,11 @@ async function handlePostScore(request, env) {
 		const rank = leaderboard.findIndex(e => e.id === entryId) + 1;
 
 		// Return updated leaderboard to avoid cache staleness on client
-		return new Response(JSON.stringify({ success: true, rank, leaderboard }), {
+		const stats = {
+			lastGamePlayed: gameTimestamp,
+			gamesThisWeek: calculateGamesThisWeek((await getActivityStats(env)).recentGames),
+		};
+		return new Response(JSON.stringify({ success: true, rank, leaderboard, stats }), {
 			headers: { 'Content-Type': 'application/json' },
 		});
 	} catch (error) {

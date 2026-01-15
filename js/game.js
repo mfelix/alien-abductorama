@@ -556,6 +556,7 @@ let combo = 0;
 let gameStartTime = 0;
 let leaderboard = [];
 let leaderboardLoading = false;
+let activityStats = null;
 let submissionError = null;
 let pendingScoreSubmission = null;
 
@@ -2679,12 +2680,45 @@ function countryCodeToFlag(countryCode) {
     return String.fromCodePoint(...codePoints);
 }
 
+function formatRelativeDate(timestamp) {
+    if (!timestamp) return '';
+
+    const now = Date.now();
+    const diff = now - timestamp;
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+    if (hours < 1) return 'just now';
+    if (hours < 24) return `${hours}h ago`;
+    if (days <= 2) return `${days}d ago`;
+
+    // Compact date for older entries
+    const date = new Date(timestamp);
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
+    const year = date.getFullYear();
+    const currentYear = new Date().getFullYear();
+
+    if (year !== currentYear) {
+        return `${month}/${day}/${String(year).slice(-2)}`;
+    }
+    return `${month}/${day}`;
+}
+
 async function fetchLeaderboard() {
     leaderboardLoading = true;
     try {
         const response = await fetch('/api/scores');
         if (response.ok) {
-            leaderboard = await response.json();
+            const data = await response.json();
+            // Handle both old (array) and new (object) response shapes
+            if (Array.isArray(data)) {
+                leaderboard = data;
+                activityStats = null;
+            } else {
+                leaderboard = data.leaderboard || [];
+                activityStats = data.stats || null;
+            }
         }
     } catch (error) {
         console.error('Failed to fetch leaderboard:', error);
@@ -2711,6 +2745,9 @@ async function submitScore(name) {
         // Use leaderboard from response to avoid cache staleness
         if (result.leaderboard) {
             leaderboard = result.leaderboard;
+        }
+        if (result.stats) {
+            activityStats = result.stats;
         }
         if (result.success) {
             return result.rank;
@@ -3366,6 +3403,18 @@ function renderTitleScreen() {
         ctx.font = '18px monospace';
         ctx.fillText('Loading scores...', canvas.width / 2, canvas.height / 2 + 10);
     } else if (leaderboard.length > 0) {
+        // Activity stats (above TOP 10 header)
+        if (activityStats) {
+            ctx.fillStyle = '#888';
+            ctx.font = '14px monospace';
+            const lastPlayed = activityStats.lastGamePlayed
+                ? `Last played: ${formatRelativeDate(activityStats.lastGamePlayed)}`
+                : '';
+            const gamesWeek = `${activityStats.gamesThisWeek} games this week`;
+            const statsText = lastPlayed ? `${lastPlayed}  •  ${gamesWeek}` : gamesWeek;
+            ctx.fillText(statsText, canvas.width / 2, canvas.height / 2 - 50);
+        }
+
         ctx.fillStyle = '#0ff';
         ctx.font = 'bold 24px monospace';
         ctx.fillText('TOP 10', canvas.width / 2, canvas.height / 2 - 20);
@@ -3395,6 +3444,10 @@ function renderTitleScreen() {
             // Wave
             ctx.fillStyle = '#888';
             ctx.fillText(`W${entry.wave}`, canvas.width / 2 + 130, y);
+
+            // Date
+            ctx.fillStyle = '#666';
+            ctx.fillText(formatRelativeDate(entry.timestamp), canvas.width / 2 + 200, y);
         }
         ctx.textAlign = 'center';
     }
