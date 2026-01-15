@@ -3079,12 +3079,11 @@ function updateTitleUfo() {
     titleUfo.beamTimer++;
     const humanBeingAbducted = titleHumans.some(h => h.beingAbducted);
 
-    // Reset timer while abducting so beam stays on for full duration after abduction completes
-    if (humanBeingAbducted && titleUfo.beamActive) {
+    if (humanBeingAbducted) {
+        // Force beam on during abduction to prevent flickering
+        titleUfo.beamActive = true;
         titleUfo.beamTimer = 0;
-    }
-
-    if (titleUfo.beamTimer > 120) { // Every ~2 seconds at 60fps
+    } else if (titleUfo.beamTimer > 120) { // Every ~2 seconds at 60fps
         titleUfo.beamActive = !titleUfo.beamActive;
         titleUfo.beamTimer = 0;
     }
