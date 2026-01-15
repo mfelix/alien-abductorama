@@ -2180,13 +2180,15 @@ function applyPowerup(type) {
     const cfg = CONFIG.POWERUPS[type];
     const state = activePowerups[type];
 
+    // All powerups restore beam energy to full
+    ufo.energy = CONFIG.ENERGY_MAX;
+
     switch (type) {
         case 'health_pack':
-            // Instant heal + beam recharge
+            // Instant heal
             const oldHealth = ufo.health;
             ufo.health = Math.min(CONFIG.UFO_START_HEALTH, ufo.health + cfg.healAmount);
             const healed = ufo.health - oldHealth;
-            ufo.energy = CONFIG.ENERGY_MAX; // Recharge beam to 100%
             if (healed > 0) {
                 createFloatingText(ufo.x, ufo.y - 50, `SHIELD +${healed}`, '#0f0');
             }
