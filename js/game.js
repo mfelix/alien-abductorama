@@ -2890,68 +2890,124 @@ function renderBackground() {
 }
 
 function renderUI() {
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 24px monospace';
-    ctx.textAlign = 'left';
-    ctx.fillText(`SCORE: ${score}`, 20, 40);
-    ctx.fillText(`WAVE: ${wave}`, 20, 70);
+    const panelPadding = 15;
+    const panelMargin = 12;
 
-    // Timer (clamp to 0 to avoid showing -1:-1 when wave ends)
+    // ========== TOP LEFT: SCORE PANEL ==========
+    const scoreText = score.toLocaleString();
+    const hiText = highScore.toLocaleString();
+
+    // Score panel background
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    const scorePanelWidth = 200;
+    const scorePanelHeight = 70;
+    ctx.beginPath();
+    ctx.roundRect(panelMargin, panelMargin, scorePanelWidth, scorePanelHeight, 8);
+    ctx.fill();
+
+    // Main score
+    ctx.fillStyle = '#0ff';
+    ctx.font = 'bold 28px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(scoreText, panelMargin + panelPadding, panelMargin + 32);
+
+    // High score label and value
+    ctx.fillStyle = '#666';
+    ctx.font = '14px monospace';
+    ctx.fillText('HI', panelMargin + panelPadding, panelMargin + 55);
+    ctx.fillStyle = '#888';
+    ctx.fillText(hiText, panelMargin + panelPadding + 30, panelMargin + 55);
+
+    // ========== TOP LEFT: WAVE & TIMER (below score panel) ==========
+    const infoY = panelMargin + scorePanelHeight + 10;
+
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 18px monospace';
+    ctx.fillText(`WAVE ${wave}`, panelMargin + panelPadding, infoY + 18);
+
+    // Timer
     const displayTime = Math.max(0, waveTimer);
     const minutes = Math.floor(displayTime / 60);
     const seconds = Math.floor(displayTime % 60);
+    const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
 
     // Timer warning effect for last 10 seconds
     if (waveTimer <= 10 && gameState === 'PLAYING') {
-        // Pulsing red text
         const pulse = Math.sin(Date.now() / 100) * 0.5 + 0.5;
         ctx.fillStyle = `rgb(255, ${Math.floor(pulse * 100)}, ${Math.floor(pulse * 100)})`;
-        ctx.font = 'bold 28px monospace';
+        ctx.font = 'bold 22px monospace';
+    } else {
+        ctx.fillStyle = '#aaa';
+        ctx.font = '18px monospace';
     }
-    ctx.fillText(`TIME: ${minutes}:${seconds.toString().padStart(2, '0')}`, 20, 100);
+    ctx.fillText(timeStr, panelMargin + panelPadding + 90, infoY + 18);
 
-    // Reset font for subsequent text
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 24px monospace';
+    // ========== TOP RIGHT: SHIELD BAR ==========
+    const shieldBarWidth = 180;
+    const shieldBarHeight = 24;
+    const shieldX = canvas.width - shieldBarWidth - panelMargin - panelPadding;
+    const shieldY = panelMargin + panelPadding;
 
-    // Health bar (top right)
-    const healthBarWidth = 200;
-    const healthBarHeight = 20;
-    const healthX = canvas.width - healthBarWidth - 20;
-    const healthY = 20;
+    // Shield panel background
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    ctx.beginPath();
+    ctx.roundRect(canvas.width - shieldBarWidth - panelMargin - panelPadding * 2, panelMargin, shieldBarWidth + panelPadding * 2, shieldBarHeight + panelPadding * 2, 8);
+    ctx.fill();
 
-    ctx.fillStyle = '#333';
-    ctx.fillRect(healthX, healthY, healthBarWidth, healthBarHeight);
+    // Shield bar background
+    ctx.fillStyle = '#222';
+    ctx.beginPath();
+    ctx.roundRect(shieldX, shieldY, shieldBarWidth, shieldBarHeight, 4);
+    ctx.fill();
 
+    // Shield bar fill with gradient
     const healthPercent = ufo ? ufo.health / CONFIG.UFO_START_HEALTH : 1;
-    ctx.fillStyle = '#f00';
-    ctx.fillRect(healthX, healthY, healthBarWidth * healthPercent, healthBarHeight);
+    const shieldGradient = ctx.createLinearGradient(shieldX, 0, shieldX + shieldBarWidth * healthPercent, 0);
+    if (healthPercent > 0.5) {
+        shieldGradient.addColorStop(0, '#0a4');
+        shieldGradient.addColorStop(1, '#0f6');
+    } else if (healthPercent > 0.25) {
+        shieldGradient.addColorStop(0, '#a80');
+        shieldGradient.addColorStop(1, '#fc0');
+    } else {
+        shieldGradient.addColorStop(0, '#800');
+        shieldGradient.addColorStop(1, '#f33');
+    }
+    ctx.fillStyle = shieldGradient;
+    ctx.beginPath();
+    ctx.roundRect(shieldX, shieldY, shieldBarWidth * healthPercent, shieldBarHeight, 4);
+    ctx.fill();
 
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(healthX, healthY, healthBarWidth, healthBarHeight);
-
-    ctx.textAlign = 'right';
+    // Shield text inside bar
     ctx.fillStyle = '#fff';
-    ctx.fillText('SHIELD', healthX - 10, healthY + 16);
-
-    // High score
+    ctx.font = 'bold 13px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText(`HIGH SCORE: ${highScore}`, canvas.width / 2, 40);
+    ctx.fillText('SHIELD', shieldX + shieldBarWidth / 2, shieldY + shieldBarHeight / 2 + 5);
 
-    // Harvest counter - display icons with counts
+    // ========== TOP CENTER: HARVEST COUNTER ==========
     renderHarvestCounter();
 }
 
 function renderHarvestCounter() {
     const targetTypes = ['human', 'cow', 'sheep', 'cat', 'dog', 'tank'];
-    const iconSize = 28;
-    const spacing = 60; // Space between each icon+count pair
+    const iconSize = 24;
+    const spacing = 50;
     const totalWidth = targetTypes.length * spacing;
-    const startX = (canvas.width - totalWidth) / 2 + spacing / 2;
-    const y = 58; // Moved up to avoid overlap with UFO energy bar
+    const panelWidth = totalWidth + 20;
+    const panelHeight = 50;
+    const panelX = (canvas.width - panelWidth) / 2;
+    const panelY = 12;
 
-    ctx.font = 'bold 14px monospace';
+    // Panel background
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    ctx.beginPath();
+    ctx.roundRect(panelX, panelY, panelWidth, panelHeight, 8);
+    ctx.fill();
+
+    const startX = panelX + 10 + spacing / 2;
+    const y = panelY + 20;
+
+    ctx.font = 'bold 12px monospace';
     ctx.textAlign = 'center';
 
     for (let i = 0; i < targetTypes.length; i++) {
@@ -2962,7 +3018,6 @@ function renderHarvestCounter() {
         // Draw the target icon
         const img = images[type];
         if (img && img.complete) {
-            // Scale image to fit icon size while maintaining aspect ratio
             const aspectRatio = img.width / img.height;
             let drawWidth, drawHeight;
             if (aspectRatio > 1) {
@@ -2974,11 +3029,9 @@ function renderHarvestCounter() {
             }
             ctx.drawImage(img, x - drawWidth / 2, y - drawHeight / 2, drawWidth, drawHeight);
         } else {
-            // Fallback: draw a colored circle/shape
             const colors = { human: '#ffccaa', cow: '#fff', sheep: '#eee', cat: '#ff9944', dog: '#aa7744', tank: '#556b2f' };
             ctx.fillStyle = colors[type];
             if (type === 'tank') {
-                // Draw a small tank shape
                 ctx.fillRect(x - 10, y - 5, 20, 10);
                 ctx.fillRect(x - 3, y - 10, 6, 8);
             } else {
@@ -2989,17 +3042,17 @@ function renderHarvestCounter() {
         }
 
         // Draw the count below the icon
-        ctx.fillStyle = count > 0 ? '#0f0' : '#666';
-        ctx.fillText(count.toString(), x, y + iconSize / 2 + 12);
+        ctx.fillStyle = count > 0 ? '#0f0' : '#555';
+        ctx.fillText(count.toString(), x, y + iconSize / 2 + 10);
     }
 }
 
 function renderActivePowerups() {
-    const barWidth = 140;
-    const barHeight = 18;
-    const padding = 4;
-    const startX = 10;
-    let y = 160; // Below COMBO indicator at Y=130
+    const barWidth = 160;
+    const barHeight = 20;
+    const padding = 6;
+    const startX = 12;
+    let y = 140; // Below combo indicator
 
     ctx.font = 'bold 11px monospace';
     ctx.textAlign = 'left';
@@ -3019,25 +3072,35 @@ function renderActivePowerups() {
             label = `${cfg.name} x${state.charges}`;
         }
 
-        // Background bar
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-        ctx.fillRect(startX, y, barWidth, barHeight);
+        // Background bar with rounded corners
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.beginPath();
+        ctx.roundRect(startX, y, barWidth, barHeight, 4);
+        ctx.fill();
 
-        // Progress fill
-        ctx.fillStyle = cfg.color;
-        ctx.fillRect(startX + 2, y + 2, (barWidth - 4) * progress, barHeight - 4);
+        // Progress fill with rounded corners
+        if (progress > 0) {
+            ctx.fillStyle = cfg.color;
+            ctx.beginPath();
+            ctx.roundRect(startX + 2, y + 2, (barWidth - 4) * progress, barHeight - 4, 3);
+            ctx.fill();
 
-        // Pulsing effect when low
-        if (progress < 0.25 && progress > 0) {
-            const pulse = Math.sin(Date.now() / 100) * 0.3 + 0.7;
-            ctx.fillStyle = `rgba(255, 255, 255, ${pulse * 0.4})`;
-            ctx.fillRect(startX + 2, y + 2, (barWidth - 4) * progress, barHeight - 4);
+            // Pulsing effect when low
+            if (progress < 0.25) {
+                const pulse = Math.sin(Date.now() / 100) * 0.3 + 0.7;
+                ctx.fillStyle = `rgba(255, 255, 255, ${pulse * 0.4})`;
+                ctx.beginPath();
+                ctx.roundRect(startX + 2, y + 2, (barWidth - 4) * progress, barHeight - 4, 3);
+                ctx.fill();
+            }
         }
 
-        // Border
+        // Subtle border
         ctx.strokeStyle = cfg.color;
         ctx.lineWidth = 1;
-        ctx.strokeRect(startX, y, barWidth, barHeight);
+        ctx.beginPath();
+        ctx.roundRect(startX, y, barWidth, barHeight, 4);
+        ctx.stroke();
 
         // Label (with shadow for readability)
         ctx.fillStyle = '#000';
@@ -3045,7 +3108,7 @@ function renderActivePowerups() {
         ctx.fillStyle = '#fff';
         ctx.fillText(label, startX + padding, y + barHeight - padding);
 
-        y += barHeight + 4;
+        y += barHeight + 6;
     }
 }
 
@@ -4014,11 +4077,36 @@ function render() {
 
     // Render combo indicator
     if (combo > 0) {
-        ctx.fillStyle = '#ff0';
-        ctx.font = 'bold 20px monospace';
-        ctx.textAlign = 'left';
         const multiplier = CONFIG.COMBO_MULTIPLIERS[Math.min(combo, CONFIG.COMBO_MULTIPLIERS.length - 1)];
-        ctx.fillText(`COMBO: ${combo} (${multiplier}x)`, 20, 130);
+        const comboText = `${combo}x COMBO`;
+        const multiplierText = `${multiplier}x`;
+
+        // Combo badge with glow effect
+        const comboX = 27;
+        const comboY = 115;
+
+        // Glow
+        ctx.shadowColor = '#ff0';
+        ctx.shadowBlur = 10;
+
+        // Background pill
+        ctx.fillStyle = 'rgba(255, 200, 0, 0.3)';
+        ctx.beginPath();
+        ctx.roundRect(12, comboY - 14, 130, 24, 12);
+        ctx.fill();
+
+        ctx.shadowBlur = 0;
+
+        // Combo text
+        ctx.fillStyle = '#ff0';
+        ctx.font = 'bold 16px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(comboText, comboX, comboY + 4);
+
+        // Multiplier in brighter color
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 14px monospace';
+        ctx.fillText(multiplierText, comboX + 95, comboY + 4);
     }
 
     // Timer critical warning (last 5 seconds)
