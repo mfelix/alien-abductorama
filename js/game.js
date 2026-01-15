@@ -3671,23 +3671,23 @@ function renderTitleScreen() {
             // Rank - highlighted entries use cyan, top 3 use yellow, others white
             ctx.fillStyle = isHighlighted ? '#0ff' : (i < 3 ? '#ff0' : '#fff');
             ctx.textAlign = 'right';
-            ctx.fillText(`${i + 1}.`, canvas.width / 2 - 180, y);
+            ctx.fillText(`${i + 1}.`, canvas.width / 2 - 220, y);
 
             // Flag and Name
             ctx.textAlign = 'left';
-            ctx.fillText(`${flag} ${entry.name}`, canvas.width / 2 - 160, y);
+            ctx.fillText(`${flag} ${entry.name}`, canvas.width / 2 - 200, y);
 
             // Score
             ctx.textAlign = 'right';
-            ctx.fillText(entry.score.toLocaleString(), canvas.width / 2 + 20, y);
+            ctx.fillText(entry.score.toLocaleString(), canvas.width / 2 - 20, y);
 
             // Wave - highlighted entries keep the glow with slightly brighter color
             ctx.fillStyle = isHighlighted ? '#0aa' : '#888';
-            ctx.fillText(`Wave ${entry.wave}`, canvas.width / 2 + 110, y);
+            ctx.fillText(`Wave ${entry.wave}`, canvas.width / 2 + 90, y);
 
             // Date
             ctx.fillStyle = isHighlighted ? '#088' : '#666';
-            ctx.fillText(formatRelativeDate(entry.timestamp), canvas.width / 2 + 180, y);
+            ctx.fillText(formatRelativeDate(entry.timestamp), canvas.width / 2 + 220, y);
 
             // Reset shadow for next entry
             if (isHighlighted) {
