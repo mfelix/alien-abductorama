@@ -2972,7 +2972,7 @@ function renderActivePowerups() {
     const barHeight = 18;
     const padding = 4;
     const startX = 10;
-    let y = 100;
+    let y = 130;
 
     ctx.font = 'bold 11px monospace';
     ctx.textAlign = 'left';
