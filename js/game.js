@@ -559,6 +559,7 @@ let leaderboardLoading = false;
 let activityStats = null;
 let submissionError = null;
 let pendingScoreSubmission = null;
+let highlightedEntryId = null; // Track player's newly submitted score for highlighting
 
 // Captured at game over to avoid mutation before submission
 let finalScore = 0;
@@ -2751,6 +2752,10 @@ async function submitScore(name) {
             activityStats = result.stats;
         }
         if (result.success) {
+            // Store entry ID for highlighting on leaderboard
+            if (result.rank && result.leaderboard && result.leaderboard[result.rank - 1]) {
+                highlightedEntryId = result.leaderboard[result.rank - 1].id;
+            }
             return result.rank;
         }
         // Server returned but submission didn't succeed
@@ -2818,6 +2823,7 @@ function startGame() {
     combo = 0;
     // Reset title screen state for next time
     titleHumans = [];
+    highlightedEntryId = null;
     // Reset harvest counters
     harvestCount = { human: 0, cow: 0, sheep: 0, cat: 0, dog: 0, tank: 0 };
     wave = 1;
@@ -3432,9 +3438,16 @@ function renderTitleScreen() {
             const entry = leaderboard[i];
             const y = startY + i * lineHeight;
             const flag = countryCodeToFlag(entry.countryCode);
+            const isHighlighted = entry.id === highlightedEntryId;
 
-            // Rank
-            ctx.fillStyle = i < 3 ? '#ff0' : '#fff';
+            // Apply glow effect for highlighted entry
+            if (isHighlighted) {
+                ctx.shadowColor = '#0ff';
+                ctx.shadowBlur = 10;
+            }
+
+            // Rank - highlighted entries use cyan, top 3 use yellow, others white
+            ctx.fillStyle = isHighlighted ? '#0ff' : (i < 3 ? '#ff0' : '#fff');
             ctx.textAlign = 'right';
             ctx.fillText(`${i + 1}.`, canvas.width / 2 - 180, y);
 
@@ -3446,13 +3459,18 @@ function renderTitleScreen() {
             ctx.textAlign = 'right';
             ctx.fillText(entry.score.toLocaleString(), canvas.width / 2 + 20, y);
 
-            // Wave
-            ctx.fillStyle = '#888';
+            // Wave - highlighted entries keep the glow with slightly brighter color
+            ctx.fillStyle = isHighlighted ? '#0aa' : '#888';
             ctx.fillText(`W${entry.wave}`, canvas.width / 2 + 70, y);
 
             // Date
-            ctx.fillStyle = '#666';
+            ctx.fillStyle = isHighlighted ? '#088' : '#666';
             ctx.fillText(formatRelativeDate(entry.timestamp), canvas.width / 2 + 180, y);
+
+            // Reset shadow for next entry
+            if (isHighlighted) {
+                ctx.shadowBlur = 0;
+            }
         }
         ctx.textAlign = 'center';
     }
