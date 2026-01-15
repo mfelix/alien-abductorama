@@ -6,3 +6,8 @@ compatibility_date = "2024-12-01"
 # Static assets configuration for serving the game
 [assets]
 directory = "./dist"
+
+[[kv_namespaces]]
+binding = "ALIEN_ABDUCTORAMA_HIGH_SCORES"
+id = "47feb7025f534c7ba3970abfbbe6faa2"
+preview_id = "2140258a4d194bfd96f1b8a8caa40483"
