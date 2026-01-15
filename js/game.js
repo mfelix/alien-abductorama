@@ -80,7 +80,7 @@ const CONFIG = {
 
     POWERUPS: {
         health_pack: {
-            name: 'HEALTH+',
+            name: 'SHIELD+',
             color: '#0f0',
             duration: 0,
             healAmount: 25,
@@ -2181,12 +2181,13 @@ function applyPowerup(type) {
 
     switch (type) {
         case 'health_pack':
-            // Instant heal
+            // Instant heal + beam recharge
             const oldHealth = ufo.health;
             ufo.health = Math.min(CONFIG.UFO_START_HEALTH, ufo.health + cfg.healAmount);
             const healed = ufo.health - oldHealth;
+            ufo.energy = CONFIG.ENERGY_MAX; // Recharge beam to 100%
             if (healed > 0) {
-                createFloatingText(ufo.x, ufo.y - 50, `+${healed} HP`, '#0f0');
+                createFloatingText(ufo.x, ufo.y - 50, `SHIELD +${healed}`, '#0f0');
             }
             break;
 
@@ -2904,7 +2905,7 @@ function renderUI() {
 
     ctx.textAlign = 'right';
     ctx.fillStyle = '#fff';
-    ctx.fillText('HEALTH', healthX - 10, healthY + 16);
+    ctx.fillText('SHIELD', healthX - 10, healthY + 16);
 
     // High score
     ctx.textAlign = 'center';
