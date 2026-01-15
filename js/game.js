@@ -3410,6 +3410,11 @@ function renderTitleScreen() {
     ctx.font = '18px monospace';
     ctx.fillStyle = '#aaa';
     ctx.fillText('Arrow Keys: Move UFO    |    SPACE: Activate Beam', canvas.width / 2, canvas.height - 100);
+
+    // Dedication message on the ground
+    ctx.font = '14px monospace';
+    ctx.fillStyle = '#fff';
+    ctx.fillText('Built by Ruby, Odessa, & Papa!!! We hope you love it and have fun!', canvas.width / 2, canvas.height - 30);
 }
 
 function renderGameOverScreen() {
