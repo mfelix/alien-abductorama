@@ -2869,9 +2869,10 @@ function renderUI() {
     ctx.fillText(`SCORE: ${score}`, 20, 40);
     ctx.fillText(`WAVE: ${wave}`, 20, 70);
 
-    // Timer
-    const minutes = Math.floor(waveTimer / 60);
-    const seconds = Math.floor(waveTimer % 60);
+    // Timer (clamp to 0 to avoid showing -1:-1 when wave ends)
+    const displayTime = Math.max(0, waveTimer);
+    const minutes = Math.floor(displayTime / 60);
+    const seconds = Math.floor(displayTime % 60);
 
     // Timer warning effect for last 10 seconds
     if (waveTimer <= 10 && gameState === 'PLAYING') {
