@@ -555,6 +555,8 @@ let combo = 0;
 // Game session tracking for leaderboard
 let gameStartTime = 0;
 let leaderboard = [];
+let leaderboardLoading = false;
+let submissionError = null;
 let pendingScoreSubmission = null;
 
 // Captured at game over to avoid mutation before submission
@@ -2653,7 +2655,9 @@ function triggerGameOver() {
             // Reset name entry state
             nameEntryChars = ['A', 'A', 'A'];
             nameEntryPosition = 0;
+            submissionError = null;
             gameState = 'NAME_ENTRY';
+            createCelebrationEffect();
         } else {
             gameState = 'GAME_OVER';
         }
@@ -2676,6 +2680,7 @@ function countryCodeToFlag(countryCode) {
 }
 
 async function fetchLeaderboard() {
+    leaderboardLoading = true;
     try {
         const response = await fetch('/api/scores');
         if (response.ok) {
@@ -2683,10 +2688,13 @@ async function fetchLeaderboard() {
         }
     } catch (error) {
         console.error('Failed to fetch leaderboard:', error);
+    } finally {
+        leaderboardLoading = false;
     }
 }
 
 async function submitScore(name) {
+    submissionError = null;
     try {
         const response = await fetch('/api/scores', {
             method: 'POST',
@@ -2707,8 +2715,13 @@ async function submitScore(name) {
         if (result.success) {
             return result.rank;
         }
+        // Server returned but submission didn't succeed
+        if (result.error || result.message) {
+            submissionError = result.error || result.message;
+        }
     } catch (error) {
         console.error('Failed to submit score:', error);
+        submissionError = 'Failed to save score. Try again!';
     }
     return null;
 }
@@ -2721,6 +2734,32 @@ function scoreQualifiesForLeaderboard() {
     if (finalScore !== last.score) return finalScore > last.score;
     if (finalWave !== last.wave) return finalWave > last.wave;
     return true; // Same score/wave qualifies; sort will keep earlier timestamp first
+}
+
+function createCelebrationEffect() {
+    // Create rising beam-like particles in cyan/magenta theme
+    const colors = [
+        'rgb(0, 255, 255)',   // Cyan
+        'rgb(255, 0, 255)',   // Magenta
+        'rgb(255, 255, 0)',   // Yellow
+        'rgb(255, 255, 255)', // White
+    ];
+
+    for (let i = 0; i < 50; i++) {
+        setTimeout(() => {
+            const x = Math.random() * canvas.width;
+            const particle = new Particle(
+                x,
+                canvas.height + 10,
+                (Math.random() - 0.5) * 100,  // vx: slight horizontal drift
+                -200 - Math.random() * 200,    // vy: upward
+                colors[Math.floor(Math.random() * colors.length)],
+                3 + Math.random() * 4,
+                2 + Math.random()
+            );
+            particles.push(particle);
+        }, i * 30); // Staggered spawn
+    }
 }
 
 // ============================================
@@ -3247,6 +3286,13 @@ function renderNameEntryScreen() {
         ctx.fillText(nameEntryChars[i], x, y);
     }
 
+    // Show submission error if any
+    if (submissionError) {
+        ctx.fillStyle = '#f55';
+        ctx.font = 'bold 18px monospace';
+        ctx.fillText(submissionError, canvas.width / 2, canvas.height - 140);
+    }
+
     ctx.fillStyle = '#aaa';
     ctx.font = '18px monospace';
     ctx.fillText('↑↓ Change Letter    ←→ Move    ENTER Submit', canvas.width / 2, canvas.height - 100);
@@ -3315,7 +3361,11 @@ function renderTitleScreen() {
     ctx.fillStyle = '#fff';
 
     // Leaderboard
-    if (leaderboard.length > 0) {
+    if (leaderboardLoading) {
+        ctx.fillStyle = '#888';
+        ctx.font = '18px monospace';
+        ctx.fillText('Loading scores...', canvas.width / 2, canvas.height / 2 + 10);
+    } else if (leaderboard.length > 0) {
         ctx.fillStyle = '#0ff';
         ctx.font = 'bold 24px monospace';
         ctx.fillText('TOP 10', canvas.width / 2, canvas.height / 2 - 20);
@@ -3506,7 +3556,9 @@ function gameLoop(timestamp) {
             break;
 
         case 'NAME_ENTRY':
+            updateParticles(dt);
             renderNameEntryScreen();
+            renderParticles();
             break;
 
         case 'WAVE_TRANSITION':
