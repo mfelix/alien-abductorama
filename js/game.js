@@ -3027,7 +3027,7 @@ function updateTitleUfo() {
     // Initialize position if needed
     if (titleUfo.baseY === 0) {
         titleUfo.baseY = canvas.height / 6;
-        titleUfo.x = canvas.width / 4;
+        titleUfo.x = canvas.width / 2;  // Start centered so humans have time to walk before abduction
         titleUfo.y = titleUfo.baseY;
     }
 
@@ -3048,13 +3048,16 @@ function updateTitleUfo() {
 
     // Toggle beam on/off periodically
     titleUfo.beamTimer++;
+    const humanBeingAbducted = titleHumans.some(h => h.beingAbducted);
+
+    // Reset timer while abducting so beam stays on for full duration after abduction completes
+    if (humanBeingAbducted && titleUfo.beamActive) {
+        titleUfo.beamTimer = 0;
+    }
+
     if (titleUfo.beamTimer > 120) { // Every ~2 seconds at 60fps
-        // Don't turn off beam while a human is being abducted (prevents flickering)
-        const humanBeingAbducted = titleHumans.some(h => h.beingAbducted);
-        if (!titleUfo.beamActive || !humanBeingAbducted) {
-            titleUfo.beamActive = !titleUfo.beamActive;
-            titleUfo.beamTimer = 0;
-        }
+        titleUfo.beamActive = !titleUfo.beamActive;
+        titleUfo.beamTimer = 0;
     }
 }
 
