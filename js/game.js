@@ -3713,6 +3713,18 @@ function update(dt) {
 
     if (waveTimer <= 0) {
         // Wave complete - transition to next wave
+        // Stop beam sound if beam is active
+        if (ufo && ufo.beamActive) {
+            SFX.stopBeamLoop();
+            if (ufo.beamTarget) {
+                ufo.beamTarget.beingAbducted = false;
+                ufo.beamTarget.abductionProgress = 0;
+                ufo.beamTarget.y = ufo.beamTarget.groundY;
+                ufo.beamTarget = null;
+            }
+            ufo.beamActive = false;
+        }
+
         score += CONFIG.WAVE_COMPLETE_BONUS;
         createFloatingText(canvas.width / 2, canvas.height / 2, `WAVE ${wave} COMPLETE! +${CONFIG.WAVE_COMPLETE_BONUS}`, '#ff0');
         SFX.waveComplete();
