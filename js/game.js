@@ -46,6 +46,7 @@ const CONFIG = {
     SHELL_DAMAGE: 10,
     MISSILE_DAMAGE: 25,
     HEAL_PER_ABDUCTION: 5,
+    ENERGY_RESTORE_RATIO: 0.3, // Energy restored = points * this ratio
 
     // Combo System
     COMBO_MULTIPLIERS: [1, 1.5, 2, 2.5, 3],
@@ -820,6 +821,10 @@ class Target {
                 // Heal UFO
                 ufo.health = Math.min(CONFIG.UFO_START_HEALTH, ufo.health + CONFIG.HEAL_PER_ABDUCTION);
 
+                // Restore energy proportional to points
+                const energyRestored = Math.floor(this.points * CONFIG.ENERGY_RESTORE_RATIO);
+                ufo.energy = Math.min(CONFIG.ENERGY_MAX, ufo.energy + energyRestored);
+
                 // Create floating score text
                 createFloatingText(this.x, this.y, `+${pointsEarned}`, '#0f0');
 
@@ -1513,6 +1518,10 @@ class Tank {
 
                 // Heal UFO
                 ufo.health = Math.min(CONFIG.UFO_START_HEALTH, ufo.health + CONFIG.HEAL_PER_ABDUCTION);
+
+                // Restore energy proportional to points
+                const energyRestored = Math.floor(CONFIG.TANK_POINTS * CONFIG.ENERGY_RESTORE_RATIO);
+                ufo.energy = Math.min(CONFIG.ENERGY_MAX, ufo.energy + energyRestored);
 
                 createFloatingText(this.x, this.y, `+${pointsEarned}`, '#0f0');
 
@@ -2392,6 +2401,10 @@ class HeavyTank {
                 // Heal UFO (more healing for heavy tank)
                 ufo.health = Math.min(CONFIG.UFO_START_HEALTH, ufo.health + CONFIG.HEAL_PER_ABDUCTION * 2);
 
+                // Restore energy proportional to points
+                const energyRestored = Math.floor(this.points * CONFIG.ENERGY_RESTORE_RATIO);
+                ufo.energy = Math.min(CONFIG.ENERGY_MAX, ufo.energy + energyRestored);
+
                 createFloatingText(this.x + this.width / 2, this.y, `+${pointsEarned}`, '#0f0');
 
                 // Update high score
@@ -3093,11 +3106,18 @@ function renderHarvestCounter() {
 }
 
 function renderActivePowerups() {
-    const barWidth = 160;
-    const barHeight = 20;
-    const padding = 6;
-    const startX = 12;
-    let y = 115; // Below wave/timer/combo line
+    // Match the margins from renderUI for consistent alignment
+    const panelMargin = 12;
+    const panelPadding = 15;
+    const scorePanelHeight = 70;
+
+    const barWidth = 175;
+    const barHeight = 18;
+    const barSpacing = 4;
+    const startX = panelMargin + panelPadding; // Align with score text (27px)
+
+    // Start below wave/timer line: panelMargin(12) + scorePanelHeight(70) + gap(10) + line height(~20) + gap(8)
+    let y = panelMargin + scorePanelHeight + 38;
 
     ctx.font = 'bold 11px monospace';
     ctx.textAlign = 'left';
@@ -3118,7 +3138,7 @@ function renderActivePowerups() {
         }
 
         // Background bar with rounded corners
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
         ctx.beginPath();
         ctx.roundRect(startX, y, barWidth, barHeight, 4);
         ctx.fill();
@@ -3140,20 +3160,13 @@ function renderActivePowerups() {
             }
         }
 
-        // Subtle border
-        ctx.strokeStyle = cfg.color;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.roundRect(startX, y, barWidth, barHeight, 4);
-        ctx.stroke();
-
         // Label (with shadow for readability)
         ctx.fillStyle = '#000';
-        ctx.fillText(label, startX + padding + 1, y + barHeight - padding + 1);
+        ctx.fillText(label, startX + 6, y + barHeight - 5);
         ctx.fillStyle = '#fff';
-        ctx.fillText(label, startX + padding, y + barHeight - padding);
+        ctx.fillText(label, startX + 5, y + barHeight - 6);
 
-        y += barHeight + 6;
+        y += barHeight + barSpacing;
     }
 }
 
