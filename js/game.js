@@ -582,6 +582,16 @@ let harvestCount = {
     tank: 0
 };
 
+// Bounce animation for harvest icons when a target is captured
+let harvestBounce = {
+    human: 0,
+    cow: 0,
+    sheep: 0,
+    cat: 0,
+    dog: 0,
+    tank: 0
+};
+
 // Wave system
 let wave = 1;
 let waveTimer = CONFIG.WAVE_DURATION;
@@ -798,8 +808,9 @@ class Target {
             if (this.abductionProgress >= this.abductionTime) {
                 this.alive = false;
                 SFX.abductionSuccess();
-                // Increment harvest counter
+                // Increment harvest counter and trigger bounce
                 harvestCount[this.type]++;
+                harvestBounce[this.type] = 1.0;
                 // Award points
                 const multiplier = CONFIG.COMBO_MULTIPLIERS[Math.min(combo, CONFIG.COMBO_MULTIPLIERS.length - 1)];
                 const pointsEarned = Math.floor(this.points * multiplier);
@@ -2847,6 +2858,7 @@ function startGame() {
     highlightedEntryId = null;
     // Reset harvest counters
     harvestCount = { human: 0, cow: 0, sheep: 0, cat: 0, dog: 0, tank: 0 };
+    harvestBounce = { human: 0, cow: 0, sheep: 0, cat: 0, dog: 0, tank: 0 };
     wave = 1;
     waveTimer = CONFIG.WAVE_DURATION;
     targetSpawnTimer = 0; // Spawn first target immediately
@@ -2918,7 +2930,7 @@ function renderUI() {
     ctx.fillStyle = '#888';
     ctx.fillText(hiText, panelMargin + panelPadding + 30, panelMargin + 55);
 
-    // ========== TOP LEFT: WAVE & TIMER (below score panel) ==========
+    // ========== TOP LEFT: WAVE, TIMER & COMBO (below score panel) ==========
     const infoY = panelMargin + scorePanelHeight + 10;
 
     ctx.fillStyle = '#fff';
@@ -2941,6 +2953,22 @@ function renderUI() {
         ctx.font = '18px monospace';
     }
     ctx.fillText(timeStr, panelMargin + panelPadding + 90, infoY + 18);
+
+    // Combo indicator (on same line as wave/timer)
+    if (combo > 0) {
+        const multiplier = CONFIG.COMBO_MULTIPLIERS[Math.min(combo, CONFIG.COMBO_MULTIPLIERS.length - 1)];
+
+        ctx.shadowColor = '#ff0';
+        ctx.shadowBlur = 8;
+        ctx.fillStyle = '#ff0';
+        ctx.font = 'bold 18px monospace';
+        ctx.fillText(`${combo}x`, panelMargin + panelPadding + 155, infoY + 18);
+        ctx.shadowBlur = 0;
+
+        ctx.fillStyle = '#ca0';
+        ctx.font = '14px monospace';
+        ctx.fillText(`(${multiplier}x)`, panelMargin + panelPadding + 190, infoY + 18);
+    }
 
     // ========== TOP RIGHT: SHIELD BAR ==========
     const shieldBarWidth = 180;
@@ -2990,7 +3018,7 @@ function renderUI() {
 
 function renderHarvestCounter() {
     const targetTypes = ['human', 'cow', 'sheep', 'cat', 'dog', 'tank'];
-    const iconSize = 24;
+    const baseIconSize = 24;
     const spacing = 50;
     const totalWidth = targetTypes.length * spacing;
     const panelWidth = totalWidth + 20;
@@ -3005,15 +3033,26 @@ function renderHarvestCounter() {
     ctx.fill();
 
     const startX = panelX + 10 + spacing / 2;
-    const y = panelY + 20;
+    const baseY = panelY + 20;
 
-    ctx.font = 'bold 12px monospace';
     ctx.textAlign = 'center';
 
     for (let i = 0; i < targetTypes.length; i++) {
         const type = targetTypes[i];
         const x = startX + i * spacing;
         const count = harvestCount[type];
+
+        // Calculate bounce effect (scale and vertical offset)
+        const bounce = harvestBounce[type];
+        const bounceScale = 1 + bounce * 0.5; // Scale up to 1.5x
+        const bounceY = -bounce * 8; // Move up slightly
+        const iconSize = baseIconSize * bounceScale;
+        const y = baseY + bounceY;
+
+        // Decay the bounce
+        if (harvestBounce[type] > 0) {
+            harvestBounce[type] = Math.max(0, harvestBounce[type] - 0.05);
+        }
 
         // Draw the target icon
         const img = images[type];
@@ -3041,9 +3080,15 @@ function renderHarvestCounter() {
             }
         }
 
-        // Draw the count below the icon
+        // Draw the count below the icon (with glow when bouncing)
+        if (bounce > 0.3) {
+            ctx.shadowColor = '#0f0';
+            ctx.shadowBlur = 10;
+        }
         ctx.fillStyle = count > 0 ? '#0f0' : '#555';
-        ctx.fillText(count.toString(), x, y + iconSize / 2 + 10);
+        ctx.font = bounce > 0.3 ? 'bold 14px monospace' : 'bold 12px monospace';
+        ctx.fillText(count.toString(), x, baseY + baseIconSize / 2 + 10);
+        ctx.shadowBlur = 0;
     }
 }
 
@@ -3052,7 +3097,7 @@ function renderActivePowerups() {
     const barHeight = 20;
     const padding = 6;
     const startX = 12;
-    let y = 140; // Below combo indicator
+    let y = 115; // Below wave/timer/combo line
 
     ctx.font = 'bold 11px monospace';
     ctx.textAlign = 'left';
@@ -4075,39 +4120,6 @@ function render() {
     // Render active powerup indicators
     renderActivePowerups();
 
-    // Render combo indicator
-    if (combo > 0) {
-        const multiplier = CONFIG.COMBO_MULTIPLIERS[Math.min(combo, CONFIG.COMBO_MULTIPLIERS.length - 1)];
-        const comboText = `${combo}x COMBO`;
-        const multiplierText = `${multiplier}x`;
-
-        // Combo badge with glow effect
-        const comboX = 27;
-        const comboY = 115;
-
-        // Glow
-        ctx.shadowColor = '#ff0';
-        ctx.shadowBlur = 10;
-
-        // Background pill
-        ctx.fillStyle = 'rgba(255, 200, 0, 0.3)';
-        ctx.beginPath();
-        ctx.roundRect(12, comboY - 14, 130, 24, 12);
-        ctx.fill();
-
-        ctx.shadowBlur = 0;
-
-        // Combo text
-        ctx.fillStyle = '#ff0';
-        ctx.font = 'bold 16px monospace';
-        ctx.textAlign = 'left';
-        ctx.fillText(comboText, comboX, comboY + 4);
-
-        // Multiplier in brighter color
-        ctx.fillStyle = '#fff';
-        ctx.font = 'bold 14px monospace';
-        ctx.fillText(multiplierText, comboX + 95, comboY + 4);
-    }
 
     // Timer critical warning (last 5 seconds)
     if (waveTimer <= 5 && waveTimer > 0) {
