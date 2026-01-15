@@ -3410,7 +3410,7 @@ function renderTitleScreen() {
             const lastPlayed = activityStats.lastGamePlayed
                 ? `Last played: ${formatRelativeDate(activityStats.lastGamePlayed)}`
                 : '';
-            const gamesWeek = `${activityStats.gamesThisWeek} games this week`;
+            const gamesWeek = `${activityStats.gamesThisWeek} ${activityStats.gamesThisWeek === 1 ? 'game' : 'games'} this week`;
             const statsText = lastPlayed ? `${lastPlayed}  •  ${gamesWeek}` : gamesWeek;
             ctx.fillText(statsText, canvas.width / 2, canvas.height / 2 - 70);
         }
