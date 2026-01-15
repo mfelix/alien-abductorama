@@ -600,6 +600,21 @@ let titleUfo = {
     beamRotation: 0
 };
 
+// Name entry screen UFO animation state (celebratory!)
+let nameEntryUfo = {
+    x: 0,
+    y: 0,
+    baseY: 0,
+    hoverPhase: 0,
+    pulsePhase: 0,
+    glowIntensity: 0,
+    initialized: false
+};
+
+// Name entry celebration state
+let celebrationTimer = 0;
+let confettiSpawnTimer = 0;
+
 // Title screen humans for beam animation
 let titleHumans = [];
 
@@ -643,6 +658,7 @@ window.addEventListener('keydown', (e) => {
             const name = nameEntryChars.join('');
             submitScore(name).then(rank => {
                 newHighScoreRank = rank;
+                nameEntryUfo.initialized = false;  // Reset for next time
                 gameState = 'TITLE';
                 fetchLeaderboard(); // Refresh leaderboard after submission
             });
@@ -2782,6 +2798,9 @@ function scoreQualifiesForLeaderboard() {
 }
 
 function createCelebrationEffect() {
+    // Initialize the celebratory UFO for name entry screen
+    initNameEntryUfo();
+
     // Create rising beam-like particles in cyan/magenta theme
     const colors = [
         'rgb(0, 255, 255)',   // Cyan
@@ -3291,23 +3310,225 @@ function renderTitleUfo() {
     ctx.restore();
 }
 
+// ============================================
+// NAME ENTRY CELEBRATION SYSTEM
+// ============================================
+
+function initNameEntryUfo() {
+    nameEntryUfo.x = canvas.width / 2;
+    nameEntryUfo.baseY = canvas.height / 8;
+    nameEntryUfo.y = nameEntryUfo.baseY;
+    nameEntryUfo.hoverPhase = 0;
+    nameEntryUfo.pulsePhase = 0;
+    nameEntryUfo.glowIntensity = 0;
+    nameEntryUfo.initialized = true;
+    celebrationTimer = 0;
+    confettiSpawnTimer = 0;
+}
+
+function updateNameEntryUfo(dt) {
+    if (!nameEntryUfo.initialized) {
+        initNameEntryUfo();
+    }
+
+    // Gentle hovering motion
+    nameEntryUfo.hoverPhase += 2 * dt;
+    nameEntryUfo.y = nameEntryUfo.baseY + Math.sin(nameEntryUfo.hoverPhase) * 12;
+
+    // Pulsing glow effect
+    nameEntryUfo.pulsePhase += 4 * dt;
+    nameEntryUfo.glowIntensity = 0.5 + Math.sin(nameEntryUfo.pulsePhase) * 0.3;
+
+    // Update celebration timer
+    celebrationTimer += dt;
+    confettiSpawnTimer += dt;
+
+    // Spawn confetti periodically
+    if (confettiSpawnTimer > 0.08) {
+        confettiSpawnTimer = 0;
+        spawnCelebrationConfetti();
+    }
+}
+
+function spawnCelebrationConfetti() {
+    // Confetti colors - bright and joyful
+    const confettiColors = [
+        'rgb(255, 215, 0)',   // Gold
+        'rgb(255, 0, 128)',   // Hot pink
+        'rgb(0, 255, 255)',   // Cyan
+        'rgb(255, 255, 0)',   // Yellow
+        'rgb(128, 0, 255)',   // Purple
+        'rgb(0, 255, 128)',   // Mint
+        'rgb(255, 128, 0)',   // Orange
+    ];
+
+    // Spawn from random positions along the top
+    const x = Math.random() * canvas.width;
+    const y = -10;
+
+    // Gentle falling with some horizontal drift
+    const vx = (Math.random() - 0.5) * 60;
+    const vy = 80 + Math.random() * 60;
+
+    const color = confettiColors[Math.floor(Math.random() * confettiColors.length)];
+    const size = 3 + Math.random() * 5;
+    const lifetime = 3 + Math.random() * 2;
+
+    particles.push(new Particle(x, y, vx, vy, color, size, lifetime));
+
+    // Also spawn some sparkles around the UFO
+    if (Math.random() < 0.3 && nameEntryUfo.initialized) {
+        const sparkleX = nameEntryUfo.x + (Math.random() - 0.5) * 200;
+        const sparkleY = nameEntryUfo.y + (Math.random() - 0.5) * 80;
+        const sparkleVx = (Math.random() - 0.5) * 40;
+        const sparkleVy = -20 - Math.random() * 30;
+        const sparkleColor = confettiColors[Math.floor(Math.random() * confettiColors.length)];
+        particles.push(new Particle(sparkleX, sparkleY, sparkleVx, sparkleVy, sparkleColor, 2 + Math.random() * 3, 0.8));
+    }
+}
+
+function renderNameEntryUfo() {
+    if (!nameEntryUfo.initialized) return;
+
+    const ufoWidth = 180;  // Bigger than title UFO!
+    const ufoHeight = 90;
+    const drawX = nameEntryUfo.x - ufoWidth / 2;
+    const drawY = nameEntryUfo.y - ufoHeight / 2;
+
+    ctx.save();
+
+    // Rainbow cycling glow effect
+    const hue = (celebrationTimer * 60) % 360;
+    const glowColor = `hsla(${hue}, 100%, 60%, ${nameEntryUfo.glowIntensity})`;
+    ctx.shadowColor = glowColor;
+    ctx.shadowBlur = 40 + Math.sin(nameEntryUfo.pulsePhase * 2) * 15;
+
+    // Draw the UFO
+    if (images.ufo && images.ufo.complete) {
+        ctx.drawImage(images.ufo, drawX, drawY, ufoWidth, ufoHeight);
+    } else {
+        // Fallback placeholder
+        ctx.fillStyle = '#888';
+        ctx.fillRect(drawX, drawY, ufoWidth, ufoHeight);
+        ctx.fillStyle = '#0ff';
+        ctx.fillRect(drawX + 10, drawY + 10, ufoWidth - 20, ufoHeight - 20);
+    }
+
+    ctx.restore();
+
+    // Draw celebratory light beams emanating from UFO
+    renderCelebrationBeams();
+}
+
+function renderCelebrationBeams() {
+    const beamCount = 8;
+    const centerX = nameEntryUfo.x;
+    const centerY = nameEntryUfo.y + 30;
+
+    ctx.save();
+
+    for (let i = 0; i < beamCount; i++) {
+        const baseAngle = (i / beamCount) * Math.PI * 2;
+        const angle = baseAngle + celebrationTimer * 0.5;
+        const length = 60 + Math.sin(celebrationTimer * 3 + i) * 20;
+
+        const hue = (celebrationTimer * 50 + i * 45) % 360;
+        const alpha = 0.3 + Math.sin(celebrationTimer * 4 + i * 0.5) * 0.2;
+
+        const gradient = ctx.createLinearGradient(
+            centerX, centerY,
+            centerX + Math.cos(angle) * length,
+            centerY + Math.sin(angle) * length
+        );
+        gradient.addColorStop(0, `hsla(${hue}, 100%, 70%, ${alpha})`);
+        gradient.addColorStop(1, `hsla(${hue}, 100%, 70%, 0)`);
+
+        ctx.strokeStyle = gradient;
+        ctx.lineWidth = 8;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(centerX, centerY);
+        ctx.lineTo(centerX + Math.cos(angle) * length, centerY + Math.sin(angle) * length);
+        ctx.stroke();
+    }
+
+    ctx.restore();
+}
+
 function renderNameEntryScreen() {
     renderBackground();
 
-    ctx.fillStyle = '#ff0';
+    // Update and render the celebratory UFO
+    updateNameEntryUfo(1/60);  // Approximate dt
+
+    // Render the big celebratory UFO floating above the text
+    renderNameEntryUfo();
+
+    // Animated "NEW HIGH SCORE!" text with rainbow colors and wave effect
+    const titleText = 'NEW HIGH SCORE!';
+    const titleY = canvas.height / 4 + 30;  // Positioned below UFO
+    const titleX = canvas.width / 2;
+
     ctx.font = 'bold 48px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('NEW HIGH SCORE!', canvas.width / 2, canvas.height / 4);
 
+    // Measure total width to center letters
+    const totalWidth = ctx.measureText(titleText).width;
+    let currentX = titleX - totalWidth / 2;
+
+    // Draw pulsing glow behind text
+    const glowPulse = Math.sin(celebrationTimer * 3) * 0.3 + 0.7;
+    ctx.save();
+    ctx.shadowColor = `rgba(255, 215, 0, ${glowPulse})`;
+    ctx.shadowBlur = 30 + Math.sin(celebrationTimer * 2) * 10;
+    ctx.fillStyle = 'transparent';
+    ctx.fillText(titleText, titleX, titleY);
+    ctx.restore();
+
+    // Draw each letter with rainbow color and wave effect
+    ctx.textAlign = 'left';
+    for (let i = 0; i < titleText.length; i++) {
+        const char = titleText[i];
+        const charWidth = ctx.measureText(char).width;
+
+        // Rainbow color cycling
+        const hue = (celebrationTimer * 80 + i * 25) % 360;
+        ctx.fillStyle = `hsl(${hue}, 100%, 60%)`;
+
+        // Wavy vertical offset
+        const waveOffset = Math.sin(celebrationTimer * 4 + i * 0.5) * 8;
+
+        // Add glow matching letter color
+        ctx.shadowColor = `hsl(${hue}, 100%, 50%)`;
+        ctx.shadowBlur = 15;
+
+        ctx.fillText(char, currentX, titleY + waveOffset);
+        currentX += charWidth;
+    }
+
+    // Reset styles
+    ctx.shadowBlur = 0;
+    ctx.textAlign = 'center';
+
+    // Score display with golden glow
+    ctx.save();
+    ctx.shadowColor = '#ffd700';
+    ctx.shadowBlur = 10;
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 32px monospace';
-    ctx.fillText(`SCORE: ${finalScore.toLocaleString()}`, canvas.width / 2, canvas.height / 4 + 50);
+    ctx.fillText(`SCORE: ${finalScore.toLocaleString()}`, canvas.width / 2, canvas.height / 4 + 85);
+    ctx.restore();
 
-    // Show potential rank
+    // Show potential rank with pulsing effect
     const potentialRank = leaderboard.filter(e => e.score > finalScore).length + 1;
-    ctx.fillStyle = '#0f0';
-    ctx.font = 'bold 24px monospace';
-    ctx.fillText(`RANK #${potentialRank}`, canvas.width / 2, canvas.height / 4 + 90);
+    const rankPulse = 0.8 + Math.sin(celebrationTimer * 5) * 0.2;
+    ctx.save();
+    ctx.shadowColor = '#0f0';
+    ctx.shadowBlur = 15 * rankPulse;
+    ctx.fillStyle = `rgba(0, 255, 0, ${rankPulse})`;
+    ctx.font = 'bold 28px monospace';
+    ctx.fillText(`RANK #${potentialRank}`, canvas.width / 2, canvas.height / 4 + 125);
+    ctx.restore();
 
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 32px monospace';
