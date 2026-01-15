@@ -562,6 +562,12 @@ let finalScore = 0;
 let finalWave = 0;
 let finalGameLength = 0;
 
+// Name entry state
+let nameEntryChars = ['A', 'A', 'A'];
+let nameEntryPosition = 0;
+let nameEntryComplete = false;
+let newHighScoreRank = null;
+
 // Harvest counter - tracks how many of each target type has been abducted
 let harvestCount = {
     human: 0,
@@ -608,6 +614,40 @@ window.addEventListener('keydown', (e) => {
     // Initialize audio on first user interaction
     if (!audioInitialized) {
         initAudio();
+    }
+
+    // Handle name entry input
+    if (gameState === 'NAME_ENTRY') {
+        // Prevent arrow keys from scrolling page
+        if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter'].includes(e.key)) {
+            e.preventDefault();
+        }
+
+        if (e.key === 'ArrowUp') {
+            // Next letter (A-Z wrap)
+            const code = nameEntryChars[nameEntryPosition].charCodeAt(0);
+            nameEntryChars[nameEntryPosition] = String.fromCharCode(code === 90 ? 65 : code + 1);
+        } else if (e.key === 'ArrowDown') {
+            // Previous letter
+            const code = nameEntryChars[nameEntryPosition].charCodeAt(0);
+            nameEntryChars[nameEntryPosition] = String.fromCharCode(code === 65 ? 90 : code - 1);
+        } else if (e.key === 'ArrowLeft') {
+            nameEntryPosition = Math.max(0, nameEntryPosition - 1);
+        } else if (e.key === 'ArrowRight') {
+            nameEntryPosition = Math.min(2, nameEntryPosition + 1);
+        } else if (e.key === 'Enter') {
+            const name = nameEntryChars.join('');
+            submitScore(name).then(rank => {
+                newHighScoreRank = rank;
+                gameState = 'GAME_OVER';
+                fetchLeaderboard(); // Refresh leaderboard after submission
+            });
+        } else if (/^[A-Za-z]$/.test(e.key)) {
+            // Direct letter input
+            nameEntryChars[nameEntryPosition] = e.key.toUpperCase();
+            nameEntryPosition = Math.min(2, nameEntryPosition + 1);
+        }
+        return;
     }
 
     // Handle game state transitions
@@ -2609,13 +2649,31 @@ function triggerGameOver() {
 
     // Delay game over screen longer to see the full explosion
     setTimeout(() => {
-        gameState = 'GAME_OVER';
+        if (scoreQualifiesForLeaderboard()) {
+            // Reset name entry state
+            nameEntryChars = ['A', 'A', 'A'];
+            nameEntryPosition = 0;
+            gameState = 'NAME_ENTRY';
+        } else {
+            gameState = 'GAME_OVER';
+        }
     }, 1200);
 }
 
 // ============================================
 // LEADERBOARD FUNCTIONS
 // ============================================
+
+function countryCodeToFlag(countryCode) {
+    if (!countryCode || countryCode.length !== 2 || countryCode === 'XX') {
+        return '🌍'; // Globe for unknown
+    }
+    // Convert country code to regional indicator symbols
+    const codePoints = [...countryCode.toUpperCase()].map(
+        char => 0x1F1E6 - 65 + char.charCodeAt(0)
+    );
+    return String.fromCodePoint(...codePoints);
+}
 
 async function fetchLeaderboard() {
     try {
@@ -3144,6 +3202,56 @@ function renderTitleUfo() {
     ctx.restore();
 }
 
+function renderNameEntryScreen() {
+    renderBackground();
+
+    ctx.fillStyle = '#ff0';
+    ctx.font = 'bold 48px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('NEW HIGH SCORE!', canvas.width / 2, canvas.height / 4);
+
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 32px monospace';
+    ctx.fillText(`SCORE: ${finalScore.toLocaleString()}`, canvas.width / 2, canvas.height / 4 + 50);
+
+    // Show potential rank
+    const potentialRank = leaderboard.filter(e => e.score > finalScore).length + 1;
+    ctx.fillStyle = '#0f0';
+    ctx.font = 'bold 24px monospace';
+    ctx.fillText(`RANK #${potentialRank}`, canvas.width / 2, canvas.height / 4 + 90);
+
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 32px monospace';
+    ctx.fillText('ENTER YOUR NAME', canvas.width / 2, canvas.height / 2 - 40);
+
+    // Draw the 3 letter slots
+    const slotWidth = 60;
+    const startX = canvas.width / 2 - slotWidth;
+    const y = canvas.height / 2 + 20;
+
+    for (let i = 0; i < 3; i++) {
+        const x = startX + i * slotWidth;
+
+        // Highlight current position
+        if (i === nameEntryPosition) {
+            ctx.fillStyle = '#0ff';
+            // Draw selection arrows
+            ctx.font = 'bold 24px monospace';
+            ctx.fillText('▲', x, y - 50);
+            ctx.fillText('▼', x, y + 60);
+        } else {
+            ctx.fillStyle = '#fff';
+        }
+
+        ctx.font = 'bold 48px monospace';
+        ctx.fillText(nameEntryChars[i], x, y);
+    }
+
+    ctx.fillStyle = '#aaa';
+    ctx.font = '18px monospace';
+    ctx.fillText('↑↓ Change Letter    ←→ Move    ENTER Submit', canvas.width / 2, canvas.height - 100);
+}
+
 function renderTitleScreen() {
     renderBackground();
 
@@ -3206,16 +3314,46 @@ function renderTitleScreen() {
     ctx.textAlign = 'center';
     ctx.fillStyle = '#fff';
 
-    // Flashing "Press ENTER" text
-    if (Math.floor(Date.now() / 500) % 2 === 0) {
-        ctx.font = 'bold 32px monospace';
-        ctx.fillText('Press any key to get started', canvas.width / 2, canvas.height / 2);
+    // Leaderboard
+    if (leaderboard.length > 0) {
+        ctx.fillStyle = '#0ff';
+        ctx.font = 'bold 24px monospace';
+        ctx.fillText('TOP 10', canvas.width / 2, canvas.height / 2 - 20);
+
+        ctx.font = '18px monospace';
+        const startY = canvas.height / 2 + 10;
+        const lineHeight = 26;
+
+        for (let i = 0; i < leaderboard.length; i++) {
+            const entry = leaderboard[i];
+            const y = startY + i * lineHeight;
+            const flag = countryCodeToFlag(entry.countryCode);
+
+            // Rank
+            ctx.fillStyle = i < 3 ? '#ff0' : '#fff';
+            ctx.textAlign = 'right';
+            ctx.fillText(`${i + 1}.`, canvas.width / 2 - 120, y);
+
+            // Flag and Name
+            ctx.textAlign = 'left';
+            ctx.fillText(`${flag} ${entry.name}`, canvas.width / 2 - 100, y);
+
+            // Score
+            ctx.textAlign = 'right';
+            ctx.fillText(entry.score.toLocaleString(), canvas.width / 2 + 80, y);
+
+            // Wave
+            ctx.fillStyle = '#888';
+            ctx.fillText(`W${entry.wave}`, canvas.width / 2 + 130, y);
+        }
+        ctx.textAlign = 'center';
     }
 
-    // High score
-    if (highScore > 0) {
-        ctx.font = 'bold 24px monospace';
-        ctx.fillText(`HIGH SCORE: ${highScore}`, canvas.width / 2, canvas.height / 2 + 60);
+    // Flashing "Press any key" text
+    if (Math.floor(Date.now() / 500) % 2 === 0) {
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 32px monospace';
+        ctx.fillText('Press any key to get started', canvas.width / 2, canvas.height - 150);
     }
 
     // Instructions
@@ -3365,6 +3503,10 @@ function gameLoop(timestamp) {
 
         case 'GAME_OVER':
             renderGameOverScreen();
+            break;
+
+        case 'NAME_ENTRY':
+            renderNameEntryScreen();
             break;
 
         case 'WAVE_TRANSITION':
