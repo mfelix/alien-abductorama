@@ -4,7 +4,7 @@ const { execSync } = require('child_process');
 const CHANGELOG_FILE = 'changelog.json';
 const OUTPUT_FILE = 'js/changelog.js';
 const MAX_ENTRIES = 5;
-const MAX_MESSAGE_LENGTH = 50;
+const MAX_MESSAGE_LENGTH = 80;
 
 function truncate(msg) {
     if (msg.length <= MAX_MESSAGE_LENGTH) return msg;

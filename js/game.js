@@ -4047,6 +4047,28 @@ function renderChangelog(startY) {
     };
 }
 
+function wrapText(text, maxWidth) {
+    const words = text.split(' ');
+    const lines = [];
+    let currentLine = '';
+
+    ctx.font = '14px monospace';
+    for (const word of words) {
+        const testLine = currentLine ? currentLine + ' ' + word : word;
+        const metrics = ctx.measureText(testLine);
+        if (metrics.width > maxWidth && currentLine) {
+            lines.push(currentLine);
+            currentLine = word;
+        } else {
+            currentLine = testLine;
+        }
+    }
+    if (currentLine) {
+        lines.push(currentLine);
+    }
+    return lines;
+}
+
 function renderChangelogModal() {
     if (!changelogModalOpen) return;
 
@@ -4059,7 +4081,19 @@ function renderChangelogModal() {
 
     // Modal box
     const modalWidth = 600;
-    const modalHeight = Math.min(350, 100 + entries.length * 35);
+    const contentWidth = modalWidth - 60; // Padding for text wrapping
+
+    // Pre-calculate total height needed for wrapped text
+    ctx.font = '14px monospace';
+    let totalEntryHeight = 0;
+    const wrappedEntries = entries.map(entry => {
+        const lines = wrapText(`★ ${entry.message}`, contentWidth);
+        const entryHeight = lines.length * 18 + 22; // line height + date + spacing
+        totalEntryHeight += entryHeight;
+        return { ...entry, lines, entryHeight };
+    });
+
+    const modalHeight = Math.min(450, 100 + totalEntryHeight);
     const modalX = (canvas.width - modalWidth) / 2;
     const modalY = (canvas.height - modalHeight) / 2;
 
@@ -4076,22 +4110,13 @@ function renderChangelogModal() {
     ctx.textAlign = 'center';
     ctx.fillText('RECENT UPDATES', canvas.width / 2, modalY + 35);
 
-    // Entries
+    // Entries with word wrap
     ctx.font = '14px monospace';
-    const lineHeight = 35;
-    const startEntryY = modalY + 70;
-    const maxMessageLength = 45;
+    let currentY = modalY + 70;
 
-    for (let i = 0; i < entries.length; i++) {
-        const entry = entries[i];
+    for (let i = 0; i < wrappedEntries.length; i++) {
+        const entry = wrappedEntries[i];
         const dateText = formatRelativeDate(entry.timestamp);
-
-        let message = entry.message;
-        if (message.length > maxMessageLength) {
-            message = message.slice(0, maxMessageLength - 3) + '...';
-        }
-
-        const y = startEntryY + i * lineHeight;
 
         // Fade older entries
         if (i === 0) {
@@ -4104,11 +4129,18 @@ function renderChangelogModal() {
             ctx.fillStyle = '#555';
         }
 
-        ctx.fillText(`★ ${message}`, canvas.width / 2, y);
+        // Draw wrapped message lines
+        ctx.font = '14px monospace';
+        for (let j = 0; j < entry.lines.length; j++) {
+            ctx.fillText(entry.lines[j], canvas.width / 2, currentY + j * 18);
+        }
+
+        // Draw date below message
         ctx.fillStyle = '#444';
         ctx.font = '12px monospace';
-        ctx.fillText(dateText, canvas.width / 2, y + 16);
-        ctx.font = '14px monospace';
+        ctx.fillText(dateText, canvas.width / 2, currentY + entry.lines.length * 18 + 4);
+
+        currentY += entry.entryHeight;
     }
 
     // Close hint
