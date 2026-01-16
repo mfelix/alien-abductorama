@@ -632,8 +632,9 @@ let titleHumans = [];
 // Title animation state
 let titleAnimPhase = 0;
 
-// Changelog expand/collapse state
-let changelogExpanded = false;
+// Changelog modal state
+let changelogModalOpen = false;
+let changelogClickBounds = null; // {x, y, width, height} for click detection
 
 // ============================================
 // INPUT HANDLING
@@ -686,9 +687,11 @@ window.addEventListener('keydown', (e) => {
 
     // Handle game state transitions
     if (gameState === 'TITLE' && e.code === 'Space') {
-        startGame();
-    } else if (gameState === 'TITLE' && e.code === 'KeyU') {
-        changelogExpanded = !changelogExpanded;
+        if (!changelogModalOpen) {
+            startGame();
+        }
+    } else if (gameState === 'TITLE' && e.code === 'Escape') {
+        changelogModalOpen = false;
     } else if (gameState === 'GAME_OVER' && e.code === 'Enter') {
         startGame();
     }
@@ -696,6 +699,35 @@ window.addEventListener('keydown', (e) => {
 
 window.addEventListener('keyup', (e) => {
     keys[e.code] = false;
+});
+
+// Click handler for changelog modal
+canvas.addEventListener('click', (e) => {
+    if (gameState !== 'TITLE') return;
+
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const x = (e.clientX - rect.left) * scaleX;
+    const y = (e.clientY - rect.top) * scaleY;
+
+    if (changelogModalOpen) {
+        // Click outside modal closes it
+        const modalWidth = 500;
+        const modalHeight = 300;
+        const modalX = (canvas.width - modalWidth) / 2;
+        const modalY = (canvas.height - modalHeight) / 2;
+
+        if (x < modalX || x > modalX + modalWidth || y < modalY || y > modalY + modalHeight) {
+            changelogModalOpen = false;
+        }
+    } else if (changelogClickBounds) {
+        // Check if click is within changelog area
+        const b = changelogClickBounds;
+        if (x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height) {
+            changelogModalOpen = true;
+        }
+    }
 });
 
 // ============================================
@@ -3699,58 +3731,125 @@ function renderNameEntryScreen() {
     ctx.fillText('↑↓ Change Letter    ←→ Move    ENTER Submit', canvas.width / 2, canvas.height - 100);
 }
 
-function renderChangelog() {
+function getChangelogSorted() {
     if (typeof CHANGELOG === 'undefined' || !CHANGELOG || CHANGELOG.length === 0) {
+        return [];
+    }
+    // Sort by timestamp descending (newest first)
+    return [...CHANGELOG].sort((a, b) => b.timestamp - a.timestamp);
+}
+
+function renderChangelog(startY) {
+    const entries = getChangelogSorted();
+    if (entries.length === 0) {
+        changelogClickBounds = null;
         return;
     }
 
-    const startY = canvas.height / 3 + 45;
-    const lineHeight = 17;
-    const maxEntries = 5;
     const maxMessageLength = 50;
 
-    // Header with expand/collapse indicator
-    ctx.fillStyle = '#0aa';
-    ctx.font = 'bold 12px monospace';
-    const hasMore = CHANGELOG.length > 1;
-    const indicator = changelogExpanded ? '[-]' : '[+]';
-    const headerText = hasMore ? `RECENT UPDATES ${indicator}` : 'RECENT UPDATE';
-    ctx.fillText(headerText, canvas.width / 2, startY);
+    // Get the newest entry
+    const entry = entries[0];
+    const dateText = formatRelativeDate(entry.timestamp);
+
+    let message = entry.message;
+    if (message.length > maxMessageLength) {
+        message = message.slice(0, maxMessageLength - 3) + '...';
+    }
+
+    const text = `★ ${message} (${dateText})`;
+
+    // Draw the single entry
+    ctx.fillStyle = '#666';
+    ctx.font = '13px monospace';
+    ctx.fillText(text, canvas.width / 2, startY);
+
+    // "Click for more" hint if there are more entries
+    if (entries.length > 1) {
+        ctx.fillStyle = '#0aa';
+        ctx.font = '11px monospace';
+        ctx.fillText('Click for more updates', canvas.width / 2, startY + 16);
+    }
+
+    // Track click bounds for the entire changelog area
+    const textWidth = ctx.measureText(text).width;
+    const areaHeight = entries.length > 1 ? 35 : 20;
+    changelogClickBounds = {
+        x: canvas.width / 2 - textWidth / 2 - 10,
+        y: startY - 15,
+        width: textWidth + 20,
+        height: areaHeight
+    };
+}
+
+function renderChangelogModal() {
+    if (!changelogModalOpen) return;
+
+    const entries = getChangelogSorted();
+    if (entries.length === 0) return;
+
+    // Semi-transparent overlay
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Modal box
+    const modalWidth = 600;
+    const modalHeight = Math.min(350, 100 + entries.length * 35);
+    const modalX = (canvas.width - modalWidth) / 2;
+    const modalY = (canvas.height - modalHeight) / 2;
+
+    // Modal background with border
+    ctx.fillStyle = '#111';
+    ctx.fillRect(modalX, modalY, modalWidth, modalHeight);
+    ctx.strokeStyle = '#0aa';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(modalX, modalY, modalWidth, modalHeight);
+
+    // Modal title
+    ctx.fillStyle = '#0ff';
+    ctx.font = 'bold 20px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('RECENT UPDATES', canvas.width / 2, modalY + 35);
 
     // Entries
-    ctx.font = '13px monospace';
-    const entriesToShow = changelogExpanded ? Math.min(CHANGELOG.length, maxEntries) : 1;
+    ctx.font = '14px monospace';
+    const lineHeight = 35;
+    const startEntryY = modalY + 70;
+    const maxMessageLength = 45;
 
-    for (let i = 0; i < entriesToShow; i++) {
-        const entry = CHANGELOG[i];
+    for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i];
         const dateText = formatRelativeDate(entry.timestamp);
 
-        // Truncate message if needed (belt and suspenders - should already be truncated)
         let message = entry.message;
         if (message.length > maxMessageLength) {
             message = message.slice(0, maxMessageLength - 3) + '...';
         }
 
-        const text = `★ ${message} (${dateText})`;
+        const y = startEntryY + i * lineHeight;
 
         // Fade older entries
         if (i === 0) {
-            ctx.fillStyle = '#888';
+            ctx.fillStyle = '#aaa';
         } else if (i === 1) {
+            ctx.fillStyle = '#888';
+        } else if (i === 2) {
             ctx.fillStyle = '#666';
         } else {
             ctx.fillStyle = '#555';
         }
 
-        ctx.fillText(text, canvas.width / 2, startY + 17 + i * lineHeight);
+        ctx.fillText(`★ ${message}`, canvas.width / 2, y);
+        ctx.fillStyle = '#444';
+        ctx.font = '12px monospace';
+        ctx.fillText(dateText, canvas.width / 2, y + 16);
+        ctx.font = '14px monospace';
     }
 
-    // Hint for expansion (only in collapsed state with more entries)
-    if (!changelogExpanded && CHANGELOG.length > 1) {
-        ctx.fillStyle = '#444';
-        ctx.font = '11px monospace';
-        ctx.fillText('Press U for more', canvas.width / 2, startY + 17 + lineHeight + 5);
-    }
+    // Close hint
+    ctx.fillStyle = '#555';
+    ctx.font = '12px monospace';
+    ctx.fillText('Click outside or press ESC to close', canvas.width / 2, modalY + modalHeight - 15);
 }
 
 function renderTitleScreen() {
@@ -3814,9 +3913,6 @@ function renderTitleScreen() {
     ctx.shadowBlur = 0;
     ctx.textAlign = 'center';
     ctx.fillStyle = '#fff';
-
-    // Changelog section
-    renderChangelog();
 
     // Leaderboard
     if (leaderboardLoading) {
@@ -3885,6 +3981,10 @@ function renderTitleScreen() {
         ctx.textAlign = 'center';
     }
 
+    // Changelog below leaderboard (position after 10 entries at lineHeight 26)
+    const changelogY = canvas.height / 2 + 10 + 10 * 26 + 20;
+    renderChangelog(changelogY);
+
     // Flashing "Press any key" text
     if (Math.floor(Date.now() / 500) % 2 === 0) {
         ctx.fillStyle = '#fff';
@@ -3901,6 +4001,9 @@ function renderTitleScreen() {
     ctx.font = '14px monospace';
     ctx.fillStyle = '#fff';
     ctx.fillText('Built by Ruby, Odessa, & Papa!!! We hope you love it and have fun!', canvas.width / 2, canvas.height - 30);
+
+    // Changelog modal (rendered last to overlay everything)
+    renderChangelogModal();
 }
 
 function renderGameOverScreen() {
