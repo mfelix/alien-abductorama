@@ -3,7 +3,6 @@ const { execSync } = require('child_process');
 
 const CHANGELOG_FILE = 'changelog.json';
 const OUTPUT_FILE = 'js/changelog.js';
-const MAX_ENTRIES = 5;
 const MAX_MESSAGE_LENGTH = 80;
 
 function truncate(msg) {
@@ -45,9 +44,8 @@ if (command === 'add') {
         timestamp: Date.now()
     });
 
-    const trimmed = entries.slice(0, MAX_ENTRIES);
-    saveChangelog(trimmed);
-    writeOutput(trimmed);
+    saveChangelog(entries);
+    writeOutput(entries);
     console.log(`Added: "${truncate(message)}"`);
 
 } else if (command === 'from-git') {
@@ -89,9 +87,8 @@ if (command === 'add') {
             timestamp: gitTimestamp
         });
 
-        const trimmed = entries.slice(0, MAX_ENTRIES);
-        saveChangelog(trimmed);
-        writeOutput(trimmed);
+        saveChangelog(entries);
+        writeOutput(entries);
         console.log(`Added from git: "${truncate(gitMessage)}"`);
 
     } catch (err) {

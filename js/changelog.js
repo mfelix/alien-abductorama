@@ -1,6 +1,10 @@
 // Auto-generated changelog - do not edit manually
 const CHANGELOG = [
   {
+    "message": "Changelog panel: bigger fonts, brighter colors, word wrap for full messages",
+    "timestamp": 1768604640000
+  },
+  {
     "message": "Redesign changelog: right column panel layout with title bar and row borders",
     "timestamp": 1768603722000
   },

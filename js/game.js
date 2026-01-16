@@ -622,6 +622,8 @@ let gameStartTime = 0;
 let leaderboard = [];
 let leaderboardLoading = false;
 let activityStats = null;
+let changelogScrollOffset = 0;
+let changelogPanelBounds = null; // { x, y, width, height } for hit testing
 let submissionError = null;
 let pendingScoreSubmission = null;
 let highlightedEntryId = null; // Track player's newly submitted score for highlighting
@@ -756,6 +758,24 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keyup', (e) => {
     keys[e.code] = false;
 });
+
+// Changelog panel scroll support
+canvas.addEventListener('wheel', (e) => {
+    if (gameState !== 'TITLE' || !changelogPanelBounds) return;
+
+    // Check if mouse is over the changelog panel
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const mouseY = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+    const b = changelogPanelBounds;
+    if (mouseX >= b.x && mouseX <= b.x + b.width &&
+        mouseY >= b.y && mouseY <= b.y + b.height) {
+        e.preventDefault();
+        changelogScrollOffset += e.deltaY * 0.5;
+        // Clamp will happen in render function when we know content height
+    }
+}, { passive: false });
 
 // ============================================
 // ASSET LOADING
@@ -3986,6 +4006,29 @@ function wrapTextToLines(text, maxWidth, font) {
     return lines;
 }
 
+function getDayLabel(timestamp) {
+    const now = new Date();
+    const date = new Date(timestamp);
+
+    // Reset to start of day for comparison
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const entryDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const diffDays = Math.floor((today - entryDay) / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+
+    // Format as "Jan 15" or "Jan 15, 2025" if different year
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const monthName = months[date.getMonth()];
+    const day = date.getDate();
+
+    if (date.getFullYear() !== now.getFullYear()) {
+        return `${monthName} ${day}, ${date.getFullYear()}`;
+    }
+    return `${monthName} ${day}`;
+}
+
 function renderChangelogPanel() {
     const entries = getChangelogSorted();
     if (entries.length === 0) return;
@@ -3994,24 +4037,50 @@ function renderChangelogPanel() {
     const panelWidth = 320;
     const panelPadding = 16;
     const titleBarHeight = 36;
+    const maxContentHeight = 400; // Fixed scrollable area height
     const messageFont = '13px monospace';
-    const dateFont = '11px monospace';
     const lineHeight = 17;
-    const dateLineHeight = 20;
-    const entryPadding = 12;
+    const entryPadding = 10;
+    const dayHeaderHeight = 28;
 
-    // Pre-calculate wrapped text and total height
+    // Group entries by day
     const contentWidth = panelWidth - (panelPadding * 2);
-    const wrappedEntries = entries.map(entry => {
-        const lines = wrapTextToLines(`★ ${entry.message}`, contentWidth, messageFont);
-        const entryHeight = (lines.length * lineHeight) + dateLineHeight + entryPadding;
-        return { ...entry, lines, entryHeight };
-    });
+    const dayGroups = [];
+    let currentDayLabel = null;
 
-    const totalContentHeight = wrappedEntries.reduce((sum, e) => sum + e.entryHeight, 0);
-    const panelHeight = titleBarHeight + totalContentHeight + panelPadding;
+    for (const entry of entries) {
+        const dayLabel = getDayLabel(entry.timestamp);
+        const lines = wrapTextToLines(`★ ${entry.message}`, contentWidth, messageFont);
+        const entryHeight = (lines.length * lineHeight) + entryPadding;
+
+        if (dayLabel !== currentDayLabel) {
+            dayGroups.push({
+                type: 'header',
+                label: dayLabel,
+                height: dayHeaderHeight
+            });
+            currentDayLabel = dayLabel;
+        }
+
+        dayGroups.push({
+            type: 'entry',
+            entry: { ...entry, lines },
+            height: entryHeight
+        });
+    }
+
+    // Calculate total content height
+    const totalContentHeight = dayGroups.reduce((sum, item) => sum + item.height, 0);
+    const panelHeight = titleBarHeight + Math.min(maxContentHeight, totalContentHeight) + panelPadding;
     const panelX = canvas.width - panelWidth - 25;
     const panelY = canvas.height / 2 - panelHeight / 2 + 20;
+
+    // Store panel bounds for mouse wheel hit testing
+    changelogPanelBounds = { x: panelX, y: panelY, width: panelWidth, height: panelHeight };
+
+    // Clamp scroll offset
+    const maxScroll = Math.max(0, totalContentHeight - maxContentHeight);
+    changelogScrollOffset = Math.max(0, Math.min(changelogScrollOffset, maxScroll));
 
     // Panel background
     ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
@@ -4039,48 +4108,67 @@ function renderChangelogPanel() {
     ctx.textAlign = 'center';
     ctx.fillText('RECENT UPDATES', panelX + panelWidth / 2, panelY + 24);
 
-    // Entries
-    let currentY = panelY + titleBarHeight + 10;
+    // Set up clipping region for scrollable content
+    const contentTop = panelY + titleBarHeight;
+    const contentBottom = panelY + panelHeight - panelPadding;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(panelX, contentTop, panelWidth, contentBottom - contentTop);
+    ctx.clip();
 
-    for (let i = 0; i < wrappedEntries.length; i++) {
-        const entry = wrappedEntries[i];
+    // Render grouped entries with scroll offset
+    let currentY = contentTop + 8 - changelogScrollOffset;
+    let entryIndex = 0;
 
-        // Row separator (dotted line, except for first row)
-        if (i > 0) {
-            ctx.strokeStyle = 'rgba(100, 140, 140, 0.35)';
-            ctx.setLineDash([3, 4]);
-            ctx.beginPath();
-            ctx.moveTo(panelX + panelPadding, currentY - 6);
-            ctx.lineTo(panelX + panelWidth - panelPadding, currentY - 6);
-            ctx.stroke();
-            ctx.setLineDash([]);
-        }
-
-        // Entry text colors - brighter, with fade for older entries
-        if (i === 0) {
-            ctx.fillStyle = '#ddd';
-        } else if (i === 1) {
-            ctx.fillStyle = '#aaa';
-        } else if (i === 2) {
-            ctx.fillStyle = '#888';
+    for (const item of dayGroups) {
+        if (item.type === 'header') {
+            // Day header
+            if (currentY + item.height > contentTop - 20 && currentY < contentBottom + 20) {
+                ctx.fillStyle = '#0aa';
+                ctx.font = 'bold 12px monospace';
+                ctx.textAlign = 'left';
+                ctx.fillText(`── ${item.label} ──`, panelX + panelPadding, currentY + 18);
+            }
+            currentY += item.height;
         } else {
-            ctx.fillStyle = '#666';
+            // Entry
+            const entry = item.entry;
+
+            // Only render if visible
+            if (currentY + item.height > contentTop - 20 && currentY < contentBottom + 20) {
+                // Entry text color based on index
+                if (entryIndex === 0) {
+                    ctx.fillStyle = '#ddd';
+                } else if (entryIndex < 3) {
+                    ctx.fillStyle = '#aaa';
+                } else if (entryIndex < 6) {
+                    ctx.fillStyle = '#888';
+                } else {
+                    ctx.fillStyle = '#666';
+                }
+
+                // Draw wrapped message lines
+                ctx.font = messageFont;
+                ctx.textAlign = 'left';
+                for (let j = 0; j < entry.lines.length; j++) {
+                    ctx.fillText(entry.lines[j], panelX + panelPadding, currentY + (j * lineHeight) + 12);
+                }
+            }
+
+            currentY += item.height;
+            entryIndex++;
         }
+    }
 
-        // Draw wrapped message lines
-        ctx.font = messageFont;
-        ctx.textAlign = 'left';
-        for (let j = 0; j < entry.lines.length; j++) {
-            ctx.fillText(entry.lines[j], panelX + panelPadding, currentY + (j * lineHeight) + 12);
-        }
+    ctx.restore();
 
-        // Date text - brighter
-        ctx.fillStyle = i === 0 ? '#0dd' : '#577';
-        ctx.font = dateFont;
-        const dateY = currentY + (entry.lines.length * lineHeight) + 14;
-        ctx.fillText(formatRelativeDate(entry.timestamp), panelX + panelPadding + 14, dateY);
+    // Scroll indicator (if scrollable)
+    if (maxScroll > 0) {
+        const scrollbarHeight = Math.max(30, (maxContentHeight / totalContentHeight) * maxContentHeight);
+        const scrollbarY = contentTop + (changelogScrollOffset / maxScroll) * (maxContentHeight - scrollbarHeight);
 
-        currentY += entry.entryHeight;
+        ctx.fillStyle = 'rgba(0, 200, 200, 0.3)';
+        ctx.fillRect(panelX + panelWidth - 6, scrollbarY, 4, scrollbarHeight);
     }
 
     // Reset text align
