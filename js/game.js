@@ -4010,8 +4010,18 @@ function renderChangelogPanel() {
 
     const totalContentHeight = wrappedEntries.reduce((sum, e) => sum + e.entryHeight, 0);
     const panelHeight = titleBarHeight + totalContentHeight + panelPadding;
-    const panelX = canvas.width - panelWidth - 25;
-    const panelY = canvas.height / 2 - panelHeight / 2 + 20;
+
+    // Position panel: horizontally centered between leaderboard right edge and viewport right
+    // Leaderboard extends to roughly canvas.width/2 + 280 (date column)
+    const leaderboardRightEdge = canvas.width / 2 + 290;
+    const availableHorizontalSpace = canvas.width - leaderboardRightEdge;
+    const panelX = leaderboardRightEdge + (availableHorizontalSpace - panelWidth) / 2;
+
+    // Position panel: vertically centered between title bottom and screen bottom
+    // Title is at canvas.height/3 with ~60px height (80px font + wave), so title bottom ~ canvas.height/3 + 50
+    const titleBottom = canvas.height / 3 + 60;
+    const availableVerticalSpace = canvas.height - titleBottom - 40; // 40px margin from bottom
+    const panelY = titleBottom + (availableVerticalSpace - panelHeight) / 2;
 
     // Panel background
     ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
