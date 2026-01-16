@@ -632,6 +632,9 @@ let titleHumans = [];
 // Title animation state
 let titleAnimPhase = 0;
 
+// Changelog expand/collapse state
+let changelogExpanded = false;
+
 // ============================================
 // INPUT HANDLING
 // ============================================
@@ -684,6 +687,8 @@ window.addEventListener('keydown', (e) => {
     // Handle game state transitions
     if (gameState === 'TITLE' && e.code === 'Space') {
         startGame();
+    } else if (gameState === 'TITLE' && e.code === 'KeyU') {
+        changelogExpanded = !changelogExpanded;
     } else if (gameState === 'GAME_OVER' && e.code === 'Enter') {
         startGame();
     }
@@ -3694,6 +3699,60 @@ function renderNameEntryScreen() {
     ctx.fillText('↑↓ Change Letter    ←→ Move    ENTER Submit', canvas.width / 2, canvas.height - 100);
 }
 
+function renderChangelog() {
+    if (typeof CHANGELOG === 'undefined' || !CHANGELOG || CHANGELOG.length === 0) {
+        return;
+    }
+
+    const startY = canvas.height / 3 + 45;
+    const lineHeight = 17;
+    const maxEntries = 5;
+    const maxMessageLength = 50;
+
+    // Header with expand/collapse indicator
+    ctx.fillStyle = '#0aa';
+    ctx.font = 'bold 12px monospace';
+    const hasMore = CHANGELOG.length > 1;
+    const indicator = changelogExpanded ? '[-]' : '[+]';
+    const headerText = hasMore ? `RECENT UPDATES ${indicator}` : 'RECENT UPDATE';
+    ctx.fillText(headerText, canvas.width / 2, startY);
+
+    // Entries
+    ctx.font = '13px monospace';
+    const entriesToShow = changelogExpanded ? Math.min(CHANGELOG.length, maxEntries) : 1;
+
+    for (let i = 0; i < entriesToShow; i++) {
+        const entry = CHANGELOG[i];
+        const dateText = formatRelativeDate(entry.timestamp);
+
+        // Truncate message if needed (belt and suspenders - should already be truncated)
+        let message = entry.message;
+        if (message.length > maxMessageLength) {
+            message = message.slice(0, maxMessageLength - 3) + '...';
+        }
+
+        const text = `★ ${message} (${dateText})`;
+
+        // Fade older entries
+        if (i === 0) {
+            ctx.fillStyle = '#888';
+        } else if (i === 1) {
+            ctx.fillStyle = '#666';
+        } else {
+            ctx.fillStyle = '#555';
+        }
+
+        ctx.fillText(text, canvas.width / 2, startY + 17 + i * lineHeight);
+    }
+
+    // Hint for expansion (only in collapsed state with more entries)
+    if (!changelogExpanded && CHANGELOG.length > 1) {
+        ctx.fillStyle = '#444';
+        ctx.font = '11px monospace';
+        ctx.fillText('Press U for more', canvas.width / 2, startY + 17 + lineHeight + 5);
+    }
+}
+
 function renderTitleScreen() {
     renderBackground();
 
@@ -3755,6 +3814,9 @@ function renderTitleScreen() {
     ctx.shadowBlur = 0;
     ctx.textAlign = 'center';
     ctx.fillStyle = '#fff';
+
+    // Changelog section
+    renderChangelog();
 
     // Leaderboard
     if (leaderboardLoading) {
