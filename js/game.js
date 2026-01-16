@@ -2749,10 +2749,15 @@ function formatRelativeDate(timestamp) {
     return `${month}/${day}`;
 }
 
+// API base URL - use full URL when proxied through studio.mfelix.org
+const API_BASE = window.location.hostname === 'studio.mfelix.org'
+    ? 'https://alien-abductorama.mfelixstudio.workers.dev'
+    : '';
+
 async function fetchLeaderboard() {
     leaderboardLoading = true;
     try {
-        const response = await fetch('/api/scores');
+        const response = await fetch(`${API_BASE}/api/scores`);
         if (response.ok) {
             const data = await response.json();
             // Handle both old (array) and new (object) response shapes
@@ -2774,7 +2779,7 @@ async function fetchLeaderboard() {
 async function submitScore(name) {
     submissionError = null;
     try {
-        const response = await fetch('/api/scores', {
+        const response = await fetch(`${API_BASE}/api/scores`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -3764,7 +3769,7 @@ function renderTitleScreen() {
             const lastPlayed = activityStats.lastGamePlayed
                 ? `Last played: ${formatRelativeDate(activityStats.lastGamePlayed)}`
                 : '';
-            const gamesWeek = `${activityStats.gamesThisWeek} ${activityStats.gamesThisWeek === 1 ? 'game' : 'games'} this week`;
+            const gamesWeek = `${activityStats.gamesThisWeek} ${activityStats.gamesThisWeek === 1 ? 'game' : 'games'} played this week`;
             const statsText = lastPlayed ? `${lastPlayed}  •  ${gamesWeek}` : gamesWeek;
             ctx.fillText(statsText, canvas.width / 2, canvas.height / 2 - 70);
         }

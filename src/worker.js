@@ -12,14 +12,48 @@ const MAX_RECENT_GAMES = 100; // Keep last 100 timestamps for rolling window
 const MAX_SCORE_PER_SECOND = 500; // Reasonable max with combos
 const MIN_GAME_LENGTH_SECONDS = 10;
 
+// CORS configuration
+const ALLOWED_ORIGINS = [
+	'https://alien-abductorama.mfelixstudio.workers.dev',
+	'https://studio.mfelix.org',
+];
+
+function getCorsHeaders(request) {
+	const origin = request.headers.get('Origin');
+	if (origin && ALLOWED_ORIGINS.includes(origin)) {
+		return {
+			'Access-Control-Allow-Origin': origin,
+			'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+			'Access-Control-Allow-Headers': 'Content-Type',
+		};
+	}
+	return {};
+}
+
+function handleCorsPreflightRequest(request) {
+	const origin = request.headers.get('Origin');
+	if (origin && ALLOWED_ORIGINS.includes(origin)) {
+		return new Response(null, {
+			status: 204,
+			headers: getCorsHeaders(request),
+		});
+	}
+	return new Response('Forbidden', { status: 403 });
+}
+
 export default {
 	async fetch(request, env, ctx) {
 		const url = new URL(request.url);
 
+		// Handle CORS preflight requests
+		if (request.method === 'OPTIONS') {
+			return handleCorsPreflightRequest(request);
+		}
+
 		// Handle API routes
 		if (url.pathname === '/api/scores') {
 			if (request.method === 'GET') {
-				return handleGetScores(env);
+				return handleGetScores(request, env);
 			}
 			if (request.method === 'POST') {
 				return handlePostScore(request, env);
@@ -59,7 +93,8 @@ function calculateGamesThisWeek(recentGames) {
 	return recentGames.filter(ts => ts > oneWeekAgo).length;
 }
 
-async function handleGetScores(env) {
+async function handleGetScores(request, env) {
+	const corsHeaders = getCorsHeaders(request);
 	try {
 		const leaderboard = await env.ALIEN_ABDUCTORAMA_HIGH_SCORES.get(LEADERBOARD_KEY, { type: 'json' });
 		const activityStats = await getActivityStats(env);
@@ -75,17 +110,19 @@ async function handleGetScores(env) {
 			headers: {
 				'Content-Type': 'application/json',
 				'Cache-Control': 'public, max-age=10',
+				...corsHeaders,
 			},
 		});
 	} catch (error) {
 		return new Response(JSON.stringify({ error: 'Failed to fetch scores' }), {
 			status: 500,
-			headers: { 'Content-Type': 'application/json' },
+			headers: { 'Content-Type': 'application/json', ...corsHeaders },
 		});
 	}
 }
 
 async function handlePostScore(request, env) {
+	const corsHeaders = getCorsHeaders(request);
 	try {
 		const body = await request.json();
 		const { name, score, wave, gameLength } = body;
@@ -98,28 +135,28 @@ async function handlePostScore(request, env) {
 		if (!name || typeof name !== 'string' || !/^[A-Z]{3}$/.test(name)) {
 			return new Response(JSON.stringify({ error: 'Invalid name: must be 3 uppercase letters' }), {
 				status: 400,
-				headers: { 'Content-Type': 'application/json' },
+				headers: { 'Content-Type': 'application/json', ...corsHeaders },
 			});
 		}
 
 		if (typeof score !== 'number' || score < 0 || !Number.isInteger(score)) {
 			return new Response(JSON.stringify({ error: 'Invalid score' }), {
 				status: 400,
-				headers: { 'Content-Type': 'application/json' },
+				headers: { 'Content-Type': 'application/json', ...corsHeaders },
 			});
 		}
 
 		if (typeof wave !== 'number' || wave < 1 || !Number.isInteger(wave)) {
 			return new Response(JSON.stringify({ error: 'Invalid wave' }), {
 				status: 400,
-				headers: { 'Content-Type': 'application/json' },
+				headers: { 'Content-Type': 'application/json', ...corsHeaders },
 			});
 		}
 
 		if (typeof gameLength !== 'number' || gameLength < MIN_GAME_LENGTH_SECONDS) {
 			return new Response(JSON.stringify({ error: 'Invalid game length' }), {
 				status: 400,
-				headers: { 'Content-Type': 'application/json' },
+				headers: { 'Content-Type': 'application/json', ...corsHeaders },
 			});
 		}
 
@@ -128,7 +165,7 @@ async function handlePostScore(request, env) {
 		if (scorePerSecond > MAX_SCORE_PER_SECOND) {
 			return new Response(JSON.stringify({ error: 'Score rejected' }), {
 				status: 400,
-				headers: { 'Content-Type': 'application/json' },
+				headers: { 'Content-Type': 'application/json', ...corsHeaders },
 			});
 		}
 
@@ -164,7 +201,7 @@ async function handlePostScore(request, env) {
 				gamesThisWeek: calculateGamesThisWeek((await getActivityStats(env)).recentGames),
 			};
 			return new Response(JSON.stringify({ success: false, message: 'Score did not qualify', leaderboard, stats }), {
-				headers: { 'Content-Type': 'application/json' },
+				headers: { 'Content-Type': 'application/json', ...corsHeaders },
 			});
 		}
 
@@ -192,12 +229,12 @@ async function handlePostScore(request, env) {
 			gamesThisWeek: calculateGamesThisWeek((await getActivityStats(env)).recentGames),
 		};
 		return new Response(JSON.stringify({ success: true, rank, leaderboard, stats }), {
-			headers: { 'Content-Type': 'application/json' },
+			headers: { 'Content-Type': 'application/json', ...corsHeaders },
 		});
 	} catch (error) {
 		return new Response(JSON.stringify({ error: 'Failed to save score' }), {
 			status: 500,
-			headers: { 'Content-Type': 'application/json' },
+			headers: { 'Content-Type': 'application/json', ...corsHeaders },
 		});
 	}
 }
