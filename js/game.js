@@ -696,10 +696,6 @@ let titleHumans = [];
 // Title animation state
 let titleAnimPhase = 0;
 
-// Changelog modal state
-let changelogModalOpen = false;
-let changelogClickBounds = null; // {x, y, width, height} for click detection
-
 // ============================================
 // INPUT HANDLING
 // ============================================
@@ -751,11 +747,7 @@ window.addEventListener('keydown', (e) => {
 
     // Handle game state transitions
     if (gameState === 'TITLE' && e.code === 'Space') {
-        if (!changelogModalOpen) {
-            startGame();
-        }
-    } else if (gameState === 'TITLE' && e.code === 'Escape') {
-        changelogModalOpen = false;
+        startGame();
     } else if (gameState === 'GAME_OVER' && e.code === 'Enter') {
         startGame();
     }
@@ -763,35 +755,6 @@ window.addEventListener('keydown', (e) => {
 
 window.addEventListener('keyup', (e) => {
     keys[e.code] = false;
-});
-
-// Click handler for changelog modal
-canvas.addEventListener('click', (e) => {
-    if (gameState !== 'TITLE') return;
-
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    const x = (e.clientX - rect.left) * scaleX;
-    const y = (e.clientY - rect.top) * scaleY;
-
-    if (changelogModalOpen) {
-        // Click outside modal closes it
-        const modalWidth = 500;
-        const modalHeight = 300;
-        const modalX = (canvas.width - modalWidth) / 2;
-        const modalY = (canvas.height - modalHeight) / 2;
-
-        if (x < modalX || x > modalX + modalWidth || y < modalY || y > modalY + modalHeight) {
-            changelogModalOpen = false;
-        }
-    } else if (changelogClickBounds) {
-        // Check if click is within changelog area
-        const b = changelogClickBounds;
-        if (x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height) {
-            changelogModalOpen = true;
-        }
-    }
 });
 
 // ============================================
@@ -4004,149 +3967,91 @@ function getChangelogSorted() {
     return [...CHANGELOG].sort((a, b) => b.timestamp - a.timestamp);
 }
 
-function renderChangelog(startY) {
-    const entries = getChangelogSorted();
-    if (entries.length === 0) {
-        changelogClickBounds = null;
-        return;
-    }
-
-    const maxMessageLength = 50;
-
-    // Get the newest entry
-    const entry = entries[0];
-    const dateText = formatRelativeDate(entry.timestamp);
-
-    let message = entry.message;
-    if (message.length > maxMessageLength) {
-        message = message.slice(0, maxMessageLength - 3) + '...';
-    }
-
-    const text = `★ ${message} (${dateText})`;
-
-    // Draw the single entry
-    ctx.fillStyle = '#666';
-    ctx.font = '13px monospace';
-    ctx.fillText(text, canvas.width / 2, startY);
-
-    // "Click for more" hint if there are more entries
-    if (entries.length > 1) {
-        ctx.fillStyle = '#0aa';
-        ctx.font = '11px monospace';
-        ctx.fillText('Click for more updates', canvas.width / 2, startY + 16);
-    }
-
-    // Track click bounds for the entire changelog area
-    const textWidth = ctx.measureText(text).width;
-    const areaHeight = entries.length > 1 ? 35 : 20;
-    changelogClickBounds = {
-        x: canvas.width / 2 - textWidth / 2 - 10,
-        y: startY - 15,
-        width: textWidth + 20,
-        height: areaHeight
-    };
-}
-
-function wrapText(text, maxWidth) {
-    const words = text.split(' ');
-    const lines = [];
-    let currentLine = '';
-
-    ctx.font = '14px monospace';
-    for (const word of words) {
-        const testLine = currentLine ? currentLine + ' ' + word : word;
-        const metrics = ctx.measureText(testLine);
-        if (metrics.width > maxWidth && currentLine) {
-            lines.push(currentLine);
-            currentLine = word;
-        } else {
-            currentLine = testLine;
-        }
-    }
-    if (currentLine) {
-        lines.push(currentLine);
-    }
-    return lines;
-}
-
-function renderChangelogModal() {
-    if (!changelogModalOpen) return;
-
+function renderChangelogPanel() {
     const entries = getChangelogSorted();
     if (entries.length === 0) return;
 
-    // Semi-transparent overlay
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Panel dimensions and position (right side)
+    const panelWidth = 280;
+    const panelPadding = 15;
+    const titleBarHeight = 32;
+    const rowHeight = 52;
+    const panelHeight = titleBarHeight + (entries.length * rowHeight) + panelPadding;
+    const panelX = canvas.width - panelWidth - 30;
+    const panelY = canvas.height / 2 - panelHeight / 2 + 20;
 
-    // Modal box
-    const modalWidth = 600;
-    const contentWidth = modalWidth - 60; // Padding for text wrapping
+    // Panel background
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.fillRect(panelX, panelY, panelWidth, panelHeight);
 
-    // Pre-calculate total height needed for wrapped text
-    ctx.font = '14px monospace';
-    let totalEntryHeight = 0;
-    const wrappedEntries = entries.map(entry => {
-        const lines = wrapText(`★ ${entry.message}`, contentWidth);
-        const entryHeight = lines.length * 18 + 22; // line height + date + spacing
-        totalEntryHeight += entryHeight;
-        return { ...entry, lines, entryHeight };
-    });
+    // Panel border
+    ctx.strokeStyle = 'rgba(0, 170, 170, 0.4)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(panelX, panelY, panelWidth, panelHeight);
 
-    const modalHeight = Math.min(450, 100 + totalEntryHeight);
-    const modalX = (canvas.width - modalWidth) / 2;
-    const modalY = (canvas.height - modalHeight) / 2;
+    // Title bar background
+    ctx.fillStyle = 'rgba(0, 50, 50, 0.8)';
+    ctx.fillRect(panelX, panelY, panelWidth, titleBarHeight);
 
-    // Modal background with border
-    ctx.fillStyle = '#111';
-    ctx.fillRect(modalX, modalY, modalWidth, modalHeight);
-    ctx.strokeStyle = '#0aa';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(modalX, modalY, modalWidth, modalHeight);
+    // Title bar bottom border
+    ctx.strokeStyle = 'rgba(0, 170, 170, 0.3)';
+    ctx.beginPath();
+    ctx.moveTo(panelX, panelY + titleBarHeight);
+    ctx.lineTo(panelX + panelWidth, panelY + titleBarHeight);
+    ctx.stroke();
 
-    // Modal title
-    ctx.fillStyle = '#0ff';
-    ctx.font = 'bold 20px monospace';
+    // Title text
+    ctx.fillStyle = '#0aa';
+    ctx.font = 'bold 12px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('RECENT UPDATES', canvas.width / 2, modalY + 35);
+    ctx.fillText('RECENT UPDATES', panelX + panelWidth / 2, panelY + 21);
 
-    // Entries with word wrap
-    ctx.font = '14px monospace';
-    let currentY = modalY + 70;
+    // Entries
+    const contentStartY = panelY + titleBarHeight + 8;
+    const maxMessageLength = 32;
 
-    for (let i = 0; i < wrappedEntries.length; i++) {
-        const entry = wrappedEntries[i];
-        const dateText = formatRelativeDate(entry.timestamp);
+    for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i];
+        const rowY = contentStartY + (i * rowHeight);
 
-        // Fade older entries
+        // Row separator (dotted line, except for first row)
+        if (i > 0) {
+            ctx.strokeStyle = 'rgba(100, 100, 100, 0.3)';
+            ctx.setLineDash([2, 3]);
+            ctx.beginPath();
+            ctx.moveTo(panelX + panelPadding, rowY - 4);
+            ctx.lineTo(panelX + panelWidth - panelPadding, rowY - 4);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        // Truncate message for display
+        let message = entry.message;
+        if (message.length > maxMessageLength) {
+            message = message.slice(0, maxMessageLength - 3) + '...';
+        }
+
+        // Entry text - fade older entries
         if (i === 0) {
             ctx.fillStyle = '#aaa';
         } else if (i === 1) {
-            ctx.fillStyle = '#888';
-        } else if (i === 2) {
-            ctx.fillStyle = '#666';
+            ctx.fillStyle = '#777';
         } else {
             ctx.fillStyle = '#555';
         }
 
-        // Draw wrapped message lines
-        ctx.font = '14px monospace';
-        for (let j = 0; j < entry.lines.length; j++) {
-            ctx.fillText(entry.lines[j], canvas.width / 2, currentY + j * 18);
-        }
+        ctx.font = '11px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(`★ ${message}`, panelX + panelPadding, rowY + 14);
 
-        // Draw date below message
-        ctx.fillStyle = '#444';
-        ctx.font = '12px monospace';
-        ctx.fillText(dateText, canvas.width / 2, currentY + entry.lines.length * 18 + 4);
-
-        currentY += entry.entryHeight;
+        // Date text
+        ctx.fillStyle = i === 0 ? '#0aa' : '#445';
+        ctx.font = '10px monospace';
+        ctx.fillText(formatRelativeDate(entry.timestamp), panelX + panelPadding + 12, rowY + 30);
     }
 
-    // Close hint
-    ctx.fillStyle = '#555';
-    ctx.font = '12px monospace';
-    ctx.fillText('Click outside or press ESC to close', canvas.width / 2, modalY + modalHeight - 15);
+    // Reset text align
+    ctx.textAlign = 'center';
 }
 
 function renderTitleScreen() {
@@ -4278,9 +4183,8 @@ function renderTitleScreen() {
         ctx.textAlign = 'center';
     }
 
-    // Changelog below leaderboard (position after 10 entries at lineHeight 26)
-    const changelogY = canvas.height / 2 + 10 + 10 * 26 + 20;
-    renderChangelog(changelogY);
+    // Changelog panel (right side)
+    renderChangelogPanel();
 
     // Flashing "Press any key" text
     if (Math.floor(Date.now() / 500) % 2 === 0) {
@@ -4298,9 +4202,6 @@ function renderTitleScreen() {
     ctx.font = '14px monospace';
     ctx.fillStyle = '#fff';
     ctx.fillText('Built by Ruby, Odessa, & Papa!!! We hope you love it and have fun!', canvas.width / 2, canvas.height - 30);
-
-    // Changelog modal (rendered last to overlay everything)
-    renderChangelogModal();
 }
 
 function renderGameOverScreen() {
