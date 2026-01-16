@@ -1,6 +1,10 @@
 // Auto-generated changelog - do not edit manually
 const CHANGELOG = [
   {
+    "message": "Add tank stun mechanic: lift 50%+ and drop to d...",
+    "timestamp": 1768600713000
+  },
+  {
     "message": "Add changelog title screen feature",
     "timestamp": 1768596096000
   },
@@ -15,9 +19,5 @@ const CHANGELOG = [
   {
     "message": "Optimized PNG assets (69% smaller)",
     "timestamp": 1768595486257
-  },
-  {
-    "message": "Rainbow wave BUMMER text on mobile",
-    "timestamp": 1768595482141
   }
 ];
