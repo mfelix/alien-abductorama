@@ -1,6 +1,10 @@
 // Auto-generated changelog - do not edit manually
 const CHANGELOG = [
   {
+    "message": "Fix changelog truncation: increase limit to 80, add word wrap in modal",
+    "timestamp": 1768603450000
+  },
+  {
     "message": "Update changelog with tank stun feature",
     "timestamp": 1768600928000
   },
@@ -15,9 +19,5 @@ const CHANGELOG = [
   {
     "message": "Remove URL hint from mobile splash screen",
     "timestamp": 1768582853000
-  },
-  {
-    "message": "Mobile splash screen with animated UFO",
-    "timestamp": 1768595490655
   }
 ];
