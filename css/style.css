@@ -128,16 +128,48 @@ body {
 }
 
 /* Typography */
-#mobileSplash h1 {
+#mobileSplash h1.rainbow-wave {
     font-family: 'Arial Black', sans-serif;
-    font-size: 3rem;
-    color: #0ff;
-    text-shadow:
-        0 0 10px #0ff,
-        0 0 20px #0ff,
-        0 0 40px #0ff;
+    font-size: 3.5rem;
     margin-bottom: 15px;
-    letter-spacing: 4px;
+    letter-spacing: 8px;
+    display: flex;
+    justify-content: center;
+}
+
+#mobileSplash h1.rainbow-wave span {
+    display: inline-block;
+    animation: rainbowWave 2s ease-in-out infinite;
+    animation-delay: calc(var(--i) * 0.1s);
+}
+
+@keyframes rainbowWave {
+    0%, 100% {
+        color: hsl(0, 100%, 60%);
+        text-shadow: 0 0 10px hsl(0, 100%, 50%), 0 0 20px hsl(0, 100%, 50%);
+        transform: translateY(0);
+    }
+    16% {
+        color: hsl(60, 100%, 60%);
+        text-shadow: 0 0 10px hsl(60, 100%, 50%), 0 0 20px hsl(60, 100%, 50%);
+    }
+    33% {
+        color: hsl(120, 100%, 60%);
+        text-shadow: 0 0 10px hsl(120, 100%, 50%), 0 0 20px hsl(120, 100%, 50%);
+    }
+    50% {
+        color: hsl(180, 100%, 60%);
+        text-shadow: 0 0 10px hsl(180, 100%, 50%), 0 0 20px hsl(180, 100%, 50%);
+        transform: translateY(-12px);
+    }
+    66% {
+        color: hsl(240, 100%, 60%);
+        text-shadow: 0 0 10px hsl(240, 100%, 50%), 0 0 20px hsl(240, 100%, 50%);
+    }
+    83% {
+        color: hsl(300, 100%, 60%);
+        text-shadow: 0 0 10px hsl(300, 100%, 50%), 0 0 20px hsl(300, 100%, 50%);
+    }
 }
 
 .main-message {
