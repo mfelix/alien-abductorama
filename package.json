@@ -4,7 +4,10 @@
   "description": "Alien Abductio-rama - A browser-based arcade game",
   "main": "src/worker.js",
   "scripts": {
-    "build": "mkdir -p dist && cp -r index.html css js assets dist/",
+    "changelog:add": "node scripts/changelog.cjs add",
+    "changelog:from-git": "node scripts/changelog.cjs from-git",
+    "changelog:generate": "node scripts/changelog.cjs",
+    "build": "npm run changelog:from-git && mkdir -p dist && cp -r index.html css js assets dist/",
     "dev": "wrangler dev",
     "deploy": "npm run build && wrangler deploy",
     "login": "wrangler login"
