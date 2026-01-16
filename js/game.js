@@ -3967,87 +3967,120 @@ function getChangelogSorted() {
     return [...CHANGELOG].sort((a, b) => b.timestamp - a.timestamp);
 }
 
+function wrapTextToLines(text, maxWidth, font) {
+    ctx.font = font;
+    const words = text.split(' ');
+    const lines = [];
+    let currentLine = '';
+
+    for (const word of words) {
+        const testLine = currentLine ? currentLine + ' ' + word : word;
+        if (ctx.measureText(testLine).width > maxWidth && currentLine) {
+            lines.push(currentLine);
+            currentLine = word;
+        } else {
+            currentLine = testLine;
+        }
+    }
+    if (currentLine) lines.push(currentLine);
+    return lines;
+}
+
 function renderChangelogPanel() {
     const entries = getChangelogSorted();
     if (entries.length === 0) return;
 
     // Panel dimensions and position (right side)
-    const panelWidth = 280;
-    const panelPadding = 15;
-    const titleBarHeight = 32;
-    const rowHeight = 52;
-    const panelHeight = titleBarHeight + (entries.length * rowHeight) + panelPadding;
-    const panelX = canvas.width - panelWidth - 30;
+    const panelWidth = 320;
+    const panelPadding = 16;
+    const titleBarHeight = 36;
+    const messageFont = '13px monospace';
+    const dateFont = '11px monospace';
+    const lineHeight = 17;
+    const dateLineHeight = 20;
+    const entryPadding = 12;
+
+    // Pre-calculate wrapped text and total height
+    const contentWidth = panelWidth - (panelPadding * 2);
+    const wrappedEntries = entries.map(entry => {
+        const lines = wrapTextToLines(`★ ${entry.message}`, contentWidth, messageFont);
+        const entryHeight = (lines.length * lineHeight) + dateLineHeight + entryPadding;
+        return { ...entry, lines, entryHeight };
+    });
+
+    const totalContentHeight = wrappedEntries.reduce((sum, e) => sum + e.entryHeight, 0);
+    const panelHeight = titleBarHeight + totalContentHeight + panelPadding;
+    const panelX = canvas.width - panelWidth - 25;
     const panelY = canvas.height / 2 - panelHeight / 2 + 20;
 
     // Panel background
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
     ctx.fillRect(panelX, panelY, panelWidth, panelHeight);
 
     // Panel border
-    ctx.strokeStyle = 'rgba(0, 170, 170, 0.4)';
+    ctx.strokeStyle = 'rgba(0, 200, 200, 0.5)';
     ctx.lineWidth = 1;
     ctx.strokeRect(panelX, panelY, panelWidth, panelHeight);
 
     // Title bar background
-    ctx.fillStyle = 'rgba(0, 50, 50, 0.8)';
+    ctx.fillStyle = 'rgba(0, 60, 60, 0.9)';
     ctx.fillRect(panelX, panelY, panelWidth, titleBarHeight);
 
     // Title bar bottom border
-    ctx.strokeStyle = 'rgba(0, 170, 170, 0.3)';
+    ctx.strokeStyle = 'rgba(0, 200, 200, 0.4)';
     ctx.beginPath();
     ctx.moveTo(panelX, panelY + titleBarHeight);
     ctx.lineTo(panelX + panelWidth, panelY + titleBarHeight);
     ctx.stroke();
 
     // Title text
-    ctx.fillStyle = '#0aa';
-    ctx.font = 'bold 12px monospace';
+    ctx.fillStyle = '#0dd';
+    ctx.font = 'bold 14px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('RECENT UPDATES', panelX + panelWidth / 2, panelY + 21);
+    ctx.fillText('RECENT UPDATES', panelX + panelWidth / 2, panelY + 24);
 
     // Entries
-    const contentStartY = panelY + titleBarHeight + 8;
-    const maxMessageLength = 32;
+    let currentY = panelY + titleBarHeight + 10;
 
-    for (let i = 0; i < entries.length; i++) {
-        const entry = entries[i];
-        const rowY = contentStartY + (i * rowHeight);
+    for (let i = 0; i < wrappedEntries.length; i++) {
+        const entry = wrappedEntries[i];
 
         // Row separator (dotted line, except for first row)
         if (i > 0) {
-            ctx.strokeStyle = 'rgba(100, 100, 100, 0.3)';
-            ctx.setLineDash([2, 3]);
+            ctx.strokeStyle = 'rgba(100, 140, 140, 0.35)';
+            ctx.setLineDash([3, 4]);
             ctx.beginPath();
-            ctx.moveTo(panelX + panelPadding, rowY - 4);
-            ctx.lineTo(panelX + panelWidth - panelPadding, rowY - 4);
+            ctx.moveTo(panelX + panelPadding, currentY - 6);
+            ctx.lineTo(panelX + panelWidth - panelPadding, currentY - 6);
             ctx.stroke();
             ctx.setLineDash([]);
         }
 
-        // Truncate message for display
-        let message = entry.message;
-        if (message.length > maxMessageLength) {
-            message = message.slice(0, maxMessageLength - 3) + '...';
-        }
-
-        // Entry text - fade older entries
+        // Entry text colors - brighter, with fade for older entries
         if (i === 0) {
-            ctx.fillStyle = '#aaa';
+            ctx.fillStyle = '#ddd';
         } else if (i === 1) {
-            ctx.fillStyle = '#777';
+            ctx.fillStyle = '#aaa';
+        } else if (i === 2) {
+            ctx.fillStyle = '#888';
         } else {
-            ctx.fillStyle = '#555';
+            ctx.fillStyle = '#666';
         }
 
-        ctx.font = '11px monospace';
+        // Draw wrapped message lines
+        ctx.font = messageFont;
         ctx.textAlign = 'left';
-        ctx.fillText(`★ ${message}`, panelX + panelPadding, rowY + 14);
+        for (let j = 0; j < entry.lines.length; j++) {
+            ctx.fillText(entry.lines[j], panelX + panelPadding, currentY + (j * lineHeight) + 12);
+        }
 
-        // Date text
-        ctx.fillStyle = i === 0 ? '#0aa' : '#445';
-        ctx.font = '10px monospace';
-        ctx.fillText(formatRelativeDate(entry.timestamp), panelX + panelPadding + 12, rowY + 30);
+        // Date text - brighter
+        ctx.fillStyle = i === 0 ? '#0dd' : '#577';
+        ctx.font = dateFont;
+        const dateY = currentY + (entry.lines.length * lineHeight) + 14;
+        ctx.fillText(formatRelativeDate(entry.timestamp), panelX + panelPadding + 14, dateY);
+
+        currentY += entry.entryHeight;
     }
 
     // Reset text align

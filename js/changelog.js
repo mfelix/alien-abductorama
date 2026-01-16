@@ -1,6 +1,10 @@
 // Auto-generated changelog - do not edit manually
 const CHANGELOG = [
   {
+    "message": "Redesign changelog: right column panel layout with title bar and row borders",
+    "timestamp": 1768603722000
+  },
+  {
     "message": "Fix changelog truncation: increase limit to 80, add word wrap in modal",
     "timestamp": 1768603450000
   },
@@ -15,9 +19,5 @@ const CHANGELOG = [
   {
     "message": "Add changelog title screen feature",
     "timestamp": 1768596096000
-  },
-  {
-    "message": "Remove URL hint from mobile splash screen",
-    "timestamp": 1768582853000
   }
 ];
