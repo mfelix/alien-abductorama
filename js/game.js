@@ -475,6 +475,70 @@ const SFX = {
 
         osc.start();
         osc.stop(audioCtx.currentTime + 0.3);
+    },
+
+    tankStunned: () => {
+        if (!audioCtx) return;
+        // Heavy impact/crash sound - low thud + metallic clang
+        const thud = audioCtx.createOscillator();
+        const thudGain = audioCtx.createGain();
+        const clang = audioCtx.createOscillator();
+        const clangGain = audioCtx.createGain();
+
+        // Low thud
+        thud.connect(thudGain);
+        thudGain.connect(audioCtx.destination);
+        thud.type = 'sine';
+        thud.frequency.setValueAtTime(80, audioCtx.currentTime);
+        thud.frequency.exponentialRampToValueAtTime(40, audioCtx.currentTime + 0.3);
+        thudGain.gain.setValueAtTime(0.4, audioCtx.currentTime);
+        thudGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+
+        // Metallic clang
+        clang.connect(clangGain);
+        clangGain.connect(audioCtx.destination);
+        clang.type = 'square';
+        clang.frequency.setValueAtTime(300, audioCtx.currentTime);
+        clang.frequency.exponentialRampToValueAtTime(150, audioCtx.currentTime + 0.15);
+        clangGain.gain.setValueAtTime(0.25, audioCtx.currentTime);
+        clangGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+
+        thud.start();
+        clang.start();
+        thud.stop(audioCtx.currentTime + 0.3);
+        clang.stop(audioCtx.currentTime + 0.15);
+    },
+
+    tankRecovered: () => {
+        if (!audioCtx) return;
+        // Power-up/boot sound - ascending tone with electronic whir
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        const osc2 = audioCtx.createOscillator();
+        const gain2 = audioCtx.createGain();
+
+        // Main ascending tone
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(100, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(400, audioCtx.currentTime + 0.25);
+        gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
+
+        // Electronic whir overlay
+        osc2.connect(gain2);
+        gain2.connect(audioCtx.destination);
+        osc2.type = 'square';
+        osc2.frequency.setValueAtTime(200, audioCtx.currentTime);
+        osc2.frequency.exponentialRampToValueAtTime(600, audioCtx.currentTime + 0.2);
+        gain2.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        gain2.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+
+        osc.start();
+        osc2.start();
+        osc.stop(audioCtx.currentTime + 0.25);
+        osc2.stop(audioCtx.currentTime + 0.2);
     }
 };
 
@@ -1127,13 +1191,33 @@ class UFO {
                 SFX.stopBeamLoop();
                 // Drop current target if any (only if it's still alive - not already abducted)
                 if (this.beamTarget && this.beamTarget.alive) {
+                    // Check if this is a tank and was lifted high enough for stun
+                    const isTank = this.beamTarget.hasOwnProperty('turretAngle') || this.beamTarget.hasOwnProperty('turretAngleLeft');
+                    if (isTank) {
+                        const totalLiftDistance = this.beamTarget.groundY - this.y;
+                        const actualLiftDistance = this.beamTarget.groundY - this.beamTarget.y;
+                        const liftRatio = actualLiftDistance / totalLiftDistance;
+
+                        if (liftRatio > 0.5) {
+                            // Stun the tank!
+                            this.beamTarget.isStunned = true;
+                            this.beamTarget.stunTimer = 4; // 4 second stun
+                            this.beamTarget.stunEffectTime = 0;
+                            createFloatingText(this.beamTarget.x + this.beamTarget.width / 2, this.beamTarget.groundY - 30, 'STUNNED!', '#ff0');
+                            SFX.tankStunned();
+                        } else {
+                            createFloatingText(this.x, this.y + 100, 'DROPPED!', '#f00');
+                            SFX.targetDropped();
+                        }
+                    } else {
+                        // Regular target dropped
+                        createFloatingText(this.x, this.y + 100, 'DROPPED!', '#f00');
+                        SFX.targetDropped();
+                    }
                     this.beamTarget.beingAbducted = false;
                     this.beamTarget.abductionProgress = 0;
                     // Target falls back to ground
                     this.beamTarget.y = this.beamTarget.groundY;
-                    // Create "dropped" text
-                    createFloatingText(this.x, this.y + 100, 'DROPPED!', '#f00');
-                    SFX.targetDropped();
                 }
                 this.beamTarget = null;
             }
@@ -1152,6 +1236,22 @@ class UFO {
                 SFX.stopBeamLoop();
             }
             if (this.beamTarget) {
+                // Check if this is a tank and was lifted high enough for stun
+                const isTank = this.beamTarget.hasOwnProperty('turretAngle') || this.beamTarget.hasOwnProperty('turretAngleLeft');
+                if (isTank && this.beamTarget.alive) {
+                    const totalLiftDistance = this.beamTarget.groundY - this.y;
+                    const actualLiftDistance = this.beamTarget.groundY - this.beamTarget.y;
+                    const liftRatio = actualLiftDistance / totalLiftDistance;
+
+                    if (liftRatio > 0.5) {
+                        // Stun the tank!
+                        this.beamTarget.isStunned = true;
+                        this.beamTarget.stunTimer = 4; // 4 second stun
+                        this.beamTarget.stunEffectTime = 0;
+                        createFloatingText(this.beamTarget.x + this.beamTarget.width / 2, this.beamTarget.groundY - 30, 'STUNNED!', '#ff0');
+                        SFX.tankStunned();
+                    }
+                }
                 this.beamTarget.beingAbducted = false;
                 this.beamTarget.abductionProgress = 0;
                 this.beamTarget.y = this.beamTarget.groundY;
@@ -1492,6 +1592,11 @@ class Tank {
 
         this.alive = true;
         this.respawnTimer = 0;
+
+        // Stun state
+        this.isStunned = false;
+        this.stunTimer = 0;
+        this.stunEffectTime = 0; // For visual effect animation
     }
 
     update(dt) {
@@ -1502,6 +1607,19 @@ class Tank {
                 this.respawn();
             }
             return;
+        }
+
+        // Handle stun state
+        if (this.isStunned) {
+            this.stunTimer -= dt;
+            this.stunEffectTime += dt;
+            if (this.stunTimer <= 0) {
+                this.isStunned = false;
+                this.stunTimer = 0;
+                this.stunEffectTime = 0;
+                SFX.tankRecovered();
+            }
+            return; // Skip all movement and shooting while stunned
         }
 
         // If being abducted, rise toward UFO center
@@ -1644,6 +1762,9 @@ class Tank {
         this.alive = true;
         this.beingAbducted = false;
         this.abductionProgress = 0;
+        this.isStunned = false;
+        this.stunTimer = 0;
+        this.stunEffectTime = 0;
         this.direction = Math.random() < 0.5 ? 1 : -1;
         // Add random offset (0-300px) so tanks don't respawn at same spot
         const randomOffset = Math.random() * 300;
@@ -1657,6 +1778,13 @@ class Tank {
         if (!this.alive) return;
 
         const img = images.tank;
+
+        // Apply grayed out effect if stunned
+        if (this.isStunned) {
+            ctx.save();
+            ctx.globalAlpha = 0.6;
+        }
+
         if (img && img.complete) {
             ctx.save();
             if (this.direction < 0) {
@@ -1669,7 +1797,7 @@ class Tank {
             ctx.restore();
         } else {
             // Placeholder
-            ctx.fillStyle = '#556b2f';
+            ctx.fillStyle = this.isStunned ? '#666' : '#556b2f';
             ctx.fillRect(this.x, this.y, this.width, this.height);
             // Treads
             ctx.fillStyle = '#333';
@@ -1678,6 +1806,61 @@ class Tank {
 
         // Draw turret
         this.renderTurret();
+
+        if (this.isStunned) {
+            ctx.restore();
+            // Draw spinning stars effect above tank
+            this.renderStunEffect();
+        }
+    }
+
+    renderStunEffect() {
+        const centerX = this.x + this.width / 2;
+        const centerY = this.y - 20;
+        const numStars = 4;
+        const radius = 25;
+        const rotationSpeed = 3; // Rotations per second
+
+        ctx.save();
+        ctx.fillStyle = '#ffff00';
+        ctx.strokeStyle = '#ffaa00';
+        ctx.lineWidth = 1;
+
+        for (let i = 0; i < numStars; i++) {
+            const angle = (this.stunEffectTime * rotationSpeed * Math.PI * 2) + (i * Math.PI * 2 / numStars);
+            const starX = centerX + Math.cos(angle) * radius;
+            const starY = centerY + Math.sin(angle) * radius * 0.4; // Elliptical path
+
+            // Draw a simple star
+            this.drawStar(starX, starY, 5, 8, 4);
+        }
+
+        ctx.restore();
+    }
+
+    drawStar(cx, cy, spikes, outerRadius, innerRadius) {
+        let rot = Math.PI / 2 * 3;
+        let x = cx;
+        let y = cy;
+        const step = Math.PI / spikes;
+
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - outerRadius);
+        for (let i = 0; i < spikes; i++) {
+            x = cx + Math.cos(rot) * outerRadius;
+            y = cy + Math.sin(rot) * outerRadius;
+            ctx.lineTo(x, y);
+            rot += step;
+
+            x = cx + Math.cos(rot) * innerRadius;
+            y = cy + Math.sin(rot) * innerRadius;
+            ctx.lineTo(x, y);
+            rot += step;
+        }
+        ctx.lineTo(cx, cy - outerRadius);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
     }
 
     renderTurret() {
@@ -2367,6 +2550,11 @@ class HeavyTank {
 
         this.alive = true;
         this.respawnTimer = 0;
+
+        // Stun state
+        this.isStunned = false;
+        this.stunTimer = 0;
+        this.stunEffectTime = 0; // For visual effect animation
     }
 
     update(dt) {
@@ -2377,6 +2565,19 @@ class HeavyTank {
                 this.respawn();
             }
             return;
+        }
+
+        // Handle stun state
+        if (this.isStunned) {
+            this.stunTimer -= dt;
+            this.stunEffectTime += dt;
+            if (this.stunTimer <= 0) {
+                this.isStunned = false;
+                this.stunTimer = 0;
+                this.stunEffectTime = 0;
+                SFX.tankRecovered();
+            }
+            return; // Skip all movement and shooting while stunned
         }
 
         // If being abducted, rise toward UFO center
@@ -2526,6 +2727,9 @@ class HeavyTank {
         this.alive = true;
         this.beingAbducted = false;
         this.abductionProgress = 0;
+        this.isStunned = false;
+        this.stunTimer = 0;
+        this.stunEffectTime = 0;
         this.direction = Math.random() < 0.5 ? 1 : -1;
         const randomOffset = Math.random() * 300;
         this.x = this.direction === 1 ? -this.width - randomOffset : canvas.width + randomOffset;
@@ -2538,6 +2742,13 @@ class HeavyTank {
         if (!this.alive) return;
 
         const img = images.tank;
+
+        // Apply grayed out effect if stunned
+        if (this.isStunned) {
+            ctx.save();
+            ctx.globalAlpha = 0.6;
+        }
+
         if (img && img.complete) {
             ctx.save();
             if (this.direction < 0) {
@@ -2550,7 +2761,7 @@ class HeavyTank {
             ctx.restore();
         } else {
             // Placeholder - darker green for heavy tank
-            ctx.fillStyle = '#3a5a1f';
+            ctx.fillStyle = this.isStunned ? '#555' : '#3a5a1f';
             ctx.fillRect(this.x, this.y, this.width, this.height);
             // Treads
             ctx.fillStyle = '#222';
@@ -2559,6 +2770,60 @@ class HeavyTank {
 
         // Draw both turrets
         this.renderTurrets();
+
+        if (this.isStunned) {
+            ctx.restore();
+            // Draw spinning stars effect above tank
+            this.renderStunEffect();
+        }
+    }
+
+    renderStunEffect() {
+        const centerX = this.x + this.width / 2;
+        const centerY = this.y - 30;
+        const numStars = 5; // More stars for heavy tank
+        const radius = 40; // Larger radius for heavy tank
+        const rotationSpeed = 3;
+
+        ctx.save();
+        ctx.fillStyle = '#ffff00';
+        ctx.strokeStyle = '#ffaa00';
+        ctx.lineWidth = 1;
+
+        for (let i = 0; i < numStars; i++) {
+            const angle = (this.stunEffectTime * rotationSpeed * Math.PI * 2) + (i * Math.PI * 2 / numStars);
+            const starX = centerX + Math.cos(angle) * radius;
+            const starY = centerY + Math.sin(angle) * radius * 0.4;
+
+            this.drawStar(starX, starY, 5, 10, 5);
+        }
+
+        ctx.restore();
+    }
+
+    drawStar(cx, cy, spikes, outerRadius, innerRadius) {
+        let rot = Math.PI / 2 * 3;
+        let x = cx;
+        let y = cy;
+        const step = Math.PI / spikes;
+
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - outerRadius);
+        for (let i = 0; i < spikes; i++) {
+            x = cx + Math.cos(rot) * outerRadius;
+            y = cy + Math.sin(rot) * outerRadius;
+            ctx.lineTo(x, y);
+            rot += step;
+
+            x = cx + Math.cos(rot) * innerRadius;
+            y = cy + Math.sin(rot) * innerRadius;
+            ctx.lineTo(x, y);
+            rot += step;
+        }
+        ctx.lineTo(cx, cy - outerRadius);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
     }
 
     renderTurrets() {
