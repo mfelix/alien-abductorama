@@ -1634,7 +1634,7 @@ class UFO {
                         const actualLiftDistance = this.beamTarget.groundY - this.beamTarget.y;
                         const liftRatio = actualLiftDistance / totalLiftDistance;
 
-                        if (liftRatio > 0.5) {
+                        if (liftRatio > 0.33) {
                             // Stun the tank!
                             this.beamTarget.isStunned = true;
                             this.beamTarget.stunTimer = 4; // 4 second stun
@@ -1679,7 +1679,7 @@ class UFO {
                     const actualLiftDistance = this.beamTarget.groundY - this.beamTarget.y;
                     const liftRatio = actualLiftDistance / totalLiftDistance;
 
-                    if (liftRatio > 0.5) {
+                    if (liftRatio > 0.33) {
                         // Stun the tank!
                         this.beamTarget.isStunned = true;
                         this.beamTarget.stunTimer = 4; // 4 second stun

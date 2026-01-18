@@ -1,5 +1,17 @@
 [
   {
+    "message": "Implement UFO Shopping Mall phases 2-6: Energy Cells, Bombs, Warp Juke, Laser...",
+    "timestamp": 1768709726000
+  },
+  {
+    "message": "UFO Shopping Mall: buy Energy Cells, Bombs, Warp Juke & Laser Turret between waves!",
+    "timestamp": 1768709794499
+  },
+  {
+    "message": "Tank stun now triggers at 33% lift (was 50%)",
+    "timestamp": 1768706937754
+  },
+  {
     "message": "Changelog panel: bigger fonts, brighter colors, word wrap for full messages",
     "timestamp": 1768604640000
   },
