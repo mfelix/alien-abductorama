@@ -4389,6 +4389,9 @@ function renderUI() {
     // ========== TURRET INDICATOR (below bomb count) ==========
     renderTurretIndicator(shieldX, shieldY + shieldBarHeight + 110);
 
+    // ========== SPEED INDICATOR (below turret indicator) ==========
+    renderSpeedIndicator(shieldX, shieldY + shieldBarHeight + 140);
+
     // ========== TOP CENTER: HARVEST COUNTER ==========
     renderHarvestCounter();
 }
@@ -4517,6 +4520,43 @@ function renderTurretIndicator(startX, startY) {
     ctx.font = 'bold 10px monospace';
     ctx.textAlign = 'center';
     ctx.fillText('TURRET [T]', startX + panelWidth / 2, startY + panelHeight / 2 + 4);
+}
+
+function renderSpeedIndicator(startX, startY) {
+    const speedBonus = playerInventory.speedBonus;
+    if (speedBonus <= 0) return; // Don't show if no speed upgrades
+
+    const panelWidth = 90;
+    const panelHeight = 24;
+    const bonusPercent = Math.round(speedBonus * 100);
+
+    // Panel background
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    ctx.beginPath();
+    ctx.roundRect(startX, startY, panelWidth, panelHeight, 4);
+    ctx.fill();
+
+    // Speed bar background
+    ctx.fillStyle = 'rgba(255, 255, 0, 0.2)';
+    ctx.beginPath();
+    ctx.roundRect(startX + 4, startY + 4, panelWidth - 8, panelHeight - 8, 2);
+    ctx.fill();
+
+    // Speed bar fill (proportional to bonus, max at 100% bonus for visual)
+    const fillPercent = Math.min(speedBonus, 1.0);
+    const gradient = ctx.createLinearGradient(startX, 0, startX + panelWidth, 0);
+    gradient.addColorStop(0, '#cc0');
+    gradient.addColorStop(1, '#ff0');
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.roundRect(startX + 4, startY + 4, (panelWidth - 8) * fillPercent, panelHeight - 8, 2);
+    ctx.fill();
+
+    // Label showing percentage
+    ctx.fillStyle = '#ff0';
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(`SPEED +${bonusPercent}%`, startX + panelWidth / 2, startY + panelHeight / 2 + 4);
 }
 
 function renderHarvestCounter() {
