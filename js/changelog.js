@@ -1,6 +1,10 @@
 // Auto-generated changelog - do not edit manually
 const CHANGELOG = [
   {
+    "message": "Restore speed upgrade HUD indicator lost during merge",
+    "timestamp": 1768752662000
+  },
+  {
     "message": "UFO Shopping Mall + tank stun threshold tweak",
     "timestamp": 1768747252000
   },
