@@ -61,6 +61,13 @@ export default {
 			return new Response('Method Not Allowed', { status: 405 });
 		}
 
+		if (url.pathname === '/api/session') {
+			if (request.method === 'POST') {
+				return handlePostSession(request, env);
+			}
+			return new Response('Method Not Allowed', { status: 405 });
+		}
+
 		// Static assets are handled automatically by the assets configuration
 		return new Response('Not Found', { status: 404 });
 	},
@@ -78,12 +85,22 @@ async function updateActivityStats(env, timestamp) {
 	// Update total count
 	stats.totalGames += 1;
 
+	// Update lastPlayedAt (score submission counts as playing)
+	stats.lastPlayedAt = timestamp;
+
 	// Add new timestamp and trim to max size
 	stats.recentGames.push(timestamp);
 	if (stats.recentGames.length > MAX_RECENT_GAMES) {
 		stats.recentGames = stats.recentGames.slice(-MAX_RECENT_GAMES);
 	}
 
+	await env.ALIEN_ABDUCTORAMA_HIGH_SCORES.put(ACTIVITY_KEY, JSON.stringify(stats));
+	return stats;
+}
+
+async function updateLastPlayedAt(env, timestamp) {
+	const stats = await getActivityStats(env);
+	stats.lastPlayedAt = timestamp;
 	await env.ALIEN_ABDUCTORAMA_HIGH_SCORES.put(ACTIVITY_KEY, JSON.stringify(stats));
 	return stats;
 }
@@ -100,9 +117,10 @@ async function handleGetScores(request, env) {
 		const activityStats = await getActivityStats(env);
 
 		const stats = {
-			lastGamePlayed: activityStats.recentGames.length > 0
-				? activityStats.recentGames[activityStats.recentGames.length - 1]
-				: null,
+			lastGamePlayed: activityStats.lastPlayedAt
+				?? (activityStats.recentGames.length > 0
+					? activityStats.recentGames[activityStats.recentGames.length - 1]
+					: null),
 			gamesThisWeek: calculateGamesThisWeek(activityStats.recentGames),
 		};
 
@@ -233,6 +251,23 @@ async function handlePostScore(request, env) {
 		});
 	} catch (error) {
 		return new Response(JSON.stringify({ error: 'Failed to save score' }), {
+			status: 500,
+			headers: { 'Content-Type': 'application/json', ...corsHeaders },
+		});
+	}
+}
+
+async function handlePostSession(request, env) {
+	const corsHeaders = getCorsHeaders(request);
+	try {
+		const timestamp = Date.now();
+		await updateLastPlayedAt(env, timestamp);
+
+		return new Response(JSON.stringify({ success: true }), {
+			headers: { 'Content-Type': 'application/json', ...corsHeaders },
+		});
+	} catch (error) {
+		return new Response(JSON.stringify({ error: 'Failed to update session' }), {
 			status: 500,
 			headers: { 'Content-Type': 'application/json', ...corsHeaders },
 		});
