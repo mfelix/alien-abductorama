@@ -61,6 +61,38 @@ const CONFIG = {
     // Shop
     SHOP_DURATION: 15,
 
+    // Energy Cells (revive mechanic)
+    ENERGY_CELL_REVIVE_HEALTH: 50,  // Health restored on revive
+    INVINCIBILITY_DURATION: 3,      // Seconds of invincibility after revive
+    INVINCIBILITY_FLICKER_RATE: 10, // Flicker frequency during invincibility
+
+    // Bombs
+    BOMB_GRAVITY: 600,              // Gravity acceleration (pixels/s²)
+    BOMB_INITIAL_VX: 0,             // Initial horizontal velocity
+    BOMB_INITIAL_VY: 100,           // Initial downward velocity
+    BOMB_BOUNCE_DAMPING: 0.6,       // Velocity retained after bounce
+    BOMB_MAX_BOUNCES: 3,            // Max bounces before explosion
+    BOMB_EXPLOSION_RADIUS: 120,     // Blast radius
+    BOMB_EXPLOSION_DAMAGE: 50,      // Damage to tanks in blast radius
+    BOMB_START_COUNT: 3,            // Starting bomb count per game
+    BOMB_MAX_COUNT: 6,              // Maximum bombs player can hold
+
+    // Warp Juke
+    WARP_JUKE_DISTANCE: 200,        // Distance to teleport
+    WARP_JUKE_COOLDOWN: 2.0,        // Seconds between warps
+    WARP_JUKE_DOUBLE_TAP_TIME: 0.3, // Time window for double-tap detection
+    WARP_JUKE_GHOST_DURATION: 0.5,  // Ghost trail duration
+
+    // Laser Turret
+    TURRET_DAMAGE_PER_SECOND: 40,   // Damage dealt per second to tanks
+    TURRET_ENERGY_COST: 15,         // Energy per second to fire
+    TURRET_BEAM_WIDTH: 4,           // Visual beam width
+    TURRET_RANGE: 600,              // Max range of turret
+
+    // Tank Health
+    TANK_HEALTH: 50,                // Regular tank health
+    HEAVY_TANK_HEALTH: 100,         // Heavy tank health
+
     // Scoring
     WAVE_COMPLETE_BONUS: 100,
 
@@ -165,6 +197,24 @@ const CONFIG = {
             color: '#ff0',
             effect: 'speed',
             value: 0.15
+        },
+        {
+            id: 'revive_cell',
+            name: 'REVIVE CELL',
+            description: 'Auto-revive on death',
+            cost: 300,
+            color: '#f55',
+            effect: 'energyCell',
+            value: 1
+        },
+        {
+            id: 'bomb_pack',
+            name: 'BOMB PACK',
+            description: '+2 bombs (press X)',
+            cost: 150,
+            color: '#ff8800',
+            effect: 'bombs',
+            value: 2
         }
     ]
 };
@@ -582,6 +632,199 @@ const SFX = {
         osc2.start();
         osc.stop(audioCtx.currentTime + 0.25);
         osc2.stop(audioCtx.currentTime + 0.2);
+    },
+
+    revive: () => {
+        if (!audioCtx) return;
+        // Dramatic power-up sound - rising sweep with sparkle
+        const osc = audioCtx.createOscillator();
+        const osc2 = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+
+        osc.connect(gain);
+        osc2.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        // Rising sweep
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(200, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(1000, audioCtx.currentTime + 0.4);
+
+        // Harmonic sparkle
+        osc2.type = 'triangle';
+        osc2.frequency.setValueAtTime(400, audioCtx.currentTime);
+        osc2.frequency.exponentialRampToValueAtTime(2000, audioCtx.currentTime + 0.4);
+
+        gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+
+        osc.start();
+        osc2.start();
+        osc.stop(audioCtx.currentTime + 0.5);
+        osc2.stop(audioCtx.currentTime + 0.5);
+
+        // Additional sparkle notes
+        [800, 1000, 1200, 1500].forEach((freq, i) => {
+            setTimeout(() => playTone(freq, 0.15, 'sine', 0.15), 100 + i * 80);
+        });
+    },
+
+    bombDrop: () => {
+        if (!audioCtx) return;
+        // Whoosh + thunk
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(80, audioCtx.currentTime + 0.2);
+
+        gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.2);
+    },
+
+    bombBounce: () => {
+        if (!audioCtx) return;
+        // Short thud
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(100, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(60, audioCtx.currentTime + 0.1);
+
+        gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.1);
+    },
+
+    warpJuke: () => {
+        if (!audioCtx) return;
+        // Sci-fi teleport/warp sound - quick rising sweep with echo
+        const osc = audioCtx.createOscillator();
+        const osc2 = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        const filter = audioCtx.createBiquadFilter();
+
+        osc.connect(filter);
+        osc2.connect(filter);
+        filter.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        // Main warp tone
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(200, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(2000, audioCtx.currentTime + 0.1);
+        osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.2);
+
+        // Sub harmonics
+        osc2.type = 'triangle';
+        osc2.frequency.setValueAtTime(100, audioCtx.currentTime);
+        osc2.frequency.exponentialRampToValueAtTime(1000, audioCtx.currentTime + 0.1);
+
+        // High-pass filter for electric feel
+        filter.type = 'highpass';
+        filter.frequency.setValueAtTime(300, audioCtx.currentTime);
+
+        gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
+
+        osc.start();
+        osc2.start();
+        osc.stop(audioCtx.currentTime + 0.25);
+        osc2.stop(audioCtx.currentTime + 0.25);
+    },
+
+    turretStart: () => {
+        if (!audioCtx) return;
+        // Electric hum that builds up - laser charging
+        const osc = audioCtx.createOscillator();
+        const osc2 = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+
+        osc.connect(gain);
+        osc2.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(100, audioCtx.currentTime);
+        osc.frequency.linearRampToValueAtTime(400, audioCtx.currentTime + 0.15);
+
+        osc2.type = 'square';
+        osc2.frequency.setValueAtTime(50, audioCtx.currentTime);
+        osc2.frequency.linearRampToValueAtTime(200, audioCtx.currentTime + 0.15);
+
+        gain.gain.setValueAtTime(0, audioCtx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.2, audioCtx.currentTime + 0.1);
+        gain.gain.linearRampToValueAtTime(0.15, audioCtx.currentTime + 0.15);
+
+        osc.start();
+        osc2.start();
+        osc.stop(audioCtx.currentTime + 0.15);
+        osc2.stop(audioCtx.currentTime + 0.15);
+    },
+
+    turretFiring: () => {
+        if (!audioCtx) return;
+        // Continuous electric buzz - the laser beam
+        const osc = audioCtx.createOscillator();
+        const osc2 = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        const filter = audioCtx.createBiquadFilter();
+
+        osc.connect(filter);
+        osc2.connect(filter);
+        filter.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(300 + Math.random() * 50, audioCtx.currentTime);
+
+        osc2.type = 'square';
+        osc2.frequency.setValueAtTime(150 + Math.random() * 25, audioCtx.currentTime);
+
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(500, audioCtx.currentTime);
+        filter.Q.setValueAtTime(2, audioCtx.currentTime);
+
+        gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+
+        osc.start();
+        osc2.start();
+        osc.stop(audioCtx.currentTime + 0.1);
+        osc2.stop(audioCtx.currentTime + 0.1);
+    },
+
+    turretStop: () => {
+        if (!audioCtx) return;
+        // Power down sound
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.2);
+
+        gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.2);
     }
 };
 
@@ -715,8 +958,17 @@ let selectedShopItem = 0;
 // Player inventory (persistent upgrades purchased in shop)
 let playerInventory = {
     maxEnergyBonus: 0,
-    speedBonus: 0
+    speedBonus: 0,
+    energyCells: 0,  // Revive charges - prevents game over
+    bombs: 0         // Bomb count
 };
+
+// Active bombs in the world
+let bombs = [];
+
+// Warp Juke double-tap detection
+let lastLeftTap = 0;
+let lastRightTap = 0;
 
 // Title screen UFO animation state
 let titleUfo = {
@@ -819,6 +1071,27 @@ window.addEventListener('keydown', (e) => {
             gameState = 'WAVE_TRANSITION';
         }
         return;
+    }
+
+    // Handle bomb drop during gameplay (X or B key)
+    if (gameState === 'PLAYING' && (e.code === 'KeyX' || e.code === 'KeyB')) {
+        dropBomb();
+    }
+
+    // Handle warp juke (double-tap left/right arrow)
+    if (gameState === 'PLAYING') {
+        const now = Date.now();
+        if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
+            if (now - lastLeftTap < CONFIG.WARP_JUKE_DOUBLE_TAP_TIME * 1000) {
+                triggerWarpJuke(-1); // Warp left
+            }
+            lastLeftTap = now;
+        } else if (e.code === 'ArrowRight' || e.code === 'KeyD') {
+            if (now - lastRightTap < CONFIG.WARP_JUKE_DOUBLE_TAP_TIME * 1000) {
+                triggerWarpJuke(1); // Warp right
+            }
+            lastRightTap = now;
+        }
     }
 
     // Handle game state transitions
@@ -1085,6 +1358,52 @@ class Target {
         return px >= this.x && px <= this.x + this.width &&
                py >= this.y && py <= this.y + this.height;
     }
+
+    // Blast away from explosion - target is destroyed
+    blastAway(explosionX, explosionY) {
+        if (!this.alive) return;
+
+        // Calculate direction away from explosion
+        const dx = (this.x + this.width / 2) - explosionX;
+        const dy = (this.y + this.height / 2) - explosionY;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+
+        // Normalize direction
+        const dirX = dx / dist;
+        const dirY = dy / dist;
+
+        // Create flying particles from the target
+        const colors = {
+            human: ['#ffccaa', '#ff9977', '#ffffff'],
+            cow: ['#ffffff', '#333333', '#ffcccc'],
+            sheep: ['#eeeeee', '#ffffff', '#cccccc'],
+            cat: ['#ff9944', '#ffbb77', '#ffffff'],
+            dog: ['#aa7744', '#cc9966', '#ffffff']
+        };
+        const targetColors = colors[this.type] || ['#888', '#aaa', '#666'];
+
+        // Create debris particles
+        for (let i = 0; i < 15; i++) {
+            const angle = Math.atan2(dirY, dirX) + (Math.random() - 0.5) * Math.PI;
+            const speed = 200 + Math.random() * 300;
+            const color = targetColors[Math.floor(Math.random() * targetColors.length)];
+            particles.push(new Particle(
+                this.x + this.width / 2 + (Math.random() - 0.5) * this.width,
+                this.y + this.height / 2 + (Math.random() - 0.5) * this.height,
+                Math.cos(angle) * speed,
+                Math.sin(angle) * speed - 100, // Add upward bias
+                color,
+                4 + Math.random() * 6,
+                0.5 + Math.random() * 0.5
+            ));
+        }
+
+        // Show floating text
+        createFloatingText(this.x + this.width / 2, this.y, 'BLASTED!', '#f80');
+
+        // Mark as dead
+        this.alive = false;
+    }
 }
 
 // ============================================
@@ -1211,6 +1530,12 @@ class UFO {
         this.hoverOffset = 0;
         this.hoverTime = 0;
         this.beamRotation = 0; // For spiral effect
+        this.invincibleTimer = 0; // Invincibility after revive
+        this.warpCooldown = 0; // Warp juke cooldown
+        this.warpGhosts = []; // Ghost trail positions for visual effect
+        this.turretActive = false; // Laser turret active
+        this.turretTarget = null; // Current turret target
+        this.turretSoundTimer = 0; // Timer for continuous firing sound
     }
 
     update(dt) {
@@ -1220,6 +1545,59 @@ class UFO {
 
         // Beam rotation for spiral effect
         this.beamRotation += dt * 5;
+
+        // Update invincibility timer
+        if (this.invincibleTimer > 0) {
+            this.invincibleTimer -= dt;
+        }
+
+        // Update warp cooldown
+        if (this.warpCooldown > 0) {
+            this.warpCooldown -= dt;
+        }
+
+        // Update warp ghosts
+        for (let i = this.warpGhosts.length - 1; i >= 0; i--) {
+            this.warpGhosts[i].alpha -= dt / CONFIG.WARP_JUKE_GHOST_DURATION;
+            if (this.warpGhosts[i].alpha <= 0) {
+                this.warpGhosts.splice(i, 1);
+            }
+        }
+
+        // Handle laser turret (T key)
+        const wantsTurret = keys['KeyT'];
+        const canFireTurret = this.energy >= CONFIG.TURRET_ENERGY_COST * dt;
+
+        if (wantsTurret && canFireTurret) {
+            if (!this.turretActive) {
+                SFX.turretStart && SFX.turretStart();
+            }
+            this.turretActive = true;
+            this.energy -= CONFIG.TURRET_ENERGY_COST * dt;
+
+            // Find closest tank in range
+            this.turretTarget = this.findTurretTarget();
+
+            // Deal damage to target
+            if (this.turretTarget) {
+                const damage = CONFIG.TURRET_DAMAGE_PER_SECOND * dt;
+                this.turretTarget.takeDamage(damage);
+
+                // Play continuous firing sound
+                this.turretSoundTimer -= dt;
+                if (this.turretSoundTimer <= 0) {
+                    SFX.turretFiring && SFX.turretFiring();
+                    this.turretSoundTimer = 0.1; // Play sound every 0.1 seconds
+                }
+            }
+        } else {
+            if (this.turretActive) {
+                SFX.turretStop && SFX.turretStop();
+            }
+            this.turretActive = false;
+            this.turretTarget = null;
+            this.turretSoundTimer = 0;
+        }
 
         // Handle beam activation
         const wantsBeam = keys['Space'];
@@ -1429,13 +1807,87 @@ class UFO {
         return null;
     }
 
+    findTurretTarget() {
+        // Find the closest tank within range
+        let closestTarget = null;
+        let closestDistance = Infinity;
+
+        // Check regular tanks
+        for (const tank of tanks) {
+            if (!tank.alive || tank.isStunned) continue;
+
+            const tankCenterX = tank.x + tank.width / 2;
+            const tankCenterY = tank.y + tank.height / 2;
+            const dx = tankCenterX - this.x;
+            const dy = tankCenterY - this.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            if (distance < CONFIG.TURRET_RANGE && distance < closestDistance) {
+                closestDistance = distance;
+                closestTarget = tank;
+            }
+        }
+
+        // Check heavy tanks
+        for (const heavyTank of heavyTanks) {
+            if (!heavyTank.alive || heavyTank.isStunned) continue;
+
+            const tankCenterX = heavyTank.x + heavyTank.width / 2;
+            const tankCenterY = heavyTank.y + heavyTank.height / 2;
+            const dx = tankCenterX - this.x;
+            const dy = tankCenterY - this.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            if (distance < CONFIG.TURRET_RANGE && distance < closestDistance) {
+                closestDistance = distance;
+                closestTarget = heavyTank;
+            }
+        }
+
+        return closestTarget;
+    }
+
     render() {
         const drawX = this.x - this.width / 2;
         const drawY = this.y - this.height / 2 + this.hoverOffset;
 
+        // Render warp ghost trail (behind UFO)
+        for (const ghost of this.warpGhosts) {
+            const ghostX = ghost.x - this.width / 2;
+            const ghostY = ghost.y - this.height / 2 + this.hoverOffset;
+
+            // Chromatic aberration effect on ghosts
+            ctx.globalAlpha = ghost.alpha * 0.3;
+
+            // Red offset
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.fillStyle = 'rgba(255, 0, 0, 0.5)';
+            if (images.ufo && images.ufo.complete) {
+                ctx.drawImage(images.ufo, ghostX - 5, ghostY, this.width, this.height);
+            }
+
+            // Cyan offset
+            ctx.fillStyle = 'rgba(0, 255, 255, 0.5)';
+            if (images.ufo && images.ufo.complete) {
+                ctx.drawImage(images.ufo, ghostX + 5, ghostY, this.width, this.height);
+            }
+
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.globalAlpha = 1;
+        }
+
         // Render beam first (behind UFO)
         if (this.beamActive) {
             this.renderBeam();
+        }
+
+        // Flicker effect during invincibility
+        const isInvincible = this.invincibleTimer > 0;
+        if (isInvincible) {
+            const flicker = Math.sin(Date.now() * CONFIG.INVINCIBILITY_FLICKER_RATE * 0.1) > 0;
+            if (!flicker) {
+                ctx.globalAlpha = 0.3;
+            }
         }
 
         if (images.ufo && images.ufo.complete) {
@@ -1446,6 +1898,11 @@ class UFO {
             ctx.fillRect(drawX, drawY, this.width, this.height);
             ctx.fillStyle = '#0ff';
             ctx.fillRect(drawX + 20, drawY + 20, this.width - 40, this.height - 40);
+        }
+
+        // Reset alpha if we modified it
+        if (isInvincible) {
+            ctx.globalAlpha = 1;
         }
 
         // Energy bar above UFO
@@ -1477,6 +1934,68 @@ class UFO {
             ctx.arc(this.x, this.y, this.width / 2 + 5, 0, Math.PI * 2);
             ctx.stroke();
         }
+
+        // Render laser turret beam
+        if (this.turretActive && this.turretTarget) {
+            this.renderLaserBeam();
+        }
+    }
+
+    renderLaserBeam() {
+        const target = this.turretTarget;
+        const targetX = target.x + target.width / 2;
+        const targetY = target.y + target.height / 2;
+
+        // Draw main laser beam
+        ctx.save();
+
+        // Outer glow
+        ctx.strokeStyle = 'rgba(255, 50, 50, 0.3)';
+        ctx.lineWidth = CONFIG.TURRET_BEAM_WIDTH * 3;
+        ctx.beginPath();
+        ctx.moveTo(this.x, this.y + this.height / 2);
+        ctx.lineTo(targetX, targetY);
+        ctx.stroke();
+
+        // Middle glow
+        ctx.strokeStyle = 'rgba(255, 100, 100, 0.6)';
+        ctx.lineWidth = CONFIG.TURRET_BEAM_WIDTH * 1.5;
+        ctx.beginPath();
+        ctx.moveTo(this.x, this.y + this.height / 2);
+        ctx.lineTo(targetX, targetY);
+        ctx.stroke();
+
+        // Core beam
+        ctx.strokeStyle = 'rgba(255, 255, 200, 0.9)';
+        ctx.lineWidth = CONFIG.TURRET_BEAM_WIDTH;
+        ctx.beginPath();
+        ctx.moveTo(this.x, this.y + this.height / 2);
+        ctx.lineTo(targetX, targetY);
+        ctx.stroke();
+
+        // Impact effect at target
+        const impactPulse = Math.sin(Date.now() / 30) * 0.5 + 0.5;
+        ctx.fillStyle = `rgba(255, 100, 50, ${0.3 + impactPulse * 0.4})`;
+        ctx.beginPath();
+        ctx.arc(targetX, targetY, 15 + impactPulse * 10, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Sparks at impact point
+        if (Math.random() < 0.3) {
+            const sparkAngle = Math.random() * Math.PI * 2;
+            const sparkSpeed = 50 + Math.random() * 100;
+            particles.push(new Particle(
+                targetX + (Math.random() - 0.5) * 20,
+                targetY + (Math.random() - 0.5) * 20,
+                Math.cos(sparkAngle) * sparkSpeed,
+                Math.sin(sparkAngle) * sparkSpeed,
+                'rgba(255, 200, 50, 0.8)',
+                2 + Math.random() * 2,
+                0.15 + Math.random() * 0.1
+            ));
+        }
+
+        ctx.restore();
     }
 
     renderBeam() {
@@ -1656,6 +2175,38 @@ class Tank {
         this.isStunned = false;
         this.stunTimer = 0;
         this.stunEffectTime = 0; // For visual effect animation
+
+        // Health (for laser turret damage)
+        this.health = CONFIG.TANK_HEALTH;
+        this.maxHealth = CONFIG.TANK_HEALTH;
+    }
+
+    takeDamage(amount) {
+        if (!this.alive || this.isStunned) return;
+        this.health -= amount;
+        if (this.health <= 0) {
+            this.health = 0;
+            this.destroy();
+        }
+    }
+
+    destroy() {
+        this.alive = false;
+        this.respawnTimer = 3; // Respawn timer
+
+        // Create explosion
+        createExplosion(this.x + this.width / 2, this.y + this.height / 2, 'medium');
+
+        // Award points
+        score += CONFIG.TANK_POINTS;
+        harvestCount.tank++;
+        harvestBounce.tank = 1;
+
+        // Floating text
+        createFloatingText(this.x + this.width / 2, this.y, `+${CONFIG.TANK_POINTS}`, '#ff0');
+
+        // Sound
+        SFX.explosion(false);
     }
 
     update(dt) {
@@ -1988,6 +2539,14 @@ class Projectile {
         if (ufo && this.checkCollisionWithUFO()) {
             this.alive = false;
 
+            // Check for invincibility first
+            if (ufo.invincibleTimer > 0) {
+                // Invincible - just show small visual effect
+                createExplosion(this.x, this.y, 'small');
+                createFloatingText(ufo.x, ufo.y - 30, 'INVINCIBLE!', '#ff0');
+                return;
+            }
+
             if (activePowerups.shield.active && activePowerups.shield.charges > 0) {
                 // Shield absorbs hit
                 activePowerups.shield.charges--;
@@ -2014,10 +2573,15 @@ class Projectile {
                 damageFlash = 0.15;
                 createFloatingText(ufo.x, ufo.y - 30, `-${this.damage}`, '#f00');
 
-                // Check for game over
+                // Check for game over or revive
                 if (ufo.health <= 0) {
                     ufo.health = 0;
-                    triggerGameOver();
+                    if (playerInventory.energyCells > 0) {
+                        // Use energy cell to revive
+                        triggerRevive();
+                    } else {
+                        triggerGameOver();
+                    }
                 }
             }
         }
@@ -2075,6 +2639,179 @@ class Projectile {
             ctx.arc(this.x, this.y, this.radius * 2, 0, Math.PI * 2);
             ctx.fill();
         }
+    }
+}
+
+// ============================================
+// BOMB CLASS
+// ============================================
+
+class Bomb {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.vx = CONFIG.BOMB_INITIAL_VX;
+        this.vy = CONFIG.BOMB_INITIAL_VY;
+        this.radius = 12;
+        this.bounceCount = 0;
+        this.alive = true;
+        this.rotation = 0;
+        this.groundY = canvas.height - 60; // Ground level
+    }
+
+    update(dt) {
+        if (!this.alive) return;
+
+        // Apply gravity
+        this.vy += CONFIG.BOMB_GRAVITY * dt;
+
+        // Update position
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+
+        // Spin animation
+        this.rotation += dt * 10;
+
+        // Check for ground collision (bounce)
+        if (this.y + this.radius >= this.groundY) {
+            this.y = this.groundY - this.radius;
+            this.vy = -this.vy * CONFIG.BOMB_BOUNCE_DAMPING;
+            this.vx *= CONFIG.BOMB_BOUNCE_DAMPING;
+            this.bounceCount++;
+
+            // Create small dust particles on bounce
+            for (let i = 0; i < 5; i++) {
+                const angle = Math.PI + (Math.random() - 0.5) * Math.PI;
+                const speed = 50 + Math.random() * 50;
+                particles.push(new Particle(
+                    this.x, this.groundY,
+                    Math.cos(angle) * speed, Math.sin(angle) * speed,
+                    'rgba(139, 90, 43, 1)', // Brown dust
+                    3, 0.3
+                ));
+            }
+
+            // Play bounce sound
+            SFX.bombBounce && SFX.bombBounce();
+
+            // Explode after max bounces
+            if (this.bounceCount >= CONFIG.BOMB_MAX_BOUNCES) {
+                this.explode();
+            }
+        }
+
+        // Check for wall collisions
+        if (this.x - this.radius < 0) {
+            this.x = this.radius;
+            this.vx = -this.vx * CONFIG.BOMB_BOUNCE_DAMPING;
+            this.bounceCount++;
+        } else if (this.x + this.radius > canvas.width) {
+            this.x = canvas.width - this.radius;
+            this.vx = -this.vx * CONFIG.BOMB_BOUNCE_DAMPING;
+            this.bounceCount++;
+        }
+
+        // Check if velocity is low enough to explode (stopped bouncing)
+        if (this.bounceCount > 0 && Math.abs(this.vy) < 20 && this.y >= this.groundY - this.radius - 5) {
+            this.explode();
+        }
+    }
+
+    explode() {
+        if (!this.alive) return;
+        this.alive = false;
+
+        // Create explosion visual
+        createExplosion(this.x, this.y, 'large');
+
+        // Screen shake
+        screenShake = 0.6;
+
+        // Play explosion sound
+        SFX.explosion(true);
+
+        // Blast away nearby targets
+        for (const target of targets) {
+            if (!target.alive) continue;
+            const dx = target.x + target.width / 2 - this.x;
+            const dy = target.y + target.height / 2 - this.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist < CONFIG.BOMB_EXPLOSION_RADIUS) {
+                target.blastAway(this.x, this.y);
+            }
+        }
+
+        // Damage tanks in blast radius
+        for (const tank of tanks) {
+            if (!tank.alive) continue;
+            const dx = tank.x + tank.width / 2 - this.x;
+            const dy = tank.y + tank.height / 2 - this.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist < CONFIG.BOMB_EXPLOSION_RADIUS) {
+                // Stun the tank
+                tank.isStunned = true;
+                tank.stunTimer = 3;
+                tank.stunEffectTime = 0;
+                createFloatingText(tank.x + tank.width / 2, tank.groundY - 30, 'STUNNED!', '#ff0');
+                SFX.tankStunned();
+            }
+        }
+
+        // Damage heavy tanks in blast radius
+        for (const heavyTank of heavyTanks) {
+            if (!heavyTank.alive) continue;
+            const dx = heavyTank.x + heavyTank.width / 2 - this.x;
+            const dy = heavyTank.y + heavyTank.height / 2 - this.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist < CONFIG.BOMB_EXPLOSION_RADIUS) {
+                // Stun the heavy tank
+                heavyTank.isStunned = true;
+                heavyTank.stunTimer = 2; // Shorter stun for heavy tanks
+                heavyTank.stunEffectTime = 0;
+                createFloatingText(heavyTank.x + heavyTank.width / 2, heavyTank.groundY - 30, 'STUNNED!', '#ff0');
+                SFX.tankStunned();
+            }
+        }
+    }
+
+    render() {
+        if (!this.alive) return;
+
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.rotation);
+
+        // Bomb body (dark gray sphere)
+        ctx.fillStyle = '#333';
+        ctx.beginPath();
+        ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Highlight
+        ctx.fillStyle = '#666';
+        ctx.beginPath();
+        ctx.arc(-3, -3, this.radius * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Fuse
+        ctx.strokeStyle = '#8B4513';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, -this.radius);
+        ctx.lineTo(0, -this.radius - 8);
+        ctx.stroke();
+
+        // Fuse spark
+        const sparkIntensity = Math.sin(Date.now() / 50) * 0.5 + 0.5;
+        ctx.fillStyle = `rgba(255, ${150 + sparkIntensity * 105}, 0, ${sparkIntensity})`;
+        ctx.beginPath();
+        ctx.arc(0, -this.radius - 8, 3 + sparkIntensity * 2, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
     }
 }
 
@@ -2614,6 +3351,38 @@ class HeavyTank {
         this.isStunned = false;
         this.stunTimer = 0;
         this.stunEffectTime = 0; // For visual effect animation
+
+        // Health (for laser turret damage)
+        this.health = CONFIG.HEAVY_TANK_HEALTH;
+        this.maxHealth = CONFIG.HEAVY_TANK_HEALTH;
+    }
+
+    takeDamage(amount) {
+        if (!this.alive || this.isStunned) return;
+        this.health -= amount;
+        if (this.health <= 0) {
+            this.health = 0;
+            this.destroy();
+        }
+    }
+
+    destroy() {
+        this.alive = false;
+        this.respawnTimer = 5; // Respawn timer (longer than regular tank)
+
+        // Create explosion
+        createExplosion(this.x + this.width / 2, this.y + this.height / 2, 'large');
+
+        // Award points
+        score += this.points;
+        harvestCount.tank++;
+        harvestBounce.tank = 1;
+
+        // Floating text
+        createFloatingText(this.x + this.width / 2, this.y, `+${this.points}`, '#ff0');
+
+        // Sound
+        SFX.explosion(true);
     }
 
     update(dt) {
@@ -2991,6 +3760,148 @@ function renderProjectiles() {
 }
 
 // ============================================
+// BOMB MANAGEMENT
+// ============================================
+
+function dropBomb() {
+    if (!ufo || playerInventory.bombs <= 0) return;
+
+    // Consume a bomb
+    playerInventory.bombs--;
+
+    // Create bomb at UFO position
+    bombs.push(new Bomb(ufo.x, ufo.y + ufo.height / 2));
+
+    // Play bomb drop sound
+    SFX.bombDrop && SFX.bombDrop();
+
+    // Visual feedback
+    createFloatingText(ufo.x, ufo.y + 50, 'BOMB!', '#ff8800');
+}
+
+function updateBombs(dt) {
+    for (const bomb of bombs) {
+        bomb.update(dt);
+    }
+    bombs = bombs.filter(b => b.alive);
+}
+
+function renderBombs() {
+    for (const bomb of bombs) {
+        bomb.render();
+    }
+}
+
+// ============================================
+// WARP JUKE SYSTEM
+// ============================================
+
+function triggerWarpJuke(direction) {
+    if (!ufo || ufo.warpCooldown > 0) return;
+
+    // Store old position for ghost trail
+    const oldX = ufo.x;
+    const oldY = ufo.y;
+
+    // Add ghost at current position
+    ufo.warpGhosts.push({
+        x: oldX,
+        y: oldY,
+        alpha: 1.0
+    });
+
+    // Calculate new position
+    const warpDistance = CONFIG.WARP_JUKE_DISTANCE * direction;
+    ufo.x = Math.max(ufo.width / 2, Math.min(canvas.width - ufo.width / 2, ufo.x + warpDistance));
+
+    // Set cooldown
+    ufo.warpCooldown = CONFIG.WARP_JUKE_COOLDOWN;
+
+    // Create warp effect particles
+    // Trail particles from old position to new
+    const steps = 10;
+    for (let i = 0; i < steps; i++) {
+        const t = i / steps;
+        const px = oldX + (ufo.x - oldX) * t;
+        const py = oldY + (ufo.y - oldY) * t + (Math.random() - 0.5) * 20;
+
+        // Chromatic aberration effect - red, green, blue offset particles
+        const colors = ['rgba(255, 100, 100, 0.8)', 'rgba(100, 255, 100, 0.8)', 'rgba(100, 100, 255, 0.8)'];
+        for (let j = 0; j < 3; j++) {
+            particles.push(new Particle(
+                px + (j - 1) * 10,
+                py,
+                (Math.random() - 0.5) * 50,
+                (Math.random() - 0.5) * 50,
+                colors[j],
+                3 + Math.random() * 3,
+                0.3 + Math.random() * 0.2
+            ));
+        }
+    }
+
+    // Burst particles at destination
+    for (let i = 0; i < 15; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 50 + Math.random() * 100;
+        particles.push(new Particle(
+            ufo.x + (Math.random() - 0.5) * 30,
+            ufo.y + (Math.random() - 0.5) * 30,
+            Math.cos(angle) * speed,
+            Math.sin(angle) * speed,
+            'rgba(0, 255, 255, 0.8)',
+            2 + Math.random() * 4,
+            0.2 + Math.random() * 0.2
+        ));
+    }
+
+    // Screen shake
+    screenShake = 0.2;
+
+    // Play warp sound
+    SFX.warpJuke && SFX.warpJuke();
+
+    // Visual feedback
+    createFloatingText(ufo.x, ufo.y - 60, 'WARP!', '#0ff');
+}
+
+// ============================================
+// REVIVE SYSTEM
+// ============================================
+
+function triggerRevive() {
+    // Consume an energy cell
+    playerInventory.energyCells--;
+
+    // Restore health
+    ufo.health = CONFIG.ENERGY_CELL_REVIVE_HEALTH;
+
+    // Grant invincibility
+    ufo.invincibleTimer = CONFIG.INVINCIBILITY_DURATION;
+
+    // Visual feedback - ring of explosions around UFO (celebratory, not destructive)
+    for (let i = 0; i < 8; i++) {
+        const angle = (i / 8) * Math.PI * 2;
+        const dist = 80;
+        setTimeout(() => {
+            if (ufo) {
+                createExplosion(ufo.x + Math.cos(angle) * dist, ufo.y + Math.sin(angle) * dist, 'medium');
+            }
+        }, i * 50);
+    }
+
+    // Screen shake and flash for feedback
+    screenShake = 0.5;
+
+    // Floating text
+    createFloatingText(ufo.x, ufo.y - 50, 'REVIVED!', '#f55');
+    createFloatingText(ufo.x, ufo.y - 80, `${playerInventory.energyCells} CELLS LEFT`, '#ff0');
+
+    // Play revive sound
+    SFX.revive && SFX.revive();
+}
+
+// ============================================
 // GAME OVER
 // ============================================
 
@@ -3258,8 +4169,13 @@ function startGame() {
     // Reset player inventory (shop upgrades)
     playerInventory = {
         maxEnergyBonus: 0,
-        speedBonus: 0
+        speedBonus: 0,
+        energyCells: 0,
+        bombs: CONFIG.BOMB_START_COUNT
     };
+
+    // Clear active bombs
+    bombs = [];
 
     // Spawn initial tanks
     spawnTanks();
@@ -3397,8 +4313,184 @@ function renderUI() {
     ctx.textAlign = 'center';
     ctx.fillText('SHIELD', shieldX + shieldBarWidth / 2, shieldY + shieldBarHeight / 2 + 5);
 
+    // ========== ENERGY CELLS (below shield bar) ==========
+    renderEnergyCells(shieldX, shieldY + shieldBarHeight + 10);
+
+    // ========== BOMB COUNT (below energy cells) ==========
+    renderBombCount(shieldX, shieldY + shieldBarHeight + 60);
+
+    // ========== WARP COOLDOWN (below bomb count) ==========
+    renderWarpCooldown(shieldX, shieldY + shieldBarHeight + 110);
+
+    // ========== TURRET INDICATOR (next to warp cooldown) ==========
+    renderTurretIndicator(shieldX + 80, shieldY + shieldBarHeight + 110);
+
     // ========== TOP CENTER: HARVEST COUNTER ==========
     renderHarvestCounter();
+}
+
+function renderEnergyCells(startX, startY) {
+    const cells = playerInventory.energyCells;
+    if (cells <= 0) return; // Don't show if no cells
+
+    const cellSize = 18;
+    const spacing = 6;
+    const panelPadding = 8;
+    const panelWidth = (cellSize + spacing) * cells + panelPadding * 2 - spacing;
+    const panelHeight = cellSize + panelPadding * 2;
+
+    // Panel background
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    ctx.beginPath();
+    ctx.roundRect(startX, startY, panelWidth, panelHeight, 6);
+    ctx.fill();
+
+    // Draw cell icons
+    for (let i = 0; i < cells; i++) {
+        const x = startX + panelPadding + i * (cellSize + spacing) + cellSize / 2;
+        const y = startY + panelPadding + cellSize / 2;
+
+        // Pulsing glow effect
+        const pulse = Math.sin(Date.now() / 200 + i * 0.5) * 0.3 + 0.7;
+
+        // Outer glow
+        ctx.fillStyle = `rgba(255, 85, 85, ${pulse * 0.3})`;
+        ctx.beginPath();
+        ctx.arc(x, y, cellSize / 2 + 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Cell body (battery/crystal shape)
+        ctx.fillStyle = `rgba(255, 85, 85, ${pulse})`;
+        ctx.beginPath();
+        ctx.arc(x, y, cellSize / 2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Inner highlight
+        ctx.fillStyle = `rgba(255, 200, 200, ${pulse * 0.6})`;
+        ctx.beginPath();
+        ctx.arc(x - 2, y - 2, cellSize / 4, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // Label
+    ctx.fillStyle = '#f55';
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('REVIVE', startX + panelWidth + 5, startY + panelHeight / 2 + 4);
+}
+
+function renderBombCount(startX, startY) {
+    const bombCount = playerInventory.bombs;
+    if (bombCount <= 0) return; // Don't show if no bombs
+
+    const bombSize = 16;
+    const spacing = 5;
+    const panelPadding = 8;
+    const panelWidth = (bombSize + spacing) * bombCount + panelPadding * 2 - spacing;
+    const panelHeight = bombSize + panelPadding * 2;
+
+    // Panel background
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    ctx.beginPath();
+    ctx.roundRect(startX, startY, panelWidth, panelHeight, 6);
+    ctx.fill();
+
+    // Draw bomb icons
+    for (let i = 0; i < bombCount; i++) {
+        const x = startX + panelPadding + i * (bombSize + spacing) + bombSize / 2;
+        const y = startY + panelPadding + bombSize / 2;
+
+        // Bomb body
+        ctx.fillStyle = '#333';
+        ctx.beginPath();
+        ctx.arc(x, y, bombSize / 2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Highlight
+        ctx.fillStyle = '#555';
+        ctx.beginPath();
+        ctx.arc(x - 2, y - 2, bombSize / 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Fuse spark
+        const sparkIntensity = Math.sin(Date.now() / 100 + i) * 0.5 + 0.5;
+        ctx.fillStyle = `rgba(255, ${150 + sparkIntensity * 100}, 0, ${0.7 + sparkIntensity * 0.3})`;
+        ctx.beginPath();
+        ctx.arc(x, y - bombSize / 2 - 3, 2 + sparkIntensity, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // Label and key hint
+    ctx.fillStyle = '#ff8800';
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('BOMB [X]', startX + panelWidth + 5, startY + panelHeight / 2 + 4);
+}
+
+function renderWarpCooldown(startX, startY) {
+    if (!ufo) return;
+
+    const panelWidth = 70;
+    const panelHeight = 24;
+    const cooldownPercent = Math.max(0, ufo.warpCooldown / CONFIG.WARP_JUKE_COOLDOWN);
+
+    // Panel background
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    ctx.beginPath();
+    ctx.roundRect(startX, startY, panelWidth, panelHeight, 4);
+    ctx.fill();
+
+    // Cooldown bar background
+    ctx.fillStyle = 'rgba(100, 100, 255, 0.3)';
+    ctx.beginPath();
+    ctx.roundRect(startX + 4, startY + 4, panelWidth - 8, panelHeight - 8, 2);
+    ctx.fill();
+
+    // Cooldown bar fill (shows when ready)
+    const readyPercent = 1 - cooldownPercent;
+    if (readyPercent > 0) {
+        const gradient = ctx.createLinearGradient(startX, 0, startX + panelWidth, 0);
+        gradient.addColorStop(0, '#66f');
+        gradient.addColorStop(1, '#aaf');
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.roundRect(startX + 4, startY + 4, (panelWidth - 8) * readyPercent, panelHeight - 8, 2);
+        ctx.fill();
+    }
+
+    // Label
+    ctx.fillStyle = cooldownPercent <= 0 ? '#aaf' : '#666';
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('WARP', startX + panelWidth / 2, startY + panelHeight / 2 + 4);
+}
+
+function renderTurretIndicator(startX, startY) {
+    if (!ufo) return;
+
+    const panelWidth = 70;
+    const panelHeight = 24;
+    const isActive = ufo.turretActive && ufo.turretTarget;
+
+    // Panel background
+    ctx.fillStyle = isActive ? 'rgba(255, 100, 100, 0.5)' : 'rgba(0, 0, 0, 0.4)';
+    ctx.beginPath();
+    ctx.roundRect(startX, startY, panelWidth, panelHeight, 4);
+    ctx.fill();
+
+    // Active indicator with pulse
+    if (isActive) {
+        const pulse = Math.sin(Date.now() / 100) * 0.3 + 0.7;
+        ctx.strokeStyle = `rgba(255, 150, 150, ${pulse})`;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
+
+    // Label
+    ctx.fillStyle = isActive ? '#fff' : '#888';
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('TURRET [T]', startX + panelWidth / 2, startY + panelHeight / 2 + 4);
 }
 
 function renderHarvestCounter() {
@@ -4680,6 +5772,12 @@ function purchaseShopItem() {
         case 'speed':
             playerInventory.speedBonus += item.value;
             break;
+        case 'energyCell':
+            playerInventory.energyCells += item.value;
+            break;
+        case 'bombs':
+            playerInventory.bombs = Math.min(CONFIG.BOMB_MAX_COUNT, playerInventory.bombs + item.value);
+            break;
     }
 
     // Play purchase sound
@@ -4772,6 +5870,9 @@ function update(dt) {
     // Update projectiles
     updateProjectiles(dt);
 
+    // Update bombs
+    updateBombs(dt);
+
     // Update particles
     updateParticles(dt);
 
@@ -4858,6 +5959,9 @@ function render() {
 
     // Render projectiles
     renderProjectiles();
+
+    // Render bombs
+    renderBombs();
 
     // Render UFO (and beam)
     if (ufo) {
