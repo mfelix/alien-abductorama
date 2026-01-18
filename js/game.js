@@ -954,6 +954,8 @@ let lastTimerWarningSecond = -1; // Track when we last played timer warning
 // Shop state
 let shopTimer = 0;
 let selectedShopItem = 0;
+let shopItemBounds = []; // For click detection on shop items
+let shopButtonBounds = { done: null, cancel: null }; // For click detection on buttons
 
 // Player inventory (persistent upgrades purchased in shop)
 let playerInventory = {
@@ -1123,6 +1125,48 @@ canvas.addEventListener('wheel', (e) => {
         // Clamp will happen in render function when we know content height
     }
 }, { passive: false });
+
+// Shop mouse click support
+canvas.addEventListener('click', (e) => {
+    if (gameState !== 'SHOP') return;
+
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const mouseY = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+    // Check if clicked on a shop item
+    for (let i = 0; i < shopItemBounds.length; i++) {
+        const b = shopItemBounds[i];
+        if (mouseX >= b.x && mouseX <= b.x + b.width &&
+            mouseY >= b.y && mouseY <= b.y + b.height) {
+            selectedShopItem = i;
+            purchaseShopItem();
+            return;
+        }
+    }
+
+    // Check if clicked Done button
+    if (shopButtonBounds.done) {
+        const b = shopButtonBounds.done;
+        if (mouseX >= b.x && mouseX <= b.x + b.width &&
+            mouseY >= b.y && mouseY <= b.y + b.height) {
+            waveTransitionTimer = CONFIG.WAVE_TRANSITION_DURATION;
+            gameState = 'WAVE_TRANSITION';
+            return;
+        }
+    }
+
+    // Check if clicked Cancel button
+    if (shopButtonBounds.cancel) {
+        const b = shopButtonBounds.cancel;
+        if (mouseX >= b.x && mouseX <= b.x + b.width &&
+            mouseY >= b.y && mouseY <= b.y + b.height) {
+            waveTransitionTimer = CONFIG.WAVE_TRANSITION_DURATION;
+            gameState = 'WAVE_TRANSITION';
+            return;
+        }
+    }
+});
 
 // ============================================
 // ASSET LOADING
@@ -5684,11 +5728,17 @@ function renderShop() {
     const startY = 220;
     const startX = canvas.width / 2 - itemWidth / 2;
 
+    // Clear and rebuild item bounds for click detection
+    shopItemBounds = [];
+
     for (let i = 0; i < items.length; i++) {
         const item = items[i];
         const y = startY + i * (itemHeight + 10);
         const isSelected = i === selectedShopItem;
         const canAfford = score >= item.cost;
+
+        // Store bounds for click detection
+        shopItemBounds.push({ x: startX, y: y, width: itemWidth, height: itemHeight });
 
         // Item background
         if (isSelected) {
@@ -5729,7 +5779,41 @@ function renderShop() {
     ctx.font = '18px monospace';
     ctx.textAlign = 'center';
     const instructY = startY + items.length * (itemHeight + 10) + 30;
-    ctx.fillText('↑/↓ to select  •  SPACE to buy  •  ENTER to skip', canvas.width / 2, instructY);
+    ctx.fillText('↑/↓ select  •  SPACE buy  •  or click items', canvas.width / 2, instructY);
+
+    // Done and Cancel buttons
+    const buttonWidth = 120;
+    const buttonHeight = 40;
+    const buttonSpacing = 20;
+    const buttonY = instructY + 30;
+    const doneX = canvas.width / 2 - buttonWidth - buttonSpacing / 2;
+    const cancelX = canvas.width / 2 + buttonSpacing / 2;
+
+    // Store button bounds for click detection
+    shopButtonBounds.done = { x: doneX, y: buttonY, width: buttonWidth, height: buttonHeight };
+    shopButtonBounds.cancel = { x: cancelX, y: buttonY, width: buttonWidth, height: buttonHeight };
+
+    // Done button
+    ctx.fillStyle = 'rgba(0, 200, 0, 0.3)';
+    ctx.strokeStyle = '#0c0';
+    ctx.lineWidth = 2;
+    ctx.fillRect(doneX, buttonY, buttonWidth, buttonHeight);
+    ctx.strokeRect(doneX, buttonY, buttonWidth, buttonHeight);
+    ctx.fillStyle = '#0f0';
+    ctx.font = 'bold 20px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('DONE', doneX + buttonWidth / 2, buttonY + 27);
+
+    // Cancel button
+    ctx.fillStyle = 'rgba(200, 100, 0, 0.3)';
+    ctx.strokeStyle = '#c60';
+    ctx.lineWidth = 2;
+    ctx.fillRect(cancelX, buttonY, buttonWidth, buttonHeight);
+    ctx.strokeRect(cancelX, buttonY, buttonWidth, buttonHeight);
+    ctx.fillStyle = '#f80';
+    ctx.font = 'bold 20px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('CANCEL', cancelX + buttonWidth / 2, buttonY + 27);
 
     // Render UI
     renderUI();
