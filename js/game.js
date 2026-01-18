@@ -2647,10 +2647,10 @@ class Projectile {
 // ============================================
 
 class Bomb {
-    constructor(x, y) {
+    constructor(x, y, initialVx = 0) {
         this.x = x;
         this.y = y;
-        this.vx = CONFIG.BOMB_INITIAL_VX;
+        this.vx = CONFIG.BOMB_INITIAL_VX + initialVx;
         this.vy = CONFIG.BOMB_INITIAL_VY;
         this.radius = 12;
         this.bounceCount = 0;
@@ -2672,48 +2672,57 @@ class Bomb {
         // Spin animation
         this.rotation += dt * 10;
 
-        // Check for ground collision (bounce)
+        // Check for collision with targets - explode on contact
+        for (const target of targets) {
+            if (!target.alive) continue;
+            const dx = this.x - (target.x + target.width / 2);
+            const dy = this.y - (target.y + target.height / 2);
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < this.radius + Math.max(target.width, target.height) / 2) {
+                this.explode();
+                return;
+            }
+        }
+
+        // Check for collision with tanks - explode on contact
+        for (const tank of tanks) {
+            if (!tank.alive) continue;
+            const tankCenterX = tank.x + tank.width / 2;
+            const tankCenterY = tank.groundY - tank.height / 2;
+            const dx = this.x - tankCenterX;
+            const dy = this.y - tankCenterY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < this.radius + Math.max(tank.width, tank.height) / 2) {
+                this.explode();
+                return;
+            }
+        }
+
+        // Check for collision with heavy tanks - explode on contact
+        for (const heavyTank of heavyTanks) {
+            if (!heavyTank.alive) continue;
+            const tankCenterX = heavyTank.x + heavyTank.width / 2;
+            const tankCenterY = heavyTank.groundY - heavyTank.height / 2;
+            const dx = this.x - tankCenterX;
+            const dy = this.y - tankCenterY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < this.radius + Math.max(heavyTank.width, heavyTank.height) / 2) {
+                this.explode();
+                return;
+            }
+        }
+
+        // Check for ground collision - explode on contact
         if (this.y + this.radius >= this.groundY) {
             this.y = this.groundY - this.radius;
-            this.vy = -this.vy * CONFIG.BOMB_BOUNCE_DAMPING;
-            this.vx *= CONFIG.BOMB_BOUNCE_DAMPING;
-            this.bounceCount++;
-
-            // Create small dust particles on bounce
-            for (let i = 0; i < 5; i++) {
-                const angle = Math.PI + (Math.random() - 0.5) * Math.PI;
-                const speed = 50 + Math.random() * 50;
-                particles.push(new Particle(
-                    this.x, this.groundY,
-                    Math.cos(angle) * speed, Math.sin(angle) * speed,
-                    'rgba(139, 90, 43, 1)', // Brown dust
-                    3, 0.3
-                ));
-            }
-
-            // Play bounce sound
-            SFX.bombBounce && SFX.bombBounce();
-
-            // Explode after max bounces
-            if (this.bounceCount >= CONFIG.BOMB_MAX_BOUNCES) {
-                this.explode();
-            }
-        }
-
-        // Check for wall collisions
-        if (this.x - this.radius < 0) {
-            this.x = this.radius;
-            this.vx = -this.vx * CONFIG.BOMB_BOUNCE_DAMPING;
-            this.bounceCount++;
-        } else if (this.x + this.radius > canvas.width) {
-            this.x = canvas.width - this.radius;
-            this.vx = -this.vx * CONFIG.BOMB_BOUNCE_DAMPING;
-            this.bounceCount++;
-        }
-
-        // Check if velocity is low enough to explode (stopped bouncing)
-        if (this.bounceCount > 0 && Math.abs(this.vy) < 20 && this.y >= this.groundY - this.radius - 5) {
             this.explode();
+            return;
+        }
+
+        // Check for wall collisions - explode on contact
+        if (this.x - this.radius < 0 || this.x + this.radius > canvas.width) {
+            this.explode();
+            return;
         }
     }
 
@@ -3769,8 +3778,17 @@ function dropBomb() {
     // Consume a bomb
     playerInventory.bombs--;
 
-    // Create bomb at UFO position
-    bombs.push(new Bomb(ufo.x, ufo.y + ufo.height / 2));
+    // Calculate horizontal velocity based on UFO movement direction
+    let bombVx = 0;
+    const effectiveSpeed = CONFIG.UFO_SPEED * (1 + playerInventory.speedBonus);
+    if (keys['ArrowLeft'] || keys['KeyA']) {
+        bombVx = -effectiveSpeed * 0.5; // Bomb inherits half of UFO speed
+    } else if (keys['ArrowRight'] || keys['KeyD']) {
+        bombVx = effectiveSpeed * 0.5;
+    }
+
+    // Create bomb at UFO position with horizontal velocity
+    bombs.push(new Bomb(ufo.x, ufo.y + ufo.height / 2, bombVx));
 
     // Play bomb drop sound
     SFX.bombDrop && SFX.bombDrop();
