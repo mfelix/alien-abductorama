@@ -13,3 +13,6 @@ dist/
 # Environment files
 .env
 .env.local
+
+# Gas Town
+.beads/
