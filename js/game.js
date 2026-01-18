@@ -79,17 +79,15 @@ const CONFIG = {
 
     // Warp Juke
     WARP_JUKE_DISTANCE: 200,        // Distance to teleport
-    WARP_JUKE_COOLDOWN: 2.0,        // Seconds between warps
-    WARP_JUKE_DOUBLE_TAP_TIME: 0.3, // Time window for double-tap detection
+    WARP_JUKE_TRIPLE_TAP_TIME: 0.4, // Time window for triple-tap detection (slightly longer for 3 taps)
     WARP_JUKE_GHOST_DURATION: 0.5,  // Ghost trail duration
+    WARP_JUKE_ENERGY_COST: 25,      // Energy cost to warp
 
     // Laser Turret
     TURRET_DAMAGE_PER_SECOND: 40,   // Damage dealt per second to tanks
     TURRET_ENERGY_COST: 15,         // Energy per second to fire
     TURRET_BEAM_WIDTH: 4,           // Visual beam width
     TURRET_RANGE: 600,              // Max range of turret
-    TURRET_START_COUNT: 2,          // Starting turret charges per game
-    TURRET_MAX_COUNT: 5,            // Maximum turret charges player can hold
 
     // Tank Health
     TANK_HEALTH: 50,                // Regular tank health
@@ -217,15 +215,6 @@ const CONFIG = {
             color: '#ff8800',
             effect: 'bombs',
             value: 2
-        },
-        {
-            id: 'laser_turret',
-            name: 'LASER TURRET',
-            description: '+1 turret charge (hold T)',
-            cost: 200,
-            color: '#f44',
-            effect: 'turrets',
-            value: 1
         }
     ]
 };
@@ -916,7 +905,6 @@ let combo = 0;
 
 // Game session tracking for leaderboard
 let gameStartTime = 0;
-let sessionTrackingTimer = null;
 let leaderboard = [];
 let leaderboardLoading = false;
 let activityStats = null;
@@ -966,26 +954,21 @@ let lastTimerWarningSecond = -1; // Track when we last played timer warning
 // Shop state
 let shopTimer = 0;
 let selectedShopItem = 0;
-let shopItemBounds = []; // For click detection on shop items
-let shopButtonBounds = { done: null, cancel: null }; // For click detection on buttons
 
 // Player inventory (persistent upgrades purchased in shop)
 let playerInventory = {
     maxEnergyBonus: 0,
     speedBonus: 0,
     energyCells: 0,  // Revive charges - prevents game over
-    bombs: 0,        // Bomb count
-    hasWarpJuke: true,  // Warp juke ability (purchasable by default)
-    hasTurret: false,   // Laser turret ability (must purchase)
-    turrets: 0          // Laser turret charges
+    bombs: 0         // Bomb count
 };
 
 // Active bombs in the world
 let bombs = [];
 
-// Warp Juke double-tap detection
-let lastLeftTap = 0;
-let lastRightTap = 0;
+// Warp Juke triple-tap detection (track last 2 tap times for each direction)
+let leftTapHistory = [];
+let rightTapHistory = [];
 
 // Title screen UFO animation state
 let titleUfo = {
@@ -1095,19 +1078,29 @@ window.addEventListener('keydown', (e) => {
         dropBomb();
     }
 
-    // Handle warp juke (double-tap left/right arrow) - requires purchase
-    if (gameState === 'PLAYING' && playerInventory.hasWarpJuke) {
+    // Handle warp juke (triple-tap left/right arrow)
+    if (gameState === 'PLAYING') {
         const now = Date.now();
+        const tapWindow = CONFIG.WARP_JUKE_TRIPLE_TAP_TIME * 1000;
+
         if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
-            if (now - lastLeftTap < CONFIG.WARP_JUKE_DOUBLE_TAP_TIME * 1000) {
+            // Add current tap and filter out old taps
+            leftTapHistory.push(now);
+            leftTapHistory = leftTapHistory.filter(t => now - t < tapWindow);
+            // Check for triple-tap (3 taps within window)
+            if (leftTapHistory.length >= 3) {
                 triggerWarpJuke(-1); // Warp left
+                leftTapHistory = []; // Reset after successful warp
             }
-            lastLeftTap = now;
         } else if (e.code === 'ArrowRight' || e.code === 'KeyD') {
-            if (now - lastRightTap < CONFIG.WARP_JUKE_DOUBLE_TAP_TIME * 1000) {
+            // Add current tap and filter out old taps
+            rightTapHistory.push(now);
+            rightTapHistory = rightTapHistory.filter(t => now - t < tapWindow);
+            // Check for triple-tap (3 taps within window)
+            if (rightTapHistory.length >= 3) {
                 triggerWarpJuke(1); // Warp right
+                rightTapHistory = []; // Reset after successful warp
             }
-            lastRightTap = now;
         }
     }
 
@@ -1140,48 +1133,6 @@ canvas.addEventListener('wheel', (e) => {
         // Clamp will happen in render function when we know content height
     }
 }, { passive: false });
-
-// Shop mouse click support
-canvas.addEventListener('click', (e) => {
-    if (gameState !== 'SHOP') return;
-
-    const rect = canvas.getBoundingClientRect();
-    const mouseX = (e.clientX - rect.left) * (canvas.width / rect.width);
-    const mouseY = (e.clientY - rect.top) * (canvas.height / rect.height);
-
-    // Check if clicked on a shop item
-    for (let i = 0; i < shopItemBounds.length; i++) {
-        const b = shopItemBounds[i];
-        if (mouseX >= b.x && mouseX <= b.x + b.width &&
-            mouseY >= b.y && mouseY <= b.y + b.height) {
-            selectedShopItem = i;
-            purchaseShopItem();
-            return;
-        }
-    }
-
-    // Check if clicked Done button
-    if (shopButtonBounds.done) {
-        const b = shopButtonBounds.done;
-        if (mouseX >= b.x && mouseX <= b.x + b.width &&
-            mouseY >= b.y && mouseY <= b.y + b.height) {
-            waveTransitionTimer = CONFIG.WAVE_TRANSITION_DURATION;
-            gameState = 'WAVE_TRANSITION';
-            return;
-        }
-    }
-
-    // Check if clicked Cancel button
-    if (shopButtonBounds.cancel) {
-        const b = shopButtonBounds.cancel;
-        if (mouseX >= b.x && mouseX <= b.x + b.width &&
-            mouseY >= b.y && mouseY <= b.y + b.height) {
-            waveTransitionTimer = CONFIG.WAVE_TRANSITION_DURATION;
-            gameState = 'WAVE_TRANSITION';
-            return;
-        }
-    }
-});
 
 // ============================================
 // ASSET LOADING
@@ -1590,7 +1541,6 @@ class UFO {
         this.hoverTime = 0;
         this.beamRotation = 0; // For spiral effect
         this.invincibleTimer = 0; // Invincibility after revive
-        this.warpCooldown = 0; // Warp juke cooldown
         this.warpGhosts = []; // Ghost trail positions for visual effect
         this.turretActive = false; // Laser turret active
         this.turretTarget = null; // Current turret target
@@ -1610,11 +1560,6 @@ class UFO {
             this.invincibleTimer -= dt;
         }
 
-        // Update warp cooldown
-        if (this.warpCooldown > 0) {
-            this.warpCooldown -= dt;
-        }
-
         // Update warp ghosts
         for (let i = this.warpGhosts.length - 1; i >= 0; i--) {
             this.warpGhosts[i].alpha -= dt / CONFIG.WARP_JUKE_GHOST_DURATION;
@@ -1623,15 +1568,12 @@ class UFO {
             }
         }
 
-        // Handle laser turret (T key) - requires turret charges
+        // Handle laser turret (T key)
         const wantsTurret = keys['KeyT'];
         const canFireTurret = this.energy >= CONFIG.TURRET_ENERGY_COST * dt;
-        const hasTurretCharge = playerInventory.turrets > 0;
 
-        if (wantsTurret && canFireTurret && (this.turretActive || hasTurretCharge)) {
+        if (wantsTurret && canFireTurret) {
             if (!this.turretActive) {
-                // Consume a turret charge on activation
-                playerInventory.turrets--;
                 SFX.turretStart && SFX.turretStart();
             }
             this.turretActive = true;
@@ -2709,10 +2651,10 @@ class Projectile {
 // ============================================
 
 class Bomb {
-    constructor(x, y, initialVx = 0) {
+    constructor(x, y) {
         this.x = x;
         this.y = y;
-        this.vx = CONFIG.BOMB_INITIAL_VX + initialVx;
+        this.vx = CONFIG.BOMB_INITIAL_VX;
         this.vy = CONFIG.BOMB_INITIAL_VY;
         this.radius = 12;
         this.bounceCount = 0;
@@ -2734,57 +2676,48 @@ class Bomb {
         // Spin animation
         this.rotation += dt * 10;
 
-        // Check for collision with targets - explode on contact
-        for (const target of targets) {
-            if (!target.alive) continue;
-            const dx = this.x - (target.x + target.width / 2);
-            const dy = this.y - (target.y + target.height / 2);
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < this.radius + Math.max(target.width, target.height) / 2) {
-                this.explode();
-                return;
-            }
-        }
-
-        // Check for collision with tanks - explode on contact
-        for (const tank of tanks) {
-            if (!tank.alive) continue;
-            const tankCenterX = tank.x + tank.width / 2;
-            const tankCenterY = tank.groundY - tank.height / 2;
-            const dx = this.x - tankCenterX;
-            const dy = this.y - tankCenterY;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < this.radius + Math.max(tank.width, tank.height) / 2) {
-                this.explode();
-                return;
-            }
-        }
-
-        // Check for collision with heavy tanks - explode on contact
-        for (const heavyTank of heavyTanks) {
-            if (!heavyTank.alive) continue;
-            const tankCenterX = heavyTank.x + heavyTank.width / 2;
-            const tankCenterY = heavyTank.groundY - heavyTank.height / 2;
-            const dx = this.x - tankCenterX;
-            const dy = this.y - tankCenterY;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < this.radius + Math.max(heavyTank.width, heavyTank.height) / 2) {
-                this.explode();
-                return;
-            }
-        }
-
-        // Check for ground collision - explode on contact
+        // Check for ground collision (bounce)
         if (this.y + this.radius >= this.groundY) {
             this.y = this.groundY - this.radius;
-            this.explode();
-            return;
+            this.vy = -this.vy * CONFIG.BOMB_BOUNCE_DAMPING;
+            this.vx *= CONFIG.BOMB_BOUNCE_DAMPING;
+            this.bounceCount++;
+
+            // Create small dust particles on bounce
+            for (let i = 0; i < 5; i++) {
+                const angle = Math.PI + (Math.random() - 0.5) * Math.PI;
+                const speed = 50 + Math.random() * 50;
+                particles.push(new Particle(
+                    this.x, this.groundY,
+                    Math.cos(angle) * speed, Math.sin(angle) * speed,
+                    'rgba(139, 90, 43, 1)', // Brown dust
+                    3, 0.3
+                ));
+            }
+
+            // Play bounce sound
+            SFX.bombBounce && SFX.bombBounce();
+
+            // Explode after max bounces
+            if (this.bounceCount >= CONFIG.BOMB_MAX_BOUNCES) {
+                this.explode();
+            }
         }
 
-        // Check for wall collisions - explode on contact
-        if (this.x - this.radius < 0 || this.x + this.radius > canvas.width) {
+        // Check for wall collisions
+        if (this.x - this.radius < 0) {
+            this.x = this.radius;
+            this.vx = -this.vx * CONFIG.BOMB_BOUNCE_DAMPING;
+            this.bounceCount++;
+        } else if (this.x + this.radius > canvas.width) {
+            this.x = canvas.width - this.radius;
+            this.vx = -this.vx * CONFIG.BOMB_BOUNCE_DAMPING;
+            this.bounceCount++;
+        }
+
+        // Check if velocity is low enough to explode (stopped bouncing)
+        if (this.bounceCount > 0 && Math.abs(this.vy) < 20 && this.y >= this.groundY - this.radius - 5) {
             this.explode();
-            return;
         }
     }
 
@@ -3840,17 +3773,8 @@ function dropBomb() {
     // Consume a bomb
     playerInventory.bombs--;
 
-    // Calculate horizontal velocity based on UFO movement direction
-    let bombVx = 0;
-    const effectiveSpeed = CONFIG.UFO_SPEED * (1 + playerInventory.speedBonus);
-    if (keys['ArrowLeft'] || keys['KeyA']) {
-        bombVx = -effectiveSpeed * 0.5; // Bomb inherits half of UFO speed
-    } else if (keys['ArrowRight'] || keys['KeyD']) {
-        bombVx = effectiveSpeed * 0.5;
-    }
-
-    // Create bomb at UFO position with horizontal velocity
-    bombs.push(new Bomb(ufo.x, ufo.y + ufo.height / 2, bombVx));
+    // Create bomb at UFO position
+    bombs.push(new Bomb(ufo.x, ufo.y + ufo.height / 2));
 
     // Play bomb drop sound
     SFX.bombDrop && SFX.bombDrop();
@@ -3877,7 +3801,11 @@ function renderBombs() {
 // ============================================
 
 function triggerWarpJuke(direction) {
-    if (!ufo || ufo.warpCooldown > 0) return;
+    // Check if we have enough beam energy to warp
+    if (!ufo || ufo.energy < CONFIG.WARP_JUKE_ENERGY_COST) return;
+
+    // Consume beam energy
+    ufo.energy -= CONFIG.WARP_JUKE_ENERGY_COST;
 
     // Store old position for ghost trail
     const oldX = ufo.x;
@@ -3893,9 +3821,6 @@ function triggerWarpJuke(direction) {
     // Calculate new position
     const warpDistance = CONFIG.WARP_JUKE_DISTANCE * direction;
     ufo.x = Math.max(ufo.width / 2, Math.min(canvas.width - ufo.width / 2, ufo.x + warpDistance));
-
-    // Set cooldown
-    ufo.warpCooldown = CONFIG.WARP_JUKE_COOLDOWN;
 
     // Create warp effect particles
     // Trail particles from old position to new
@@ -3988,12 +3913,6 @@ function triggerRevive() {
 function triggerGameOver() {
     // Stop beam sound if active
     SFX.stopBeamLoop();
-
-    // Clear session tracking timer (no need to track if game already ended)
-    if (sessionTrackingTimer) {
-        clearTimeout(sessionTrackingTimer);
-        sessionTrackingTimer = null;
-    }
 
     // Capture final game state FIRST, before any resets can occur
     finalScore = score;
@@ -4112,14 +4031,6 @@ const API_BASE = window.location.hostname === 'studio.mfelix.org'
     ? 'https://alien-abductorama.mfelixstudio.workers.dev'
     : '';
 
-async function trackSession() {
-    try {
-        await fetch(`${API_BASE}/api/session`, { method: 'POST' });
-    } catch (e) {
-        // Silently ignore - session tracking is non-critical
-    }
-}
-
 async function fetchLeaderboard() {
     leaderboardLoading = true;
     try {
@@ -4228,9 +4139,6 @@ function createCelebrationEffect() {
 function startGame() {
     gameState = 'PLAYING';
     gameStartTime = Date.now();
-    // Track session after 30 seconds of play
-    if (sessionTrackingTimer) clearTimeout(sessionTrackingTimer);
-    sessionTrackingTimer = setTimeout(trackSession, 30000);
     ufo = new UFO();
     targets = [];
     tanks = [];
@@ -4268,10 +4176,7 @@ function startGame() {
         maxEnergyBonus: 0,
         speedBonus: 0,
         energyCells: 0,
-        bombs: CONFIG.BOMB_START_COUNT,
-        hasWarpJuke: true,  // Warp juke purchasable by default
-        hasTurret: false,   // Laser turret must be purchased
-        turrets: CONFIG.TURRET_START_COUNT
+        bombs: CONFIG.BOMB_START_COUNT
     };
 
     // Clear active bombs
@@ -4419,14 +4324,8 @@ function renderUI() {
     // ========== BOMB COUNT (below energy cells) ==========
     renderBombCount(shieldX, shieldY + shieldBarHeight + 60);
 
-    // ========== TURRET COUNT (below bomb count) ==========
-    renderTurretCount(shieldX, shieldY + shieldBarHeight + 110);
-
-    // ========== WARP COOLDOWN (below turret count) ==========
-    renderWarpCooldown(shieldX, shieldY + shieldBarHeight + 160);
-
-    // ========== SPEED INDICATOR (below warp/turret) ==========
-    renderSpeedIndicator(shieldX, shieldY + shieldBarHeight + 140);
+    // ========== TURRET INDICATOR (below bomb count) ==========
+    renderTurretIndicator(shieldX, shieldY + shieldBarHeight + 110);
 
     // ========== TOP CENTER: HARVEST COUNTER ==========
     renderHarvestCounter();
@@ -4530,103 +4429,10 @@ function renderBombCount(startX, startY) {
     ctx.fillText('BOMB [X]', startX + panelWidth + 5, startY + panelHeight / 2 + 4);
 }
 
-function renderTurretCount(startX, startY) {
-    const turretCount = playerInventory.turrets;
-    if (turretCount <= 0) return; // Don't show if no turrets
-
-    const turretSize = 16;
-    const spacing = 5;
-    const panelPadding = 8;
-    const panelWidth = (turretSize + spacing) * turretCount + panelPadding * 2 - spacing;
-    const panelHeight = turretSize + panelPadding * 2;
-    const isActive = ufo && ufo.turretActive;
-
-    // Panel background
-    ctx.fillStyle = isActive ? 'rgba(255, 50, 50, 0.5)' : 'rgba(0, 0, 0, 0.4)';
-    ctx.beginPath();
-    ctx.roundRect(startX, startY, panelWidth, panelHeight, 6);
-    ctx.fill();
-
-    // Active pulse border
-    if (isActive) {
-        const pulse = Math.sin(Date.now() / 100) * 0.3 + 0.7;
-        ctx.strokeStyle = `rgba(255, 150, 150, ${pulse})`;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-    }
-
-    // Draw turret icons (laser beam style)
-    for (let i = 0; i < turretCount; i++) {
-        const x = startX + panelPadding + i * (turretSize + spacing) + turretSize / 2;
-        const y = startY + panelPadding + turretSize / 2;
-
-        // Turret base
-        ctx.fillStyle = '#666';
-        ctx.beginPath();
-        ctx.arc(x, y + 3, turretSize / 3, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Turret barrel
-        ctx.fillStyle = '#888';
-        ctx.fillRect(x - 2, y - turretSize / 2, 4, turretSize / 2 + 3);
-
-        // Laser glow
-        const glowIntensity = Math.sin(Date.now() / 150 + i) * 0.3 + 0.7;
-        ctx.fillStyle = `rgba(255, 100, 100, ${glowIntensity})`;
-        ctx.beginPath();
-        ctx.arc(x, y - turretSize / 2 + 2, 3, 0, Math.PI * 2);
-        ctx.fill();
-    }
-
-    // Label and key hint
-    ctx.fillStyle = '#f44';
-    ctx.font = 'bold 10px monospace';
-    ctx.textAlign = 'left';
-    ctx.fillText('TURRET [T]', startX + panelWidth + 5, startY + panelHeight / 2 + 4);
-}
-
-function renderWarpCooldown(startX, startY) {
-    if (!ufo || !playerInventory.hasWarpJuke) return;
+function renderTurretIndicator(startX, startY) {
+    if (!ufo) return;
 
     const panelWidth = 70;
-    const panelHeight = 24;
-    const cooldownPercent = Math.max(0, ufo.warpCooldown / CONFIG.WARP_JUKE_COOLDOWN);
-
-    // Panel background
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
-    ctx.beginPath();
-    ctx.roundRect(startX, startY, panelWidth, panelHeight, 4);
-    ctx.fill();
-
-    // Cooldown bar background
-    ctx.fillStyle = 'rgba(100, 100, 255, 0.3)';
-    ctx.beginPath();
-    ctx.roundRect(startX + 4, startY + 4, panelWidth - 8, panelHeight - 8, 2);
-    ctx.fill();
-
-    // Cooldown bar fill (shows when ready)
-    const readyPercent = 1 - cooldownPercent;
-    if (readyPercent > 0) {
-        const gradient = ctx.createLinearGradient(startX, 0, startX + panelWidth, 0);
-        gradient.addColorStop(0, '#66f');
-        gradient.addColorStop(1, '#aaf');
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        ctx.roundRect(startX + 4, startY + 4, (panelWidth - 8) * readyPercent, panelHeight - 8, 2);
-        ctx.fill();
-    }
-
-    // Label
-    ctx.fillStyle = cooldownPercent <= 0 ? '#aaf' : '#666';
-    ctx.font = 'bold 10px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('WARP', startX + panelWidth / 2, startY + panelHeight / 2 + 4);
-}
-
-function renderTurretIndicator(startX, startY) {
-    if (!ufo || playerInventory.turrets <= 0) return;
-
-    const panelWidth = 80;
     const panelHeight = 24;
     const isActive = ufo.turretActive && ufo.turretTarget;
 
@@ -4644,50 +4450,12 @@ function renderTurretIndicator(startX, startY) {
         ctx.stroke();
     }
 
-    // Label with charge count
+    // Label
     ctx.fillStyle = isActive ? '#fff' : '#888';
     ctx.font = 'bold 10px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText(`TURRET x${playerInventory.turrets}`, startX + panelWidth / 2, startY + panelHeight / 2 + 4);
+    ctx.fillText('TURRET [T]', startX + panelWidth / 2, startY + panelHeight / 2 + 4);
 }
-
-function renderSpeedIndicator(startX, startY) {
-    const speedBonus = playerInventory.speedBonus;
-    if (speedBonus <= 0) return; // Don't show if no speed upgrades
-
-    const panelWidth = 90;
-    const panelHeight = 24;
-    const bonusPercent = Math.round(speedBonus * 100);
-
-    // Panel background
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
-    ctx.beginPath();
-    ctx.roundRect(startX, startY, panelWidth, panelHeight, 4);
-    ctx.fill();
-
-    // Speed bar background
-    ctx.fillStyle = 'rgba(255, 255, 0, 0.2)';
-    ctx.beginPath();
-    ctx.roundRect(startX + 4, startY + 4, panelWidth - 8, panelHeight - 8, 2);
-    ctx.fill();
-
-    // Speed bar fill (proportional to bonus, max at 100% bonus for visual)
-    const fillPercent = Math.min(speedBonus, 1.0);
-    const gradient = ctx.createLinearGradient(startX, 0, startX + panelWidth, 0);
-    gradient.addColorStop(0, '#cc0');
-    gradient.addColorStop(1, '#ff0');
-    ctx.fillStyle = gradient;
-    ctx.beginPath();
-    ctx.roundRect(startX + 4, startY + 4, (panelWidth - 8) * fillPercent, panelHeight - 8, 2);
-    ctx.fill();
-
-    // Label showing percentage
-    ctx.fillStyle = '#ff0';
-    ctx.font = 'bold 10px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText(`SPEED +${bonusPercent}%`, startX + panelWidth / 2, startY + panelHeight / 2 + 4);
-}
-
 
 function renderHarvestCounter() {
     const targetTypes = ['human', 'cow', 'sheep', 'cat', 'dog', 'tank'];
@@ -5880,26 +5648,14 @@ function renderShop() {
     const startY = 220;
     const startX = canvas.width / 2 - itemWidth / 2;
 
-    // Clear and rebuild item bounds for click detection
-    shopItemBounds = [];
-
     for (let i = 0; i < items.length; i++) {
         const item = items[i];
         const y = startY + i * (itemHeight + 10);
         const isSelected = i === selectedShopItem;
         const canAfford = score >= item.cost;
 
-        // Check if one-time item is already owned
-        const isOwned = item.effect === 'turret' && playerInventory.hasTurret;
-
-        // Store bounds for click detection
-        shopItemBounds.push({ x: startX, y: y, width: itemWidth, height: itemHeight });
-
         // Item background
-        if (isOwned) {
-            ctx.fillStyle = 'rgba(0, 100, 0, 0.3)';
-            ctx.strokeStyle = '#0a0';
-        } else if (isSelected) {
+        if (isSelected) {
             ctx.fillStyle = canAfford ? 'rgba(0, 255, 255, 0.3)' : 'rgba(255, 0, 0, 0.2)';
             ctx.strokeStyle = canAfford ? '#0ff' : '#f00';
         } else {
@@ -5911,32 +5667,25 @@ function renderShop() {
         ctx.strokeRect(startX, y, itemWidth, itemHeight);
 
         // Item color indicator
-        ctx.fillStyle = isOwned ? '#0a0' : item.color;
+        ctx.fillStyle = item.color;
         ctx.fillRect(startX + 10, y + 10, 10, itemHeight - 20);
 
         // Item name
-        ctx.fillStyle = isOwned ? '#0a0' : (canAfford ? '#fff' : '#666');
+        ctx.fillStyle = canAfford ? '#fff' : '#666';
         ctx.font = 'bold 20px monospace';
         ctx.textAlign = 'left';
         ctx.fillText(item.name, startX + 30, y + 30);
 
         // Item description
-        ctx.fillStyle = isOwned ? '#080' : (canAfford ? '#aaa' : '#555');
+        ctx.fillStyle = canAfford ? '#aaa' : '#555';
         ctx.font = '16px monospace';
         ctx.fillText(item.description, startX + 30, y + 55);
 
-        // Item cost or OWNED status
-        if (isOwned) {
-            ctx.fillStyle = '#0a0';
-            ctx.font = 'bold 20px monospace';
-            ctx.textAlign = 'right';
-            ctx.fillText('OWNED', startX + itemWidth - 15, y + 45);
-        } else {
-            ctx.fillStyle = canAfford ? '#ff0' : '#600';
-            ctx.font = 'bold 20px monospace';
-            ctx.textAlign = 'right';
-            ctx.fillText(`${item.cost} pts`, startX + itemWidth - 15, y + 45);
-        }
+        // Item cost
+        ctx.fillStyle = canAfford ? '#ff0' : '#600';
+        ctx.font = 'bold 20px monospace';
+        ctx.textAlign = 'right';
+        ctx.fillText(`${item.cost} pts`, startX + itemWidth - 15, y + 45);
     }
 
     // Instructions
@@ -5944,41 +5693,7 @@ function renderShop() {
     ctx.font = '18px monospace';
     ctx.textAlign = 'center';
     const instructY = startY + items.length * (itemHeight + 10) + 30;
-    ctx.fillText('↑/↓ select  •  SPACE buy  •  or click items', canvas.width / 2, instructY);
-
-    // Done and Cancel buttons
-    const buttonWidth = 120;
-    const buttonHeight = 40;
-    const buttonSpacing = 20;
-    const buttonY = instructY + 30;
-    const doneX = canvas.width / 2 - buttonWidth - buttonSpacing / 2;
-    const cancelX = canvas.width / 2 + buttonSpacing / 2;
-
-    // Store button bounds for click detection
-    shopButtonBounds.done = { x: doneX, y: buttonY, width: buttonWidth, height: buttonHeight };
-    shopButtonBounds.cancel = { x: cancelX, y: buttonY, width: buttonWidth, height: buttonHeight };
-
-    // Done button
-    ctx.fillStyle = 'rgba(0, 200, 0, 0.3)';
-    ctx.strokeStyle = '#0c0';
-    ctx.lineWidth = 2;
-    ctx.fillRect(doneX, buttonY, buttonWidth, buttonHeight);
-    ctx.strokeRect(doneX, buttonY, buttonWidth, buttonHeight);
-    ctx.fillStyle = '#0f0';
-    ctx.font = 'bold 20px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('DONE', doneX + buttonWidth / 2, buttonY + 27);
-
-    // Cancel button
-    ctx.fillStyle = 'rgba(200, 100, 0, 0.3)';
-    ctx.strokeStyle = '#c60';
-    ctx.lineWidth = 2;
-    ctx.fillRect(cancelX, buttonY, buttonWidth, buttonHeight);
-    ctx.strokeRect(cancelX, buttonY, buttonWidth, buttonHeight);
-    ctx.fillStyle = '#f80';
-    ctx.font = 'bold 20px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('CANCEL', cancelX + buttonWidth / 2, buttonY + 27);
+    ctx.fillText('↑/↓ to select  •  SPACE to buy  •  ENTER to skip', canvas.width / 2, instructY);
 
     // Render UI
     renderUI();
@@ -5986,13 +5701,6 @@ function renderShop() {
 
 function purchaseShopItem() {
     const item = CONFIG.SHOP_ITEMS[selectedShopItem];
-
-    // Check if one-time purchase item is already owned
-    if (item.effect === 'turret' && playerInventory.hasTurret) {
-        SFX.error && SFX.error();
-        return false;
-    }
-
     if (score < item.cost) {
         SFX.error && SFX.error();
         return false;
@@ -6033,9 +5741,6 @@ function purchaseShopItem() {
             break;
         case 'bombs':
             playerInventory.bombs = Math.min(CONFIG.BOMB_MAX_COUNT, playerInventory.bombs + item.value);
-            break;
-        case 'turrets':
-            playerInventory.turrets = Math.min(CONFIG.TURRET_MAX_COUNT, playerInventory.turrets + item.value);
             break;
     }
 
