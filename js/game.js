@@ -4719,21 +4719,11 @@ function formatRelativeDate(timestamp) {
     if (days <= 2) return `${days}d ago`;
 
     const date = new Date(timestamp);
+    const month = date.getMonth() + 1;
     const day = date.getDate();
     const year = date.getFullYear();
-    const month = date.toLocaleString('en-US', { month: 'long' });
 
-    const suffix = (() => {
-        if (day >= 11 && day <= 13) return 'th';
-        switch (day % 10) {
-            case 1: return 'st';
-            case 2: return 'nd';
-            case 3: return 'rd';
-            default: return 'th';
-        }
-    })();
-
-    return `${month} ${day}${suffix}, ${year}`;
+    return `${month}/${day}/${year}`;
 }
 
 // API base URL - use full URL when proxied through studio.mfelix.org
