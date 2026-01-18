@@ -215,6 +215,15 @@ const CONFIG = {
             color: '#ff8800',
             effect: 'bombs',
             value: 2
+        },
+        {
+            id: 'laser_turret',
+            name: 'LASER TURRET',
+            description: 'Hold T to fire laser',
+            cost: 400,
+            color: '#f55',
+            effect: 'turret',
+            value: 1
         }
     ]
 };
@@ -960,7 +969,9 @@ let playerInventory = {
     maxEnergyBonus: 0,
     speedBonus: 0,
     energyCells: 0,  // Revive charges - prevents game over
-    bombs: 0         // Bomb count
+    bombs: 0,        // Bomb count
+    hasWarpJuke: true,  // Warp juke ability (purchasable by default)
+    hasTurret: false    // Laser turret ability (must purchase)
 };
 
 // Active bombs in the world
@@ -1078,8 +1089,8 @@ window.addEventListener('keydown', (e) => {
         dropBomb();
     }
 
-    // Handle warp juke (double-tap left/right arrow)
-    if (gameState === 'PLAYING') {
+    // Handle warp juke (double-tap left/right arrow) - requires purchase
+    if (gameState === 'PLAYING' && playerInventory.hasWarpJuke) {
         const now = Date.now();
         if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
             if (now - lastLeftTap < CONFIG.WARP_JUKE_DOUBLE_TAP_TIME * 1000) {
@@ -1564,8 +1575,8 @@ class UFO {
             }
         }
 
-        // Handle laser turret (T key)
-        const wantsTurret = keys['KeyT'];
+        // Handle laser turret (T key) - requires purchase
+        const wantsTurret = keys['KeyT'] && playerInventory.hasTurret;
         const canFireTurret = this.energy >= CONFIG.TURRET_ENERGY_COST * dt;
 
         if (wantsTurret && canFireTurret) {
@@ -4171,7 +4182,9 @@ function startGame() {
         maxEnergyBonus: 0,
         speedBonus: 0,
         energyCells: 0,
-        bombs: CONFIG.BOMB_START_COUNT
+        bombs: CONFIG.BOMB_START_COUNT,
+        hasWarpJuke: true,  // Warp juke purchasable by default
+        hasTurret: false    // Laser turret must be purchased
     };
 
     // Clear active bombs
@@ -4428,7 +4441,7 @@ function renderBombCount(startX, startY) {
 }
 
 function renderWarpCooldown(startX, startY) {
-    if (!ufo) return;
+    if (!ufo || !playerInventory.hasWarpJuke) return;
 
     const panelWidth = 70;
     const panelHeight = 24;
@@ -4466,7 +4479,7 @@ function renderWarpCooldown(startX, startY) {
 }
 
 function renderTurretIndicator(startX, startY) {
-    if (!ufo) return;
+    if (!ufo || !playerInventory.hasTurret) return;
 
     const panelWidth = 70;
     const panelHeight = 24;
@@ -5690,8 +5703,14 @@ function renderShop() {
         const isSelected = i === selectedShopItem;
         const canAfford = score >= item.cost;
 
+        // Check if one-time item is already owned
+        const isOwned = item.effect === 'turret' && playerInventory.hasTurret;
+
         // Item background
-        if (isSelected) {
+        if (isOwned) {
+            ctx.fillStyle = 'rgba(0, 100, 0, 0.3)';
+            ctx.strokeStyle = '#0a0';
+        } else if (isSelected) {
             ctx.fillStyle = canAfford ? 'rgba(0, 255, 255, 0.3)' : 'rgba(255, 0, 0, 0.2)';
             ctx.strokeStyle = canAfford ? '#0ff' : '#f00';
         } else {
@@ -5703,25 +5722,32 @@ function renderShop() {
         ctx.strokeRect(startX, y, itemWidth, itemHeight);
 
         // Item color indicator
-        ctx.fillStyle = item.color;
+        ctx.fillStyle = isOwned ? '#0a0' : item.color;
         ctx.fillRect(startX + 10, y + 10, 10, itemHeight - 20);
 
         // Item name
-        ctx.fillStyle = canAfford ? '#fff' : '#666';
+        ctx.fillStyle = isOwned ? '#0a0' : (canAfford ? '#fff' : '#666');
         ctx.font = 'bold 20px monospace';
         ctx.textAlign = 'left';
         ctx.fillText(item.name, startX + 30, y + 30);
 
         // Item description
-        ctx.fillStyle = canAfford ? '#aaa' : '#555';
+        ctx.fillStyle = isOwned ? '#080' : (canAfford ? '#aaa' : '#555');
         ctx.font = '16px monospace';
         ctx.fillText(item.description, startX + 30, y + 55);
 
-        // Item cost
-        ctx.fillStyle = canAfford ? '#ff0' : '#600';
-        ctx.font = 'bold 20px monospace';
-        ctx.textAlign = 'right';
-        ctx.fillText(`${item.cost} pts`, startX + itemWidth - 15, y + 45);
+        // Item cost or OWNED status
+        if (isOwned) {
+            ctx.fillStyle = '#0a0';
+            ctx.font = 'bold 20px monospace';
+            ctx.textAlign = 'right';
+            ctx.fillText('OWNED', startX + itemWidth - 15, y + 45);
+        } else {
+            ctx.fillStyle = canAfford ? '#ff0' : '#600';
+            ctx.font = 'bold 20px monospace';
+            ctx.textAlign = 'right';
+            ctx.fillText(`${item.cost} pts`, startX + itemWidth - 15, y + 45);
+        }
     }
 
     // Instructions
@@ -5737,6 +5763,13 @@ function renderShop() {
 
 function purchaseShopItem() {
     const item = CONFIG.SHOP_ITEMS[selectedShopItem];
+
+    // Check if one-time purchase item is already owned
+    if (item.effect === 'turret' && playerInventory.hasTurret) {
+        SFX.error && SFX.error();
+        return false;
+    }
+
     if (score < item.cost) {
         SFX.error && SFX.error();
         return false;
@@ -5777,6 +5810,9 @@ function purchaseShopItem() {
             break;
         case 'bombs':
             playerInventory.bombs = Math.min(CONFIG.BOMB_MAX_COUNT, playerInventory.bombs + item.value);
+            break;
+        case 'turret':
+            playerInventory.hasTurret = true;
             break;
     }
 
