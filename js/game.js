@@ -84,10 +84,10 @@ const CONFIG = {
     WARP_JUKE_ENERGY_COST: 25,      // Energy cost to warp
 
     // Laser Turret
-    TURRET_DAMAGE_PER_SECOND: 40,   // Damage dealt per second to tanks
-    TURRET_ENERGY_COST: 15,         // Energy per second to fire
+    TURRET_DAMAGE_PER_SECOND: 20,   // Damage dealt per second to tanks (~2.5s to kill light tank, ~5s for heavy)
+    TURRET_ENERGY_COST: 40,         // Energy per second to fire (drains energy quickly)
     TURRET_BEAM_WIDTH: 4,           // Visual beam width
-    TURRET_RANGE: 600,              // Max range of turret
+    TURRET_RANGE: 800,              // Max range of turret
 
     // Tank Health
     TANK_HEALTH: 50,                // Regular tank health
@@ -215,6 +215,15 @@ const CONFIG = {
             color: '#ff8800',
             effect: 'bombs',
             value: 2
+        },
+        {
+            id: 'laser_turret',
+            name: 'LASER TURRET',
+            description: 'Anti-tank laser (press T)',
+            cost: 400,
+            color: '#f44',
+            effect: 'turret',
+            value: 1
         }
     ]
 };
@@ -963,7 +972,8 @@ let playerInventory = {
     maxEnergyBonus: 0,
     speedBonus: 0,
     energyCells: 0,  // Revive charges - prevents game over
-    bombs: 0         // Bomb count
+    bombs: 0,        // Bomb count
+    hasTurret: false // Laser turret ownership
 };
 
 // Active bombs in the world
@@ -972,6 +982,11 @@ let bombs = [];
 // Warp Juke triple-tap detection (track last 2 tap times for each direction)
 let leftTapHistory = [];
 let rightTapHistory = [];
+
+// Easter egg: Triple-T on title screen for free turret
+let titleTurretTaps = [];
+let titleTurretUnlocked = false;
+let titleTurretFlashTimer = 0;
 
 // Title screen UFO animation state
 let titleUfo = {
@@ -1119,8 +1134,27 @@ window.addEventListener('keydown', (e) => {
     }
 
     // Handle game state transitions
-    if (gameState === 'TITLE' && e.code === 'Space') {
-        startGame();
+    if (gameState === 'TITLE') {
+        if (e.code === 'Space') {
+            startGame();
+        }
+
+        // Easter egg: Triple-T for free turret
+        if (e.code === 'KeyT' && !e.repeat && !titleTurretUnlocked) {
+            const now = Date.now();
+            titleTurretTaps.push(now);
+            // Keep only taps from last 1 second
+            titleTurretTaps = titleTurretTaps.filter(t => now - t < 1000);
+
+            if (titleTurretTaps.length >= 3) {
+                // Unlock the turret!
+                titleTurretUnlocked = true;
+                titleTurretFlashTimer = 2; // Flash for 2 seconds
+                titleTurretTaps = [];
+                SFX.powerup && SFX.powerup();
+                SFX.turretStart && SFX.turretStart();
+            }
+        }
     } else if (gameState === 'GAME_OVER' && e.code === 'Enter') {
         startGame();
     }
@@ -1593,6 +1627,7 @@ class UFO {
         this.beamActive = false;
         this.beamTarget = null;
         this.beamProgress = 0;
+        this.beamOutOfEnergy = false; // Flag to prevent rapid on/off cycling when out of energy
         this.hoverOffset = 0;
         this.hoverTime = 0;
         this.beamRotation = 0; // For spiral effect
@@ -1601,9 +1636,19 @@ class UFO {
         this.turretActive = false; // Laser turret active
         this.turretTarget = null; // Current turret target
         this.turretSoundTimer = 0; // Timer for continuous firing sound
+        this.turretOutOfEnergy = false; // Flag to prevent repeated stop sound when out of energy
+        this.turretStopSoundCooldown = 0; // Cooldown to prevent repeated stop sounds
+        this.vx = 0; // Track horizontal velocity for bomb physics
+        this.lastX = this.x; // For velocity calculation
     }
 
     update(dt) {
+        // Calculate velocity from position change (for bomb physics)
+        if (dt > 0) {
+            this.vx = (this.x - this.lastX) / dt;
+            this.lastX = this.x;
+        }
+
         // Hover animation
         this.hoverTime += dt;
         this.hoverOffset = Math.sin(this.hoverTime * 2) * 3;
@@ -1624,9 +1669,21 @@ class UFO {
             }
         }
 
-        // Handle laser turret (T key)
-        const wantsTurret = keys['KeyT'];
-        const canFireTurret = this.energy >= CONFIG.TURRET_ENERGY_COST * dt;
+        // Handle laser turret (T key) - only if player owns turret
+        const wantsTurret = keys['KeyT'] && playerInventory.hasTurret;
+        // Require minimum energy to fire; once depleted, need more energy to restart
+        const minEnergyToStart = CONFIG.TURRET_ENERGY_COST * 0.5; // Need 0.5 seconds worth to start
+        const canFireTurret = this.energy >= minEnergyToStart && !this.turretOutOfEnergy;
+
+        // Update stop sound cooldown
+        if (this.turretStopSoundCooldown > 0) {
+            this.turretStopSoundCooldown -= dt;
+        }
+
+        // Reset out-of-energy state when player releases the turret key
+        if (!wantsTurret) {
+            this.turretOutOfEnergy = false;
+        }
 
         if (wantsTurret && canFireTurret) {
             if (!this.turretActive) {
@@ -1634,6 +1691,11 @@ class UFO {
             }
             this.turretActive = true;
             this.energy -= CONFIG.TURRET_ENERGY_COST * dt;
+
+            // Check if we just ran out of energy
+            if (this.energy <= 0) {
+                this.energy = 0;
+            }
 
             // Find closest tank in range
             this.turretTarget = this.findTurretTarget();
@@ -1651,8 +1713,16 @@ class UFO {
                 }
             }
         } else {
-            if (this.turretActive) {
+            // Turret forced off while player wants it - mark as out of energy to prevent
+            // rapid on/off cycling when energy hovers near the threshold
+            if (wantsTurret) {
+                this.turretOutOfEnergy = true;
+            }
+
+            // Only play stop sound once when turret was active, with cooldown
+            if (this.turretActive && this.turretStopSoundCooldown <= 0) {
                 SFX.turretStop && SFX.turretStop();
+                this.turretStopSoundCooldown = 1.0; // Don't play stop sound again for 1 second
             }
             this.turretActive = false;
             this.turretTarget = null;
@@ -1661,7 +1731,12 @@ class UFO {
 
         // Handle beam activation
         const wantsBeam = keys['Space'];
-        const canFireBeam = activePowerups.energy_surge.active || this.energy >= CONFIG.ENERGY_MIN_TO_FIRE;
+        const canFireBeam = (activePowerups.energy_surge.active || this.energy >= CONFIG.ENERGY_MIN_TO_FIRE) && !this.beamOutOfEnergy;
+
+        // Reset out-of-energy state when player releases spacebar
+        if (!wantsBeam) {
+            this.beamOutOfEnergy = false;
+        }
 
         if (wantsBeam && canFireBeam) {
             // Start beam sound on activation
@@ -1682,6 +1757,12 @@ class UFO {
                 }
             }
         } else {
+            // Beam forced off while player wants it - mark as out of energy to prevent
+            // rapid on/off cycling when energy hovers near the threshold
+            if (wantsBeam) {
+                this.beamOutOfEnergy = true;
+            }
+
             // Beam deactivated
             if (this.beamActive) {
                 SFX.stopBeamLoop();
@@ -1995,10 +2076,87 @@ class UFO {
             ctx.stroke();
         }
 
-        // Render laser turret beam
-        if (this.turretActive && this.turretTarget) {
-            this.renderLaserBeam();
+        // Render laser turret beam or scanning effect
+        if (this.turretActive) {
+            if (this.turretTarget) {
+                this.renderLaserBeam();
+            } else {
+                this.renderTurretScanning();
+            }
         }
+    }
+
+    renderTurretScanning() {
+        // Show a scanning effect when turret is active but no target in range
+        ctx.save();
+
+        const time = Date.now() / 1000;
+        const scanAngle = Math.sin(time * 2) * 0.5; // Sweep back and forth
+        const scanLength = CONFIG.TURRET_RANGE;
+        const startX = this.x;
+        const startY = this.y + this.height / 2;
+
+        // Calculate end point of scan beam
+        const baseAngle = Math.PI / 2; // Pointing down
+        const angle = baseAngle + scanAngle;
+        const endX = startX + Math.cos(angle) * scanLength;
+        const endY = startY + Math.sin(angle) * scanLength;
+
+        // Draw gradient trail behind the scan line (shows recent sweep path)
+        const trailSteps = 8;
+        for (let i = trailSteps; i >= 1; i--) {
+            const trailTime = time - i * 0.03;
+            const trailAngle = baseAngle + Math.sin(trailTime * 2) * 0.5;
+            const trailEndX = startX + Math.cos(trailAngle) * scanLength;
+            const trailEndY = startY + Math.sin(trailAngle) * scanLength;
+            const alpha = (1 - i / trailSteps) * 0.15;
+
+            ctx.strokeStyle = `rgba(255, 50, 50, ${alpha})`;
+            ctx.lineWidth = 6 - i * 0.5;
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            ctx.lineTo(trailEndX, trailEndY);
+            ctx.stroke();
+        }
+
+        // Draw main scanning beam with gradient
+        const gradient = ctx.createLinearGradient(startX, startY, endX, endY);
+        gradient.addColorStop(0, 'rgba(255, 100, 100, 0.8)');
+        gradient.addColorStop(0.3, 'rgba(255, 50, 50, 0.5)');
+        gradient.addColorStop(1, 'rgba(255, 0, 0, 0.1)');
+
+        ctx.strokeStyle = gradient;
+        ctx.lineWidth = 3;
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        ctx.lineTo(endX, endY);
+        ctx.stroke();
+
+        // Draw brighter core line
+        ctx.strokeStyle = 'rgba(255, 200, 200, 0.6)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        ctx.lineTo(endX, endY);
+        ctx.stroke();
+
+        // Draw scanning dot at the end
+        const pulse = Math.sin(time * 10) * 0.3 + 0.7;
+        ctx.fillStyle = `rgba(255, 100, 100, ${pulse})`;
+        ctx.beginPath();
+        ctx.arc(endX, endY, 5 + pulse * 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Draw range arc (bottom half only, where tanks are)
+        ctx.strokeStyle = 'rgba(255, 50, 50, 0.15)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 10]);
+        ctx.beginPath();
+        ctx.arc(startX, startY, scanLength, Math.PI * 0.15, Math.PI * 0.85);
+        ctx.stroke();
+
+        ctx.restore();
     }
 
     renderLaserBeam() {
@@ -2435,6 +2593,7 @@ class Tank {
         this.isStunned = false;
         this.stunTimer = 0;
         this.stunEffectTime = 0;
+        this.health = CONFIG.TANK_HEALTH; // Reset health on respawn
         this.direction = Math.random() < 0.5 ? 1 : -1;
         // Add random offset (0-300px) so tanks don't respawn at same spot
         const randomOffset = Math.random() * 300;
@@ -2448,6 +2607,9 @@ class Tank {
         if (!this.alive) return;
 
         const img = images.tank;
+
+        // Check if being targeted by turret
+        const isBeingLasered = ufo && ufo.turretTarget === this;
 
         // Apply grayed out effect if stunned
         if (this.isStunned) {
@@ -2476,6 +2638,26 @@ class Tank {
 
         // Draw turret
         this.renderTurret();
+
+        // Draw laser damage flash effect (flashes faster as health drops)
+        if (isBeingLasered) {
+            const healthPercent = this.health / this.maxHealth;
+            // Flash speed: 4 Hz at full health, up to 20 Hz near death
+            const flashSpeed = 4 + (1 - healthPercent) * 16;
+            const flash = Math.sin(Date.now() / 1000 * flashSpeed * Math.PI * 2);
+
+            if (flash > 0) {
+                ctx.save();
+                ctx.globalCompositeOperation = 'source-atop';
+                ctx.fillStyle = `rgba(255, 0, 0, ${0.3 + (1 - healthPercent) * 0.4})`;
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+                ctx.restore();
+
+                // Also draw an overlay on top
+                ctx.fillStyle = `rgba(255, 50, 50, ${(0.2 + (1 - healthPercent) * 0.3) * flash})`;
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+            }
+        }
 
         if (this.isStunned) {
             ctx.restore();
@@ -2707,10 +2889,11 @@ class Projectile {
 // ============================================
 
 class Bomb {
-    constructor(x, y) {
+    constructor(x, y, inheritedVx = 0) {
         this.x = x;
         this.y = y;
-        this.vx = CONFIG.BOMB_INITIAL_VX;
+        // Inherit horizontal velocity from UFO for realistic arc
+        this.vx = CONFIG.BOMB_INITIAL_VX + inheritedVx * 0.8; // 80% of UFO velocity
         this.vy = CONFIG.BOMB_INITIAL_VY;
         this.radius = 12;
         this.bounceCount = 0;
@@ -2731,6 +2914,36 @@ class Bomb {
 
         // Spin animation
         this.rotation += dt * 10;
+
+        // Check for direct collision with tanks (explode on contact)
+        for (const tank of tanks) {
+            if (!tank.alive) continue;
+            if (this.x > tank.x && this.x < tank.x + tank.width &&
+                this.y + this.radius > tank.y && this.y - this.radius < tank.y + tank.height) {
+                this.explode();
+                return;
+            }
+        }
+
+        // Check for direct collision with heavy tanks (explode on contact)
+        for (const heavyTank of heavyTanks) {
+            if (!heavyTank.alive) continue;
+            if (this.x > heavyTank.x && this.x < heavyTank.x + heavyTank.width &&
+                this.y + this.radius > heavyTank.y && this.y - this.radius < heavyTank.y + heavyTank.height) {
+                this.explode();
+                return;
+            }
+        }
+
+        // Check for direct collision with targets (explode on contact)
+        for (const target of targets) {
+            if (!target.alive) continue;
+            if (this.x > target.x && this.x < target.x + target.width &&
+                this.y + this.radius > target.y && this.y - this.radius < target.y + target.height) {
+                this.explode();
+                return;
+            }
+        }
 
         // Check for ground collision (bounce)
         if (this.y + this.radius >= this.groundY) {
@@ -2802,7 +3015,7 @@ class Bomb {
             }
         }
 
-        // Damage tanks in blast radius
+        // Destroy tanks in blast radius
         for (const tank of tanks) {
             if (!tank.alive) continue;
             const dx = tank.x + tank.width / 2 - this.x;
@@ -2810,16 +3023,13 @@ class Bomb {
             const dist = Math.sqrt(dx * dx + dy * dy);
 
             if (dist < CONFIG.BOMB_EXPLOSION_RADIUS) {
-                // Stun the tank
-                tank.isStunned = true;
-                tank.stunTimer = 3;
-                tank.stunEffectTime = 0;
-                createFloatingText(tank.x + tank.width / 2, tank.groundY - 30, 'STUNNED!', '#ff0');
-                SFX.tankStunned();
+                // Destroy the tank
+                tank.destroy();
+                createFloatingText(tank.x + tank.width / 2, tank.groundY - 30, 'DESTROYED!', '#ff4400');
             }
         }
 
-        // Damage heavy tanks in blast radius
+        // Damage heavy tanks in blast radius (takes 2 hits to destroy)
         for (const heavyTank of heavyTanks) {
             if (!heavyTank.alive) continue;
             const dx = heavyTank.x + heavyTank.width / 2 - this.x;
@@ -2827,12 +3037,21 @@ class Bomb {
             const dist = Math.sqrt(dx * dx + dy * dy);
 
             if (dist < CONFIG.BOMB_EXPLOSION_RADIUS) {
-                // Stun the heavy tank
-                heavyTank.isStunned = true;
-                heavyTank.stunTimer = 2; // Shorter stun for heavy tanks
-                heavyTank.stunEffectTime = 0;
-                createFloatingText(heavyTank.x + heavyTank.width / 2, heavyTank.groundY - 30, 'STUNNED!', '#ff0');
-                SFX.tankStunned();
+                // Deal bomb damage to heavy tank
+                heavyTank.bombHits = (heavyTank.bombHits || 0) + 1;
+                if (heavyTank.bombHits >= 2) {
+                    // Second hit - destroy it
+                    heavyTank.destroy();
+                    createFloatingText(heavyTank.x + heavyTank.width / 2, heavyTank.groundY - 30, 'DESTROYED!', '#ff4400');
+                } else {
+                    // First hit - damage visual, brief stun
+                    heavyTank.isDamaged = true;
+                    heavyTank.isStunned = true;
+                    heavyTank.stunTimer = 1; // Brief stun on damage
+                    heavyTank.stunEffectTime = 0;
+                    createFloatingText(heavyTank.x + heavyTank.width / 2, heavyTank.groundY - 30, 'DAMAGED!', '#ff8800');
+                    SFX.tankStunned();
+                }
             }
         }
     }
@@ -3415,6 +3634,10 @@ class HeavyTank {
         // Health (for laser turret damage)
         this.health = CONFIG.HEAVY_TANK_HEALTH;
         this.maxHealth = CONFIG.HEAVY_TANK_HEALTH;
+
+        // Bomb damage tracking (takes 2 bombs to destroy)
+        this.bombHits = 0;
+        this.isDamaged = false;
     }
 
     takeDamage(amount) {
@@ -3618,6 +3841,9 @@ class HeavyTank {
         this.isStunned = false;
         this.stunTimer = 0;
         this.stunEffectTime = 0;
+        this.bombHits = 0;
+        this.isDamaged = false;
+        this.health = CONFIG.HEAVY_TANK_HEALTH;
         this.direction = Math.random() < 0.5 ? 1 : -1;
         const randomOffset = Math.random() * 300;
         this.x = this.direction === 1 ? -this.width - randomOffset : canvas.width + randomOffset;
@@ -3631,10 +3857,13 @@ class HeavyTank {
 
         const img = images.tank;
 
-        // Apply grayed out effect if stunned
-        if (this.isStunned) {
+        // Check if being targeted by turret
+        const isBeingLasered = ufo && ufo.turretTarget === this;
+
+        // Apply grayed out effect if stunned, reddish tint if damaged
+        if (this.isStunned || this.isDamaged) {
             ctx.save();
-            ctx.globalAlpha = 0.6;
+            ctx.globalAlpha = this.isStunned ? 0.6 : 0.9;
         }
 
         if (img && img.complete) {
@@ -3659,11 +3888,85 @@ class HeavyTank {
         // Draw both turrets
         this.renderTurrets();
 
+        // Draw laser damage flash effect (flashes faster as health drops)
+        if (isBeingLasered) {
+            const healthPercent = this.health / this.maxHealth;
+            // Flash speed: 4 Hz at full health, up to 20 Hz near death
+            const flashSpeed = 4 + (1 - healthPercent) * 16;
+            const flash = Math.sin(Date.now() / 1000 * flashSpeed * Math.PI * 2);
+
+            if (flash > 0) {
+                ctx.save();
+                ctx.globalCompositeOperation = 'source-atop';
+                ctx.fillStyle = `rgba(255, 0, 0, ${0.3 + (1 - healthPercent) * 0.4})`;
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+                ctx.restore();
+
+                // Also draw an overlay on top
+                ctx.fillStyle = `rgba(255, 50, 50, ${(0.2 + (1 - healthPercent) * 0.3) * flash})`;
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+            }
+        }
+
+        // Draw damage effects (smoke, cracks, fire)
+        if (this.isDamaged) {
+            this.renderDamageEffect();
+        }
+
         if (this.isStunned) {
             ctx.restore();
             // Draw spinning stars effect above tank
             this.renderStunEffect();
+        } else if (this.isDamaged) {
+            ctx.restore();
         }
+    }
+
+    renderDamageEffect() {
+        const centerX = this.x + this.width / 2;
+        const centerY = this.y + this.height * 0.3;
+
+        // Draw smoke plumes
+        const time = Date.now() / 1000;
+        for (let i = 0; i < 3; i++) {
+            const offsetX = (i - 1) * 50;
+            const smokeY = centerY - 20 - Math.sin(time * 2 + i) * 10;
+            const smokeAlpha = 0.3 + Math.sin(time * 3 + i * 2) * 0.15;
+            const smokeSize = 15 + Math.sin(time * 2.5 + i) * 5;
+
+            ctx.fillStyle = `rgba(80, 80, 80, ${smokeAlpha})`;
+            ctx.beginPath();
+            ctx.arc(centerX + offsetX, smokeY, smokeSize, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // Draw fire/sparks
+        const fireColors = ['#ff4400', '#ff8800', '#ffcc00'];
+        for (let i = 0; i < 4; i++) {
+            const angle = time * 5 + i * 1.5;
+            const fireX = centerX + Math.cos(angle) * 30 + (i - 1.5) * 25;
+            const fireY = this.y + this.height * 0.5 + Math.sin(angle * 2) * 5;
+            const fireSize = 8 + Math.sin(time * 8 + i * 3) * 4;
+
+            ctx.fillStyle = fireColors[i % 3];
+            ctx.beginPath();
+            ctx.arc(fireX, fireY, fireSize, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // Draw crack lines on the tank body
+        ctx.strokeStyle = '#222';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(this.x + this.width * 0.3, this.y + this.height * 0.2);
+        ctx.lineTo(this.x + this.width * 0.4, this.y + this.height * 0.5);
+        ctx.lineTo(this.x + this.width * 0.35, this.y + this.height * 0.7);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(this.x + this.width * 0.7, this.y + this.height * 0.3);
+        ctx.lineTo(this.x + this.width * 0.6, this.y + this.height * 0.6);
+        ctx.stroke();
     }
 
     renderStunEffect() {
@@ -3829,8 +4132,8 @@ function dropBomb() {
     // Consume a bomb
     playerInventory.bombs--;
 
-    // Create bomb at UFO position
-    bombs.push(new Bomb(ufo.x, ufo.y + ufo.height / 2));
+    // Create bomb at UFO position with UFO's horizontal velocity
+    bombs.push(new Bomb(ufo.x, ufo.y + ufo.height / 2, ufo.vx));
 
     // Play bomb drop sound
     SFX.bombDrop && SFX.bombDrop();
@@ -4249,8 +4552,14 @@ function startGame() {
         maxEnergyBonus: 0,
         speedBonus: 0,
         energyCells: 0,
-        bombs: CONFIG.BOMB_START_COUNT
+        bombs: CONFIG.BOMB_START_COUNT,
+        hasTurret: titleTurretUnlocked // Easter egg: free turret if unlocked on title screen
     };
+
+    // Reset Easter egg state for next game
+    titleTurretUnlocked = false;
+    titleTurretFlashTimer = 0;
+    titleTurretTaps = [];
 
     // Clear active bombs
     bombs = [];
@@ -4398,10 +4707,10 @@ function renderUI() {
     renderBombCount(shieldX, shieldY + shieldBarHeight + 60);
 
     // ========== TURRET INDICATOR (below bomb count) ==========
-    renderTurretIndicator(shieldX, shieldY + shieldBarHeight + 110);
+    renderTurretIndicator(shieldX, shieldY + shieldBarHeight + 100);
 
     // ========== SPEED INDICATOR (below turret indicator) ==========
-    renderSpeedIndicator(shieldX, shieldY + shieldBarHeight + 140);
+    renderSpeedIndicator(shieldX, shieldY + shieldBarHeight + 142);
 
     // ========== TOP CENTER: HARVEST COUNTER ==========
     renderHarvestCounter();
@@ -4461,22 +4770,51 @@ function renderBombCount(startX, startY) {
     const bombCount = playerInventory.bombs;
     if (bombCount <= 0) return; // Don't show if no bombs
 
-    const bombSize = 16;
-    const spacing = 5;
+    const bombSize = 18;
+    const spacing = 4;
     const panelPadding = 8;
-    const panelWidth = (bombSize + spacing) * bombCount + panelPadding * 2 - spacing;
-    const panelHeight = bombSize + panelPadding * 2;
+    const keyWidth = 20;
+    const keyHeight = 18;
+    const keyPadding = 6;
+
+    // Calculate total width: key + bombs
+    const bombsWidth = (bombSize + spacing) * bombCount - spacing;
+    const panelWidth = keyWidth + keyPadding + bombsWidth + panelPadding * 2;
+    const panelHeight = Math.max(bombSize, keyHeight) + panelPadding * 2;
 
     // Panel background
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
     ctx.beginPath();
-    ctx.roundRect(startX, startY, panelWidth, panelHeight, 6);
+    ctx.roundRect(startX, startY, panelWidth, panelHeight, 8);
     ctx.fill();
 
-    // Draw bomb icons
+    // Keyboard key badge for X (on the left)
+    const keyX = startX + panelPadding;
+    const keyY = startY + (panelHeight - keyHeight) / 2;
+
+    // Key background (raised look)
+    ctx.fillStyle = '#444';
+    ctx.beginPath();
+    ctx.roundRect(keyX, keyY, keyWidth, keyHeight, 4);
+    ctx.fill();
+
+    // Key top surface
+    ctx.fillStyle = '#666';
+    ctx.beginPath();
+    ctx.roundRect(keyX + 1, keyY + 1, keyWidth - 2, keyHeight - 4, 3);
+    ctx.fill();
+
+    // Key letter
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('X', keyX + keyWidth / 2, keyY + keyHeight / 2 + 3);
+
+    // Draw bomb icons (after the key)
+    const bombsStartX = keyX + keyWidth + keyPadding;
     for (let i = 0; i < bombCount; i++) {
-        const x = startX + panelPadding + i * (bombSize + spacing) + bombSize / 2;
-        const y = startY + panelPadding + bombSize / 2;
+        const x = bombsStartX + i * (bombSize + spacing) + bombSize / 2;
+        const y = startY + panelHeight / 2;
 
         // Bomb body
         ctx.fillStyle = '#333';
@@ -4494,28 +4832,30 @@ function renderBombCount(startX, startY) {
         const sparkIntensity = Math.sin(Date.now() / 100 + i) * 0.5 + 0.5;
         ctx.fillStyle = `rgba(255, ${150 + sparkIntensity * 100}, 0, ${0.7 + sparkIntensity * 0.3})`;
         ctx.beginPath();
-        ctx.arc(x, y - bombSize / 2 - 3, 2 + sparkIntensity, 0, Math.PI * 2);
+        ctx.arc(x, y - bombSize / 2 - 2, 2 + sparkIntensity, 0, Math.PI * 2);
         ctx.fill();
     }
-
-    // Label and key hint
-    ctx.fillStyle = '#ff8800';
-    ctx.font = 'bold 10px monospace';
-    ctx.textAlign = 'left';
-    ctx.fillText('BOMB [X]', startX + panelWidth + 5, startY + panelHeight / 2 + 4);
 }
 
 function renderTurretIndicator(startX, startY) {
-    if (!ufo) return;
+    // Only show turret indicator if player owns the turret
+    if (!ufo || !playerInventory.hasTurret) return;
 
-    const panelWidth = 70;
-    const panelHeight = 24;
+    const iconSize = 22;
+    const panelPadding = 8;
+    const keyWidth = 20;
+    const keyHeight = 18;
+    const keyPadding = 6;
     const isActive = ufo.turretActive && ufo.turretTarget;
 
+    // Calculate total width: key + icon
+    const panelWidth = keyWidth + keyPadding + iconSize + panelPadding * 2;
+    const panelHeight = Math.max(iconSize, keyHeight) + panelPadding * 2;
+
     // Panel background
-    ctx.fillStyle = isActive ? 'rgba(255, 100, 100, 0.5)' : 'rgba(0, 0, 0, 0.4)';
+    ctx.fillStyle = isActive ? 'rgba(255, 100, 100, 0.5)' : 'rgba(0, 0, 0, 0.5)';
     ctx.beginPath();
-    ctx.roundRect(startX, startY, panelWidth, panelHeight, 4);
+    ctx.roundRect(startX, startY, panelWidth, panelHeight, 8);
     ctx.fill();
 
     // Active indicator with pulse
@@ -4526,11 +4866,77 @@ function renderTurretIndicator(startX, startY) {
         ctx.stroke();
     }
 
-    // Label
-    ctx.fillStyle = isActive ? '#fff' : '#888';
-    ctx.font = 'bold 10px monospace';
+    // Keyboard key badge for T (on the left)
+    const keyX = startX + panelPadding;
+    const keyY = startY + (panelHeight - keyHeight) / 2;
+
+    // Key background (raised look)
+    ctx.fillStyle = isActive ? '#664444' : '#444';
+    ctx.beginPath();
+    ctx.roundRect(keyX, keyY, keyWidth, keyHeight, 4);
+    ctx.fill();
+
+    // Key top surface
+    ctx.fillStyle = isActive ? '#886666' : '#666';
+    ctx.beginPath();
+    ctx.roundRect(keyX + 1, keyY + 1, keyWidth - 2, keyHeight - 4, 3);
+    ctx.fill();
+
+    // Key letter
+    ctx.fillStyle = isActive ? '#ffaaaa' : '#fff';
+    ctx.font = 'bold 11px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('TURRET [T]', startX + panelWidth / 2, startY + panelHeight / 2 + 4);
+    ctx.fillText('T', keyX + keyWidth / 2, keyY + keyHeight / 2 + 3);
+
+    // Draw turret icon (laser gun shape) - after the key
+    const iconX = keyX + keyWidth + keyPadding + iconSize / 2;
+    const iconY = startY + panelHeight / 2;
+    const iconColor = isActive ? '#ff6666' : '#888';
+    const beamColor = isActive ? '#ff4444' : '#666';
+
+    // Turret base (small rectangle)
+    ctx.fillStyle = iconColor;
+    ctx.beginPath();
+    ctx.roundRect(iconX - 5, iconY + 3, 10, 5, 2);
+    ctx.fill();
+
+    // Turret body (angled barrel)
+    ctx.save();
+    ctx.translate(iconX, iconY + 1);
+    ctx.rotate(-Math.PI / 6); // Angle upward
+
+    // Barrel
+    ctx.fillStyle = iconColor;
+    ctx.beginPath();
+    ctx.roundRect(-3, -10, 6, 12, 2);
+    ctx.fill();
+
+    // Barrel tip / emitter
+    ctx.fillStyle = beamColor;
+    ctx.beginPath();
+    ctx.roundRect(-2, -12, 4, 3, 1);
+    ctx.fill();
+
+    // Laser beam (when active)
+    if (isActive) {
+        const beamPulse = Math.sin(Date.now() / 50) * 0.3 + 0.7;
+        ctx.strokeStyle = `rgba(255, 100, 100, ${beamPulse})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, -12);
+        ctx.lineTo(0, -18);
+        ctx.stroke();
+
+        // Beam glow
+        ctx.strokeStyle = `rgba(255, 200, 200, ${beamPulse * 0.5})`;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(0, -12);
+        ctx.lineTo(0, -16);
+        ctx.stroke();
+    }
+
+    ctx.restore();
 }
 
 function renderSpeedIndicator(startX, startY) {
@@ -5558,6 +5964,48 @@ function renderTitleScreen() {
     // Changelog panel (right side)
     renderChangelogPanel();
 
+    // Easter egg: Turret unlock visual feedback
+    if (titleTurretUnlocked) {
+        // Update flash timer
+        titleTurretFlashTimer -= 1/60; // Approximate dt
+
+        const flashIntensity = Math.sin(Date.now() / 80) * 0.4 + 0.6;
+        const yPos = canvas.height - 200;
+
+        // Glowing background
+        ctx.save();
+        ctx.fillStyle = `rgba(255, 50, 50, ${flashIntensity * 0.3})`;
+        ctx.beginPath();
+        ctx.arc(canvas.width / 2, yPos, 80 + flashIntensity * 20, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Turret icon (laser beam symbol)
+        ctx.strokeStyle = `rgba(255, 100, 100, ${flashIntensity})`;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(canvas.width / 2, yPos - 25);
+        ctx.lineTo(canvas.width / 2, yPos + 25);
+        ctx.stroke();
+
+        // Crosshair circles
+        ctx.beginPath();
+        ctx.arc(canvas.width / 2, yPos, 20, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(canvas.width / 2, yPos, 35, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Text
+        ctx.fillStyle = `rgba(255, 150, 150, ${flashIntensity})`;
+        ctx.font = 'bold 24px monospace';
+        ctx.textAlign = 'center';
+        ctx.shadowColor = '#f44';
+        ctx.shadowBlur = 15;
+        ctx.fillText('TURRET UNLOCKED!', canvas.width / 2, yPos + 70);
+        ctx.shadowBlur = 0;
+        ctx.restore();
+    }
+
     // Flashing "Press any key" text
     if (Math.floor(Date.now() / 500) % 2 === 0) {
         ctx.fillStyle = '#fff';
@@ -5768,13 +6216,17 @@ function renderShop() {
         const item = items[i];
         const y = startY + i * (itemHeight + 10);
         const isSelected = i === selectedShopItem;
-        const canAfford = score >= item.cost;
+        const isOwned = item.effect === 'turret' && playerInventory.hasTurret;
+        const canAfford = score >= item.cost && !isOwned;
 
         // Store bounds for click detection
         shopItemBounds.push({ x: startX, y: y, width: itemWidth, height: itemHeight });
 
         // Item background
-        if (isSelected) {
+        if (isOwned) {
+            ctx.fillStyle = 'rgba(0, 100, 0, 0.3)';
+            ctx.strokeStyle = '#0a0';
+        } else if (isSelected) {
             ctx.fillStyle = canAfford ? 'rgba(0, 255, 255, 0.3)' : 'rgba(255, 0, 0, 0.2)';
             ctx.strokeStyle = canAfford ? '#0ff' : '#f00';
         } else {
@@ -5786,25 +6238,32 @@ function renderShop() {
         ctx.strokeRect(startX, y, itemWidth, itemHeight);
 
         // Item color indicator
-        ctx.fillStyle = item.color;
+        ctx.fillStyle = isOwned ? '#0a0' : item.color;
         ctx.fillRect(startX + 10, y + 10, 10, itemHeight - 20);
 
         // Item name
-        ctx.fillStyle = canAfford ? '#fff' : '#666';
+        ctx.fillStyle = isOwned ? '#0f0' : (canAfford ? '#fff' : '#666');
         ctx.font = 'bold 20px monospace';
         ctx.textAlign = 'left';
         ctx.fillText(item.name, startX + 30, y + 30);
 
         // Item description
-        ctx.fillStyle = canAfford ? '#aaa' : '#555';
+        ctx.fillStyle = isOwned ? '#0a0' : (canAfford ? '#aaa' : '#555');
         ctx.font = '16px monospace';
         ctx.fillText(item.description, startX + 30, y + 55);
 
-        // Item cost
-        ctx.fillStyle = canAfford ? '#ff0' : '#600';
-        ctx.font = 'bold 20px monospace';
-        ctx.textAlign = 'right';
-        ctx.fillText(`${item.cost} pts`, startX + itemWidth - 15, y + 45);
+        // Item cost or OWNED status
+        if (isOwned) {
+            ctx.fillStyle = '#0f0';
+            ctx.font = 'bold 20px monospace';
+            ctx.textAlign = 'right';
+            ctx.fillText('OWNED', startX + itemWidth - 15, y + 45);
+        } else {
+            ctx.fillStyle = canAfford ? '#ff0' : '#600';
+            ctx.font = 'bold 20px monospace';
+            ctx.textAlign = 'right';
+            ctx.fillText(`${item.cost} pts`, startX + itemWidth - 15, y + 45);
+        }
     }
 
     // Instructions
@@ -5854,6 +6313,14 @@ function renderShop() {
 
 function purchaseShopItem() {
     const item = CONFIG.SHOP_ITEMS[selectedShopItem];
+
+    // Check if turret is already owned
+    if (item.effect === 'turret' && playerInventory.hasTurret) {
+        SFX.error && SFX.error();
+        createFloatingText(canvas.width / 2, 200, 'ALREADY OWNED!', '#f44');
+        return false;
+    }
+
     if (score < item.cost) {
         SFX.error && SFX.error();
         return false;
@@ -5894,6 +6361,9 @@ function purchaseShopItem() {
             break;
         case 'bombs':
             playerInventory.bombs = Math.min(CONFIG.BOMB_MAX_COUNT, playerInventory.bombs + item.value);
+            break;
+        case 'turret':
+            playerInventory.hasTurret = true;
             break;
     }
 
