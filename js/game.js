@@ -58,6 +58,9 @@ const CONFIG = {
     TANKS_INCREMENT: 1,
     WAVE_TRANSITION_DURATION: 3,
 
+    // Shop
+    SHOP_DURATION: 15,
+
     // Scoring
     WAVE_COMPLETE_BONUS: 100,
 
@@ -123,7 +126,47 @@ const CONFIG = {
             spawnWeight: 0.20,
             collectionType: 'collision'
         }
-    }
+    },
+
+    // Shop Items
+    SHOP_ITEMS: [
+        {
+            id: 'repair',
+            name: 'REPAIR KIT',
+            description: 'Restore 25 shield',
+            cost: 100,
+            color: '#0f0',
+            effect: 'heal',
+            value: 25
+        },
+        {
+            id: 'shield_charge',
+            name: 'SHIELD CHARGE',
+            description: '+3 shield charges',
+            cost: 150,
+            color: '#0af',
+            effect: 'shield',
+            value: 3
+        },
+        {
+            id: 'max_energy',
+            name: 'ENERGY CELL',
+            description: '+20 max energy',
+            cost: 200,
+            color: '#f0f',
+            effect: 'maxEnergy',
+            value: 20
+        },
+        {
+            id: 'speed_boost',
+            name: 'THRUSTER',
+            description: '+15% UFO speed',
+            cost: 250,
+            color: '#ff0',
+            effect: 'speed',
+            value: 0.15
+        }
+    ]
 };
 
 // ============================================
@@ -595,7 +638,7 @@ resize();
 // GAME STATE
 // ============================================
 
-let gameState = 'TITLE'; // TITLE, PLAYING, GAME_OVER, WAVE_TRANSITION
+let gameState = 'TITLE'; // TITLE, PLAYING, GAME_OVER, WAVE_TRANSITION, SHOP
 let ufo = null;
 let targets = [];
 let tanks = [];
@@ -664,6 +707,16 @@ let wave = 1;
 let waveTimer = CONFIG.WAVE_DURATION;
 let waveTransitionTimer = 0;
 let lastTimerWarningSecond = -1; // Track when we last played timer warning
+
+// Shop state
+let shopTimer = 0;
+let selectedShopItem = 0;
+
+// Player inventory (persistent upgrades purchased in shop)
+let playerInventory = {
+    maxEnergyBonus: 0,
+    speedBonus: 0
+};
 
 // Title screen UFO animation state
 let titleUfo = {
@@ -743,6 +796,27 @@ window.addEventListener('keydown', (e) => {
             // Direct letter input
             nameEntryChars[nameEntryPosition] = e.key.toUpperCase();
             nameEntryPosition = Math.min(2, nameEntryPosition + 1);
+        }
+        return;
+    }
+
+    // Handle shop input
+    if (gameState === 'SHOP') {
+        if (['ArrowUp', 'ArrowDown', 'Space', 'Enter'].includes(e.code)) {
+            e.preventDefault();
+        }
+
+        if (e.code === 'ArrowUp') {
+            selectedShopItem = Math.max(0, selectedShopItem - 1);
+            SFX.beamLoop && SFX.stopBeamLoop && SFX.stopBeamLoop(); // tiny feedback
+        } else if (e.code === 'ArrowDown') {
+            selectedShopItem = Math.min(CONFIG.SHOP_ITEMS.length - 1, selectedShopItem + 1);
+        } else if (e.code === 'Space') {
+            purchaseShopItem();
+        } else if (e.code === 'Enter') {
+            // Skip shop, go to wave transition
+            waveTransitionTimer = CONFIG.WAVE_TRANSITION_DURATION;
+            gameState = 'WAVE_TRANSITION';
         }
         return;
     }
@@ -907,7 +981,7 @@ class Target {
 
                 // Restore energy proportional to points
                 const energyRestored = Math.floor(this.points * CONFIG.ENERGY_RESTORE_RATIO);
-                ufo.energy = Math.min(CONFIG.ENERGY_MAX, ufo.energy + energyRestored);
+                ufo.energy = Math.min(ufo.maxEnergy, ufo.energy + energyRestored);
 
                 // Create floating score text
                 createFloatingText(this.x, this.y, `+${pointsEarned}`, '#0f0');
@@ -1129,7 +1203,8 @@ class UFO {
         this.x = canvas.width / 2;
         this.y = canvas.height * CONFIG.UFO_Y_POSITION;
         this.health = CONFIG.UFO_START_HEALTH;
-        this.energy = CONFIG.ENERGY_MAX;
+        this.maxEnergy = CONFIG.ENERGY_MAX + playerInventory.maxEnergyBonus;
+        this.energy = this.maxEnergy;
         this.beamActive = false;
         this.beamTarget = null;
         this.beamProgress = 0;
@@ -1207,7 +1282,7 @@ class UFO {
             this.beamActive = false;
 
             // Energy recharge when not beaming
-            this.energy = Math.min(CONFIG.ENERGY_MAX, this.energy + CONFIG.ENERGY_RECHARGE_RATE * dt);
+            this.energy = Math.min(this.maxEnergy, this.energy + CONFIG.ENERGY_RECHARGE_RATE * dt);
         }
 
         // Clamp energy
@@ -1247,12 +1322,13 @@ class UFO {
         const isAbducting = this.beamActive && this.beamTarget;
         if (!isAbducting) {
             let moved = false;
+            const effectiveSpeed = CONFIG.UFO_SPEED * (1 + playerInventory.speedBonus);
             if (keys['ArrowLeft'] || keys['KeyA']) {
-                this.x -= CONFIG.UFO_SPEED * dt;
+                this.x -= effectiveSpeed * dt;
                 moved = true;
             }
             if (keys['ArrowRight'] || keys['KeyD']) {
-                this.x += CONFIG.UFO_SPEED * dt;
+                this.x += effectiveSpeed * dt;
                 moved = true;
             }
 
@@ -1521,7 +1597,7 @@ class UFO {
         ctx.fillRect(x, y, barWidth, barHeight);
 
         // Energy level
-        const energyPercent = this.energy / CONFIG.ENERGY_MAX;
+        const energyPercent = this.energy / this.maxEnergy;
         let color;
         if (energyPercent > 0.5) {
             color = '#0f0';
@@ -1659,7 +1735,7 @@ class Tank {
 
                 // Restore energy proportional to points
                 const energyRestored = Math.floor(CONFIG.TANK_POINTS * CONFIG.ENERGY_RESTORE_RATIO);
-                ufo.energy = Math.min(CONFIG.ENERGY_MAX, ufo.energy + energyRestored);
+                ufo.energy = Math.min(ufo.maxEnergy, ufo.energy + energyRestored);
 
                 createFloatingText(this.x, this.y, `+${pointsEarned}`, '#0f0');
 
@@ -2420,7 +2496,7 @@ function applyPowerup(type) {
     const state = activePowerups[type];
 
     // All powerups restore beam energy to full
-    ufo.energy = CONFIG.ENERGY_MAX;
+    ufo.energy = ufo.maxEnergy;
 
     switch (type) {
         case 'health_pack':
@@ -2624,7 +2700,7 @@ class HeavyTank {
 
                 // Restore energy proportional to points
                 const energyRestored = Math.floor(this.points * CONFIG.ENERGY_RESTORE_RATIO);
-                ufo.energy = Math.min(CONFIG.ENERGY_MAX, ufo.energy + energyRestored);
+                ufo.energy = Math.min(ufo.maxEnergy, ufo.energy + energyRestored);
 
                 createFloatingText(this.x + this.width / 2, this.y, `+${pointsEarned}`, '#0f0');
 
@@ -3177,6 +3253,12 @@ function startGame() {
         shield: { active: false, charges: 0, maxCharges: 0, stacks: 0 },
         energy_surge: { active: false, timer: 0, maxTimer: 0, stacks: 0 },
         wide_beam: { active: false, timer: 0, maxTimer: 0, stacks: 0 }
+    };
+
+    // Reset player inventory (shop upgrades)
+    playerInventory = {
+        maxEnergyBonus: 0,
+        speedBonus: 0
     };
 
     // Spawn initial tanks
@@ -4442,6 +4524,174 @@ function renderWaveTransition() {
 }
 
 // ============================================
+// SHOP SYSTEM
+// ============================================
+
+function updateShop(dt) {
+    shopTimer -= dt;
+
+    // Continue updating particles for visual effect
+    updateParticles(dt);
+    updateFloatingTexts(dt);
+
+    if (shopTimer <= 0) {
+        // Shop time is up, start wave transition
+        waveTransitionTimer = CONFIG.WAVE_TRANSITION_DURATION;
+        gameState = 'WAVE_TRANSITION';
+    }
+}
+
+function renderShop() {
+    // Render the game scene frozen
+    ctx.save();
+    renderBackground();
+
+    // Render targets
+    for (const target of targets) {
+        target.render();
+    }
+
+    // Render tanks
+    renderTanks();
+
+    // Render UFO
+    if (ufo) {
+        ufo.render();
+    }
+
+    // Render particles and floating texts
+    renderParticles();
+    renderFloatingTexts();
+    ctx.restore();
+
+    // Semi-transparent overlay
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Shop title
+    ctx.fillStyle = '#0ff';
+    ctx.font = 'bold 48px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('UFO UPGRADES', canvas.width / 2, 100);
+
+    // Timer
+    const secondsLeft = Math.ceil(shopTimer);
+    ctx.fillStyle = secondsLeft <= 5 ? '#f00' : '#fff';
+    ctx.font = 'bold 24px monospace';
+    ctx.fillText(`Time remaining: ${secondsLeft}s`, canvas.width / 2, 140);
+
+    // Score/currency display
+    ctx.fillStyle = '#ff0';
+    ctx.font = 'bold 28px monospace';
+    ctx.fillText(`POINTS: ${score}`, canvas.width / 2, 180);
+
+    // Shop items
+    const items = CONFIG.SHOP_ITEMS;
+    const itemHeight = 80;
+    const itemWidth = 400;
+    const startY = 220;
+    const startX = canvas.width / 2 - itemWidth / 2;
+
+    for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const y = startY + i * (itemHeight + 10);
+        const isSelected = i === selectedShopItem;
+        const canAfford = score >= item.cost;
+
+        // Item background
+        if (isSelected) {
+            ctx.fillStyle = canAfford ? 'rgba(0, 255, 255, 0.3)' : 'rgba(255, 0, 0, 0.2)';
+            ctx.strokeStyle = canAfford ? '#0ff' : '#f00';
+        } else {
+            ctx.fillStyle = 'rgba(50, 50, 50, 0.8)';
+            ctx.strokeStyle = '#444';
+        }
+        ctx.fillRect(startX, y, itemWidth, itemHeight);
+        ctx.lineWidth = isSelected ? 3 : 1;
+        ctx.strokeRect(startX, y, itemWidth, itemHeight);
+
+        // Item color indicator
+        ctx.fillStyle = item.color;
+        ctx.fillRect(startX + 10, y + 10, 10, itemHeight - 20);
+
+        // Item name
+        ctx.fillStyle = canAfford ? '#fff' : '#666';
+        ctx.font = 'bold 20px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(item.name, startX + 30, y + 30);
+
+        // Item description
+        ctx.fillStyle = canAfford ? '#aaa' : '#555';
+        ctx.font = '16px monospace';
+        ctx.fillText(item.description, startX + 30, y + 55);
+
+        // Item cost
+        ctx.fillStyle = canAfford ? '#ff0' : '#600';
+        ctx.font = 'bold 20px monospace';
+        ctx.textAlign = 'right';
+        ctx.fillText(`${item.cost} pts`, startX + itemWidth - 15, y + 45);
+    }
+
+    // Instructions
+    ctx.fillStyle = '#888';
+    ctx.font = '18px monospace';
+    ctx.textAlign = 'center';
+    const instructY = startY + items.length * (itemHeight + 10) + 30;
+    ctx.fillText('↑/↓ to select  •  SPACE to buy  •  ENTER to skip', canvas.width / 2, instructY);
+
+    // Render UI
+    renderUI();
+}
+
+function purchaseShopItem() {
+    const item = CONFIG.SHOP_ITEMS[selectedShopItem];
+    if (score < item.cost) {
+        SFX.error && SFX.error();
+        return false;
+    }
+
+    // Deduct cost
+    score -= item.cost;
+
+    // Apply effect
+    switch (item.effect) {
+        case 'heal':
+            if (ufo) {
+                ufo.health = Math.min(CONFIG.UFO_START_HEALTH, ufo.health + item.value);
+            }
+            break;
+        case 'shield':
+            if (activePowerups.shield.active) {
+                activePowerups.shield.charges += item.value;
+                activePowerups.shield.maxCharges = Math.max(activePowerups.shield.maxCharges, activePowerups.shield.charges);
+            } else {
+                activePowerups.shield.active = true;
+                activePowerups.shield.charges = item.value;
+                activePowerups.shield.maxCharges = item.value;
+                activePowerups.shield.stacks = 1;
+            }
+            break;
+        case 'maxEnergy':
+            playerInventory.maxEnergyBonus += item.value;
+            if (ufo) {
+                ufo.maxEnergy = CONFIG.ENERGY_MAX + playerInventory.maxEnergyBonus;
+            }
+            break;
+        case 'speed':
+            playerInventory.speedBonus += item.value;
+            break;
+    }
+
+    // Play purchase sound
+    SFX.powerup && SFX.powerup();
+
+    // Create floating text
+    createFloatingText(canvas.width / 2, 200, `${item.name}!`, item.color);
+
+    return true;
+}
+
+// ============================================
 // GAME LOOP
 // ============================================
 
@@ -4477,6 +4727,11 @@ function gameLoop(timestamp) {
         case 'WAVE_TRANSITION':
             updateWaveTransition(dt);
             renderWaveTransition();
+            break;
+
+        case 'SHOP':
+            updateShop(dt);
+            renderShop();
             break;
     }
 
@@ -4567,10 +4822,11 @@ function update(dt) {
             localStorage.setItem('alienAbductoramaHighScore', highScore);
         }
 
-        // Start wave transition
+        // Start shop phase between waves
         wave++;
-        waveTransitionTimer = CONFIG.WAVE_TRANSITION_DURATION;
-        gameState = 'WAVE_TRANSITION';
+        shopTimer = CONFIG.SHOP_DURATION;
+        selectedShopItem = 0;
+        gameState = 'SHOP';
     }
 }
 
