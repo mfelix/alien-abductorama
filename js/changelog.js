@@ -2,7 +2,7 @@
 const CHANGELOG = [
   {
     "message": "Changelog panel: bigger fonts, brighter colors, word wrap for full messages",
-    "timestamp": 1768604522000
+    "timestamp": 1768604640000
   },
   {
     "message": "Redesign changelog: right column panel layout with title bar and row borders",
@@ -19,5 +19,9 @@ const CHANGELOG = [
   {
     "message": "Add tank stun mechanic: lift 50%+ and drop to disable",
     "timestamp": 1768600713000
+  },
+  {
+    "message": "Add changelog title screen feature",
+    "timestamp": 1768596096000
   }
 ];
