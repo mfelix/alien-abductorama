@@ -59,7 +59,7 @@ const CONFIG = {
     WAVE_TRANSITION_DURATION: 3,
 
     // Shop
-    SHOP_DURATION: 15,
+    SHOP_DURATION: 30,
 
     // Energy Cells (revive mechanic)
     ENERGY_CELL_REVIVE_HEALTH: 50,  // Health restored on revive
@@ -965,7 +965,9 @@ let lastTimerWarningSecond = -1; // Track when we last played timer warning
 let shopTimer = 0;
 let selectedShopItem = 0;
 let shopItemBounds = []; // For click detection on shop items
-let shopButtonBounds = { done: null, cancel: null }; // For click detection on buttons
+let shopButtonBounds = { done: null, cancel: null, checkout: null, empty: null }; // For click detection on buttons
+let shopCart = []; // Items in shopping cart (array of item ids)
+let shopCartBounds = []; // For click detection on cart items (to remove)
 
 // Player inventory (persistent upgrades purchased in shop)
 let playerInventory = {
@@ -1072,19 +1074,33 @@ window.addEventListener('keydown', (e) => {
 
     // Handle shop input
     if (gameState === 'SHOP') {
-        if (['ArrowUp', 'ArrowDown', 'Space', 'Enter'].includes(e.code)) {
+        if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'Enter', 'Escape', 'KeyC'].includes(e.code)) {
             e.preventDefault();
         }
 
+        // Grid navigation (3x3)
+        const gridCols = 3;
+        const maxItems = 7; // Number of actual items in grid
         if (e.code === 'ArrowUp') {
-            selectedShopItem = Math.max(0, selectedShopItem - 1);
-            SFX.beamLoop && SFX.stopBeamLoop && SFX.stopBeamLoop(); // tiny feedback
+            selectedShopItem = Math.max(0, selectedShopItem - gridCols);
         } else if (e.code === 'ArrowDown') {
-            selectedShopItem = Math.min(CONFIG.SHOP_ITEMS.length - 1, selectedShopItem + 1);
+            selectedShopItem = Math.min(maxItems - 1, selectedShopItem + gridCols);
+        } else if (e.code === 'ArrowLeft') {
+            selectedShopItem = Math.max(0, selectedShopItem - 1);
+        } else if (e.code === 'ArrowRight') {
+            selectedShopItem = Math.min(maxItems - 1, selectedShopItem + 1);
         } else if (e.code === 'Space') {
-            purchaseShopItem();
+            // Add selected item to cart
+            addToCart(selectedShopItem);
+        } else if (e.code === 'KeyC') {
+            // Checkout cart
+            checkoutCart();
+        } else if (e.code === 'Escape') {
+            // Empty cart
+            emptyCart();
         } else if (e.code === 'Enter') {
-            // Skip shop, go to wave transition
+            // Checkout and start wave
+            checkoutCart();
             waveTransitionTimer = CONFIG.WAVE_TRANSITION_DURATION;
             gameState = 'WAVE_TRANSITION';
         }
@@ -1190,13 +1206,42 @@ canvas.addEventListener('click', (e) => {
     const mouseX = (e.clientX - rect.left) * (canvas.width / rect.width);
     const mouseY = (e.clientY - rect.top) * (canvas.height / rect.height);
 
-    // Check if clicked on a shop item
+    // Check if clicked on a shop item (adds to cart)
     for (let i = 0; i < shopItemBounds.length; i++) {
         const b = shopItemBounds[i];
+        if (b && mouseX >= b.x && mouseX <= b.x + b.width &&
+            mouseY >= b.y && mouseY <= b.y + b.height) {
+            addToCart(i);
+            return;
+        }
+    }
+
+    // Check if clicked on cart item (removes from cart)
+    for (let i = 0; i < shopCartBounds.length; i++) {
+        const b = shopCartBounds[i];
+        if (b && mouseX >= b.x && mouseX <= b.x + b.width &&
+            mouseY >= b.y && mouseY <= b.y + b.height) {
+            removeFromCart(i);
+            return;
+        }
+    }
+
+    // Check if clicked Checkout button
+    if (shopButtonBounds.checkout) {
+        const b = shopButtonBounds.checkout;
         if (mouseX >= b.x && mouseX <= b.x + b.width &&
             mouseY >= b.y && mouseY <= b.y + b.height) {
-            selectedShopItem = i;
-            purchaseShopItem();
+            checkoutCart();
+            return;
+        }
+    }
+
+    // Check if clicked Empty Cart button
+    if (shopButtonBounds.empty) {
+        const b = shopButtonBounds.empty;
+        if (mouseX >= b.x && mouseX <= b.x + b.width &&
+            mouseY >= b.y && mouseY <= b.y + b.height) {
+            emptyCart();
             return;
         }
     }
@@ -1206,17 +1251,7 @@ canvas.addEventListener('click', (e) => {
         const b = shopButtonBounds.done;
         if (mouseX >= b.x && mouseX <= b.x + b.width &&
             mouseY >= b.y && mouseY <= b.y + b.height) {
-            waveTransitionTimer = CONFIG.WAVE_TRANSITION_DURATION;
-            gameState = 'WAVE_TRANSITION';
-            return;
-        }
-    }
-
-    // Check if clicked Cancel button
-    if (shopButtonBounds.cancel) {
-        const b = shopButtonBounds.cancel;
-        if (mouseX >= b.x && mouseX <= b.x + b.width &&
-            mouseY >= b.y && mouseY <= b.y + b.height) {
+            checkoutCart(); // Auto-checkout when done
             waveTransitionTimer = CONFIG.WAVE_TRANSITION_DURATION;
             gameState = 'WAVE_TRANSITION';
             return;
@@ -6159,177 +6194,658 @@ function updateShop(dt) {
 }
 
 function renderShop() {
-    // Render the game scene frozen
+    // Render the game scene frozen (dimmed)
     ctx.save();
     renderBackground();
-
-    // Render targets
     for (const target of targets) {
         target.render();
     }
-
-    // Render tanks
     renderTanks();
-
-    // Render UFO
     if (ufo) {
         ufo.render();
     }
-
-    // Render particles and floating texts
     renderParticles();
     renderFloatingTexts();
     ctx.restore();
 
-    // Semi-transparent overlay
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    // Dark overlay for contrast (covers HUD too)
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Shop title
-    ctx.fillStyle = '#0ff';
-    ctx.font = 'bold 48px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('UFO UPGRADES', canvas.width / 2, 100);
+    // Layout constants - grid and cart side by side, centered
+    const gridCols = 3;
+    const gridRows = 3;
+    const cellSize = 130;
+    const cellGap = 12;
+    const gridWidth = gridCols * cellSize + (gridCols - 1) * cellGap;
+    const gridHeight = gridRows * cellSize + (gridRows - 1) * cellGap;
 
-    // Timer
+    const cartWidth = 260;
+    const cartGap = 40;
+    const totalWidth = gridWidth + cartGap + cartWidth;
+    const startX = (canvas.width - totalWidth) / 2;
+
+    const gridStartX = startX;
+    const gridStartY = 140;
+    const cartX = gridStartX + gridWidth + cartGap;
+    const cartY = gridStartY;
+
+    // ========== PROMINENT TIMER AT TOP ==========
     const secondsLeft = Math.ceil(shopTimer);
+    const timerY = 50;
+
+    // Timer background bar
+    const timerBarWidth = 400;
+    const timerBarHeight = 40;
+    const timerBarX = (canvas.width - timerBarWidth) / 2;
+
+    // Progress fill (shrinks as time runs out)
+    const progress = shopTimer / CONFIG.SHOP_DURATION;
+    ctx.fillStyle = secondsLeft <= 5 ? 'rgba(255, 0, 0, 0.4)' : 'rgba(0, 150, 150, 0.4)';
+    ctx.beginPath();
+    ctx.roundRect(timerBarX, timerY, timerBarWidth * progress, timerBarHeight, 6);
+    ctx.fill();
+
+    // Timer border
+    ctx.strokeStyle = secondsLeft <= 5 ? '#f00' : '#0aa';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(timerBarX, timerY, timerBarWidth, timerBarHeight, 6);
+    ctx.stroke();
+
+    // Timer text
     ctx.fillStyle = secondsLeft <= 5 ? '#f00' : '#fff';
-    ctx.font = 'bold 24px monospace';
-    ctx.fillText(`Time remaining: ${secondsLeft}s`, canvas.width / 2, 140);
+    ctx.font = 'bold 22px monospace';
+    ctx.textAlign = 'center';
+    const timerText = secondsLeft <= 5 ? `HURRY! ${secondsLeft}s` : `SHOP TIME: ${secondsLeft}s`;
+    ctx.fillText(timerText, canvas.width / 2, timerY + 28);
 
-    // Score/currency display
+    // Pulsing effect when low time
+    if (secondsLeft <= 5) {
+        const pulse = Math.sin(Date.now() / 100) * 0.3 + 0.7;
+        ctx.strokeStyle = `rgba(255, 0, 0, ${pulse})`;
+        ctx.lineWidth = 3;
+        ctx.stroke();
+    }
+
+    // ========== HEADER: Title and Points ==========
+    ctx.fillStyle = '#0ff';
+    ctx.font = 'bold 32px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('UFO SHOP', gridStartX, 115);
+
     ctx.fillStyle = '#ff0';
-    ctx.font = 'bold 28px monospace';
-    ctx.fillText(`POINTS: ${score}`, canvas.width / 2, 180);
+    ctx.font = 'bold 24px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(`${score} PTS`, gridStartX + gridWidth, 115);
 
-    // Shop items
-    const items = CONFIG.SHOP_ITEMS;
-    const itemHeight = 80;
-    const itemWidth = 400;
-    const startY = 220;
-    const startX = canvas.width / 2 - itemWidth / 2;
+    // Calculate cart total
+    const cartTotal = shopCart.reduce((sum, itemId) => {
+        const item = CONFIG.SHOP_ITEMS.find(i => i.id === itemId);
+        return sum + (item ? item.cost : 0);
+    }, 0);
+    const pointsAfter = score - cartTotal;
 
-    // Clear and rebuild item bounds for click detection
+    // Clear bounds arrays
     shopItemBounds = [];
+    shopCartBounds = [];
 
-    for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        const y = startY + i * (itemHeight + 10);
-        const isSelected = i === selectedShopItem;
-        const isOwned = item.effect === 'turret' && playerInventory.hasTurret;
-        const canAfford = score >= item.cost && !isOwned;
+    // Define shop grid items (9 slots, some may be empty/locked)
+    const gridItems = [
+        'repair', 'shield_charge', 'max_energy',
+        'speed_boost', 'revive_cell', 'bomb_pack',
+        'laser_turret', null, null  // Last two slots are locked
+    ];
 
-        // Store bounds for click detection
-        shopItemBounds.push({ x: startX, y: y, width: itemWidth, height: itemHeight });
+    // Render 3x3 grid
+    for (let row = 0; row < gridRows; row++) {
+        for (let col = 0; col < gridCols; col++) {
+            const idx = row * gridCols + col;
+            const itemId = gridItems[idx];
+            const item = itemId ? CONFIG.SHOP_ITEMS.find(i => i.id === itemId) : null;
 
-        // Item background
-        if (isOwned) {
-            ctx.fillStyle = 'rgba(0, 100, 0, 0.3)';
-            ctx.strokeStyle = '#0a0';
-        } else if (isSelected) {
-            ctx.fillStyle = canAfford ? 'rgba(0, 255, 255, 0.3)' : 'rgba(255, 0, 0, 0.2)';
-            ctx.strokeStyle = canAfford ? '#0ff' : '#f00';
-        } else {
-            ctx.fillStyle = 'rgba(50, 50, 50, 0.8)';
-            ctx.strokeStyle = '#444';
-        }
-        ctx.fillRect(startX, y, itemWidth, itemHeight);
-        ctx.lineWidth = isSelected ? 3 : 1;
-        ctx.strokeRect(startX, y, itemWidth, itemHeight);
+            const x = gridStartX + col * (cellSize + cellGap);
+            const y = gridStartY + row * (cellSize + cellGap);
 
-        // Item color indicator
-        ctx.fillStyle = isOwned ? '#0a0' : item.color;
-        ctx.fillRect(startX + 10, y + 10, 10, itemHeight - 20);
+            // Store bounds for click detection
+            if (item) {
+                shopItemBounds.push({ x, y, width: cellSize, height: cellSize, itemIndex: CONFIG.SHOP_ITEMS.findIndex(i => i.id === itemId) });
+            } else {
+                shopItemBounds.push(null); // Locked slot
+            }
 
-        // Item name
-        ctx.fillStyle = isOwned ? '#0f0' : (canAfford ? '#fff' : '#666');
-        ctx.font = 'bold 20px monospace';
-        ctx.textAlign = 'left';
-        ctx.fillText(item.name, startX + 30, y + 30);
+            if (!item) {
+                // Locked/empty slot
+                ctx.fillStyle = 'rgba(30, 30, 30, 0.8)';
+                ctx.beginPath();
+                ctx.roundRect(x, y, cellSize, cellSize, 10);
+                ctx.fill();
 
-        // Item description
-        ctx.fillStyle = isOwned ? '#0a0' : (canAfford ? '#aaa' : '#555');
-        ctx.font = '16px monospace';
-        ctx.fillText(item.description, startX + 30, y + 55);
+                ctx.strokeStyle = '#333';
+                ctx.lineWidth = 2;
+                ctx.stroke();
 
-        // Item cost or OWNED status
-        if (isOwned) {
-            ctx.fillStyle = '#0f0';
-            ctx.font = 'bold 20px monospace';
-            ctx.textAlign = 'right';
-            ctx.fillText('OWNED', startX + itemWidth - 15, y + 45);
-        } else {
-            ctx.fillStyle = canAfford ? '#ff0' : '#600';
-            ctx.font = 'bold 20px monospace';
-            ctx.textAlign = 'right';
-            ctx.fillText(`${item.cost} pts`, startX + itemWidth - 15, y + 45);
+                // Lock icon
+                ctx.fillStyle = '#444';
+                ctx.font = 'bold 32px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText('?', x + cellSize / 2, y + cellSize / 2 + 10);
+
+                ctx.fillStyle = '#333';
+                ctx.font = '12px monospace';
+                ctx.fillText('LOCKED', x + cellSize / 2, y + cellSize - 15);
+                continue;
+            }
+
+            const isOwned = item.effect === 'turret' && playerInventory.hasTurret;
+            const inCart = shopCart.filter(id => id === item.id).length;
+            const canAfford = (score - cartTotal) >= item.cost || inCart > 0;
+            const isSelected = idx === selectedShopItem;
+
+            // Cell background
+            if (isOwned) {
+                ctx.fillStyle = 'rgba(0, 80, 0, 0.8)';
+            } else if (inCart > 0) {
+                ctx.fillStyle = 'rgba(0, 100, 100, 0.8)';
+            } else if (isSelected) {
+                ctx.fillStyle = 'rgba(60, 60, 80, 0.95)';
+            } else {
+                ctx.fillStyle = 'rgba(40, 40, 50, 0.9)';
+            }
+            ctx.beginPath();
+            ctx.roundRect(x, y, cellSize, cellSize, 10);
+            ctx.fill();
+
+            // Border
+            if (isSelected && !isOwned) {
+                ctx.strokeStyle = '#ff0';
+                ctx.lineWidth = 3;
+            } else if (isOwned) {
+                ctx.strokeStyle = '#0a0';
+                ctx.lineWidth = 2;
+            } else if (inCart > 0) {
+                ctx.strokeStyle = '#0ff';
+                ctx.lineWidth = 3;
+            } else {
+                ctx.strokeStyle = canAfford ? '#666' : '#333';
+                ctx.lineWidth = 2;
+            }
+            ctx.stroke();
+
+            // Icon area (top portion)
+            const iconY = y + 15;
+            const iconSize = 50;
+            renderShopIcon(item.id, x + cellSize / 2, iconY + iconSize / 2, iconSize, isOwned ? '#0a0' : item.color);
+
+            // Item name
+            ctx.fillStyle = isOwned ? '#0f0' : (canAfford ? '#fff' : '#555');
+            ctx.font = 'bold 13px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(item.name, x + cellSize / 2, y + 78);
+
+            // Cost or status
+            if (isOwned) {
+                ctx.fillStyle = '#0f0';
+                ctx.font = 'bold 14px monospace';
+                ctx.fillText('OWNED', x + cellSize / 2, y + 100);
+            } else {
+                ctx.fillStyle = canAfford ? '#ff0' : '#600';
+                ctx.font = 'bold 16px monospace';
+                ctx.fillText(`${item.cost}`, x + cellSize / 2, y + 100);
+            }
+
+            // In-cart indicator
+            if (inCart > 0 && !isOwned) {
+                ctx.fillStyle = '#0ff';
+                ctx.beginPath();
+                ctx.arc(x + cellSize - 18, y + 18, 14, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#000';
+                ctx.font = 'bold 14px monospace';
+                ctx.fillText(inCart.toString(), x + cellSize - 18, y + 23);
+            }
+
+            // Description tooltip area
+            ctx.fillStyle = isOwned ? '#060' : '#444';
+            ctx.font = '10px monospace';
+            ctx.fillText(item.description, x + cellSize / 2, y + cellSize - 12);
         }
     }
+
+    // ========== SHOPPING CART (right side) ==========
+    const cartHeight = gridHeight;
+
+    // Cart background
+    ctx.fillStyle = 'rgba(20, 20, 30, 0.95)';
+    ctx.beginPath();
+    ctx.roundRect(cartX, cartY, cartWidth, cartHeight, 12);
+    ctx.fill();
+
+    ctx.strokeStyle = '#0aa';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Cart title
+    ctx.fillStyle = '#0ff';
+    ctx.font = 'bold 20px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('SHOPPING CART', cartX + cartWidth / 2, cartY + 30);
+
+    // Cart items
+    const cartItemHeight = 35;
+    const cartItemsStartY = cartY + 50;
+    const maxVisibleItems = 8;
+
+    if (shopCart.length === 0) {
+        ctx.fillStyle = '#555';
+        ctx.font = '14px monospace';
+        ctx.fillText('Cart is empty', cartX + cartWidth / 2, cartItemsStartY + 40);
+        ctx.fillText('Click items to add', cartX + cartWidth / 2, cartItemsStartY + 60);
+    } else {
+        // Group cart items by id and count
+        const cartGroups = {};
+        shopCart.forEach(id => {
+            cartGroups[id] = (cartGroups[id] || 0) + 1;
+        });
+
+        let cartIdx = 0;
+        for (const [itemId, count] of Object.entries(cartGroups)) {
+            if (cartIdx >= maxVisibleItems) break;
+
+            const item = CONFIG.SHOP_ITEMS.find(i => i.id === itemId);
+            if (!item) continue;
+
+            const itemY = cartItemsStartY + cartIdx * cartItemHeight;
+
+            // Store bounds for removal click
+            shopCartBounds.push({
+                x: cartX + 10,
+                y: itemY,
+                width: cartWidth - 20,
+                height: cartItemHeight - 5,
+                itemId: itemId
+            });
+
+            // Item row background (hoverable)
+            ctx.fillStyle = 'rgba(50, 50, 60, 0.8)';
+            ctx.beginPath();
+            ctx.roundRect(cartX + 10, itemY, cartWidth - 20, cartItemHeight - 5, 5);
+            ctx.fill();
+
+            // Color dot
+            ctx.fillStyle = item.color;
+            ctx.beginPath();
+            ctx.arc(cartX + 25, itemY + (cartItemHeight - 5) / 2, 6, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Item name with count
+            ctx.fillStyle = '#fff';
+            ctx.font = '12px monospace';
+            ctx.textAlign = 'left';
+            const displayName = count > 1 ? `${item.name} x${count}` : item.name;
+            ctx.fillText(displayName, cartX + 40, itemY + 20);
+
+            // Cost
+            ctx.fillStyle = '#ff0';
+            ctx.font = 'bold 12px monospace';
+            ctx.textAlign = 'right';
+            ctx.fillText(`${item.cost * count}`, cartX + cartWidth - 35, itemY + 20);
+
+            // Remove hint (X)
+            ctx.fillStyle = '#f55';
+            ctx.font = 'bold 12px monospace';
+            ctx.fillText('X', cartX + cartWidth - 18, itemY + 20);
+
+            cartIdx++;
+        }
+    }
+
+    // Cart total line
+    const totalY = cartY + cartHeight - 100;
+    ctx.strokeStyle = '#0aa';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cartX + 15, totalY);
+    ctx.lineTo(cartX + cartWidth - 15, totalY);
+    ctx.stroke();
+
+    // Total
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 16px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('TOTAL:', cartX + 20, totalY + 25);
+
+    ctx.fillStyle = pointsAfter >= 0 ? '#ff0' : '#f00';
+    ctx.textAlign = 'right';
+    ctx.fillText(`${cartTotal}`, cartX + cartWidth - 20, totalY + 25);
+
+    // Cart buttons
+    const cartBtnWidth = (cartWidth - 50) / 2;
+    const cartBtnHeight = 35;
+    const cartBtnY = cartY + cartHeight - 50;
+
+    // Checkout button
+    const checkoutX = cartX + 15;
+    const canCheckout = shopCart.length > 0 && pointsAfter >= 0;
+
+    ctx.fillStyle = canCheckout ? 'rgba(0, 150, 0, 0.8)' : 'rgba(50, 50, 50, 0.8)';
+    ctx.beginPath();
+    ctx.roundRect(checkoutX, cartBtnY, cartBtnWidth, cartBtnHeight, 6);
+    ctx.fill();
+    ctx.strokeStyle = canCheckout ? '#0f0' : '#444';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.fillStyle = canCheckout ? '#0f0' : '#555';
+    ctx.font = 'bold 14px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('CHECKOUT', checkoutX + cartBtnWidth / 2, cartBtnY + 23);
+
+    shopButtonBounds.checkout = { x: checkoutX, y: cartBtnY, width: cartBtnWidth, height: cartBtnHeight };
+
+    // Empty cart button
+    const emptyX = cartX + cartWidth - cartBtnWidth - 15;
+    const canEmpty = shopCart.length > 0;
+
+    ctx.fillStyle = canEmpty ? 'rgba(150, 50, 0, 0.8)' : 'rgba(50, 50, 50, 0.8)';
+    ctx.beginPath();
+    ctx.roundRect(emptyX, cartBtnY, cartBtnWidth, cartBtnHeight, 6);
+    ctx.fill();
+    ctx.strokeStyle = canEmpty ? '#f80' : '#444';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.fillStyle = canEmpty ? '#f80' : '#555';
+    ctx.font = 'bold 14px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('EMPTY', emptyX + cartBtnWidth / 2, cartBtnY + 23);
+
+    shopButtonBounds.empty = { x: emptyX, y: cartBtnY, width: cartBtnWidth, height: cartBtnHeight };
+
+    // ========== START WAVE BUTTON (spans full width below both) ==========
+    const doneWidth = totalWidth;
+    const doneHeight = 50;
+    const doneX = gridStartX;
+    const doneY = gridStartY + gridHeight + 20;
+
+    ctx.fillStyle = 'rgba(0, 150, 150, 0.8)';
+    ctx.beginPath();
+    ctx.roundRect(doneX, doneY, doneWidth, doneHeight, 8);
+    ctx.fill();
+    ctx.strokeStyle = '#0ff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 20px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('START WAVE  [ENTER]', doneX + doneWidth / 2, doneY + 32);
+
+    shopButtonBounds.done = { x: doneX, y: doneY, width: doneWidth, height: doneHeight };
 
     // Instructions
-    ctx.fillStyle = '#888';
-    ctx.font = '18px monospace';
+    ctx.fillStyle = '#666';
+    ctx.font = '13px monospace';
     ctx.textAlign = 'center';
-    const instructY = startY + items.length * (itemHeight + 10) + 30;
-    ctx.fillText('↑/↓ select  •  SPACE buy  •  or click items', canvas.width / 2, instructY);
+    ctx.fillText('Click items to add to cart  |  SPACE to add  |  C to checkout  |  ESC to empty cart', canvas.width / 2, doneY + doneHeight + 22);
 
-    // Done and Cancel buttons
-    const buttonWidth = 120;
-    const buttonHeight = 40;
-    const buttonSpacing = 20;
-    const buttonY = instructY + 30;
-    const doneX = canvas.width / 2 - buttonWidth - buttonSpacing / 2;
-    const cancelX = canvas.width / 2 + buttonSpacing / 2;
-
-    // Store button bounds for click detection
-    shopButtonBounds.done = { x: doneX, y: buttonY, width: buttonWidth, height: buttonHeight };
-    shopButtonBounds.cancel = { x: cancelX, y: buttonY, width: buttonWidth, height: buttonHeight };
-
-    // Done button
-    ctx.fillStyle = 'rgba(0, 200, 0, 0.3)';
-    ctx.strokeStyle = '#0c0';
-    ctx.lineWidth = 2;
-    ctx.fillRect(doneX, buttonY, buttonWidth, buttonHeight);
-    ctx.strokeRect(doneX, buttonY, buttonWidth, buttonHeight);
-    ctx.fillStyle = '#0f0';
-    ctx.font = 'bold 20px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('DONE', doneX + buttonWidth / 2, buttonY + 27);
-
-    // Cancel button
-    ctx.fillStyle = 'rgba(200, 100, 0, 0.3)';
-    ctx.strokeStyle = '#c60';
-    ctx.lineWidth = 2;
-    ctx.fillRect(cancelX, buttonY, buttonWidth, buttonHeight);
-    ctx.strokeRect(cancelX, buttonY, buttonWidth, buttonHeight);
-    ctx.fillStyle = '#f80';
-    ctx.font = 'bold 20px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('CANCEL', cancelX + buttonWidth / 2, buttonY + 27);
-
-    // Render UI
-    renderUI();
+    // Don't render game UI - shop overlay covers everything
 }
 
-function purchaseShopItem() {
-    const item = CONFIG.SHOP_ITEMS[selectedShopItem];
+// Render shop item icons
+function renderShopIcon(itemId, x, y, size, color) {
+    ctx.save();
+    ctx.translate(x, y);
 
-    // Check if turret is already owned
+    const s = size / 50; // Scale factor
+
+    switch (itemId) {
+        case 'repair':
+            // Wrench icon
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 4 * s;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(-15 * s, 15 * s);
+            ctx.lineTo(10 * s, -10 * s);
+            ctx.stroke();
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(12 * s, -12 * s, 8 * s, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#000';
+            ctx.beginPath();
+            ctx.arc(12 * s, -12 * s, 4 * s, 0, Math.PI * 2);
+            ctx.fill();
+            break;
+
+        case 'shield_charge':
+            // Shield icon
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.moveTo(0, -20 * s);
+            ctx.lineTo(18 * s, -10 * s);
+            ctx.lineTo(18 * s, 5 * s);
+            ctx.quadraticCurveTo(18 * s, 20 * s, 0, 25 * s);
+            ctx.quadraticCurveTo(-18 * s, 20 * s, -18 * s, 5 * s);
+            ctx.lineTo(-18 * s, -10 * s);
+            ctx.closePath();
+            ctx.fill();
+            ctx.fillStyle = 'rgba(255,255,255,0.3)';
+            ctx.beginPath();
+            ctx.moveTo(0, -15 * s);
+            ctx.lineTo(12 * s, -7 * s);
+            ctx.lineTo(12 * s, 3 * s);
+            ctx.quadraticCurveTo(12 * s, 12 * s, 0, 17 * s);
+            ctx.closePath();
+            ctx.fill();
+            break;
+
+        case 'max_energy':
+            // Battery/energy icon
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.roundRect(-12 * s, -18 * s, 24 * s, 36 * s, 4 * s);
+            ctx.fill();
+            ctx.fillStyle = '#000';
+            ctx.beginPath();
+            ctx.roundRect(-8 * s, -14 * s, 16 * s, 28 * s, 2 * s);
+            ctx.fill();
+            ctx.fillStyle = color;
+            ctx.fillRect(-6 * s, -2 * s, 12 * s, 14 * s);
+            // Cap
+            ctx.fillStyle = color;
+            ctx.fillRect(-5 * s, -22 * s, 10 * s, 5 * s);
+            break;
+
+        case 'speed_boost':
+            // Rocket/thruster icon
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.moveTo(0, -20 * s);
+            ctx.lineTo(10 * s, 5 * s);
+            ctx.lineTo(8 * s, 5 * s);
+            ctx.lineTo(8 * s, 15 * s);
+            ctx.lineTo(-8 * s, 15 * s);
+            ctx.lineTo(-8 * s, 5 * s);
+            ctx.lineTo(-10 * s, 5 * s);
+            ctx.closePath();
+            ctx.fill();
+            // Flame
+            ctx.fillStyle = '#f80';
+            ctx.beginPath();
+            ctx.moveTo(-5 * s, 15 * s);
+            ctx.lineTo(0, 25 * s);
+            ctx.lineTo(5 * s, 15 * s);
+            ctx.closePath();
+            ctx.fill();
+            break;
+
+        case 'revive_cell':
+            // Heart/life icon
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.moveTo(0, 8 * s);
+            ctx.bezierCurveTo(-20 * s, -5 * s, -20 * s, -20 * s, 0, -12 * s);
+            ctx.bezierCurveTo(20 * s, -20 * s, 20 * s, -5 * s, 0, 8 * s);
+            ctx.fill();
+            // Plus sign
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(-2 * s, -10 * s, 4 * s, 12 * s);
+            ctx.fillRect(-6 * s, -6 * s, 12 * s, 4 * s);
+            break;
+
+        case 'bomb_pack':
+            // Bomb icon
+            ctx.fillStyle = '#333';
+            ctx.beginPath();
+            ctx.arc(0, 3 * s, 16 * s, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#555';
+            ctx.beginPath();
+            ctx.arc(-5 * s, -2 * s, 6 * s, 0, Math.PI * 2);
+            ctx.fill();
+            // Fuse
+            ctx.strokeStyle = '#666';
+            ctx.lineWidth = 3 * s;
+            ctx.beginPath();
+            ctx.moveTo(0, -13 * s);
+            ctx.lineTo(0, -20 * s);
+            ctx.stroke();
+            // Spark
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(0, -22 * s, 5 * s, 0, Math.PI * 2);
+            ctx.fill();
+            break;
+
+        case 'laser_turret':
+            // Turret/laser icon
+            ctx.fillStyle = color;
+            // Base
+            ctx.beginPath();
+            ctx.roundRect(-12 * s, 8 * s, 24 * s, 10 * s, 3 * s);
+            ctx.fill();
+            // Barrel
+            ctx.save();
+            ctx.rotate(-Math.PI / 6);
+            ctx.fillRect(-4 * s, -25 * s, 8 * s, 28 * s);
+            ctx.restore();
+            // Beam
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2 * s;
+            ctx.beginPath();
+            ctx.moveTo(-8 * s, -18 * s);
+            ctx.lineTo(-15 * s, -28 * s);
+            ctx.stroke();
+            break;
+
+        default:
+            // Default circle
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(0, 0, 15 * s, 0, Math.PI * 2);
+            ctx.fill();
+    }
+
+    ctx.restore();
+}
+
+// Cart helper functions
+function addToCart(gridIndex) {
+    const bounds = shopItemBounds[gridIndex];
+    if (!bounds) return; // Locked slot
+
+    const item = CONFIG.SHOP_ITEMS[bounds.itemIndex];
+    if (!item) return;
+
+    // Check if turret already owned
     if (item.effect === 'turret' && playerInventory.hasTurret) {
         SFX.error && SFX.error();
-        createFloatingText(canvas.width / 2, 200, 'ALREADY OWNED!', '#f44');
-        return false;
+        createFloatingText(canvas.width / 2, 300, 'ALREADY OWNED!', '#f44');
+        return;
     }
 
-    if (score < item.cost) {
+    // Check if turret already in cart
+    if (item.effect === 'turret' && shopCart.includes(item.id)) {
         SFX.error && SFX.error();
-        return false;
+        createFloatingText(canvas.width / 2, 300, 'ALREADY IN CART!', '#f44');
+        return;
     }
 
-    // Deduct cost
-    score -= item.cost;
+    // Calculate cart total with this item
+    const currentCartTotal = shopCart.reduce((sum, itemId) => {
+        const i = CONFIG.SHOP_ITEMS.find(x => x.id === itemId);
+        return sum + (i ? i.cost : 0);
+    }, 0);
 
-    // Apply effect
+    if (score < currentCartTotal + item.cost) {
+        SFX.error && SFX.error();
+        createFloatingText(canvas.width / 2, 300, 'NOT ENOUGH POINTS!', '#f44');
+        return;
+    }
+
+    // Add to cart
+    shopCart.push(item.id);
+    SFX.powerupCollect && SFX.powerupCollect();
+    createFloatingText(canvas.width / 2, 300, `+${item.name}`, item.color);
+}
+
+function removeFromCart(cartIndex) {
+    const bounds = shopCartBounds[cartIndex];
+    if (!bounds) return;
+
+    // Find and remove one instance of this item
+    const idx = shopCart.indexOf(bounds.itemId);
+    if (idx !== -1) {
+        shopCart.splice(idx, 1);
+        SFX.powerupCollect && SFX.powerupCollect();
+    }
+}
+
+function emptyCart() {
+    if (shopCart.length === 0) return;
+    shopCart = [];
+    SFX.powerupCollect && SFX.powerupCollect();
+    createFloatingText(canvas.width / 2, 300, 'CART EMPTIED', '#f80');
+}
+
+function checkoutCart() {
+    if (shopCart.length === 0) return;
+
+    // Calculate total
+    const total = shopCart.reduce((sum, itemId) => {
+        const item = CONFIG.SHOP_ITEMS.find(i => i.id === itemId);
+        return sum + (item ? item.cost : 0);
+    }, 0);
+
+    if (score < total) {
+        SFX.error && SFX.error();
+        createFloatingText(canvas.width / 2, 300, 'NOT ENOUGH POINTS!', '#f44');
+        return;
+    }
+
+    // Process each item in cart
+    for (const itemId of shopCart) {
+        const item = CONFIG.SHOP_ITEMS.find(i => i.id === itemId);
+        if (!item) continue;
+
+        // Deduct cost
+        score -= item.cost;
+
+        // Apply effect
+        applyShopItemEffect(item);
+    }
+
+    // Play purchase sound
+    SFX.powerup && SFX.powerup();
+    createFloatingText(canvas.width / 2, 300, 'PURCHASED!', '#0f0');
+
+    // Clear cart
+    shopCart = [];
+}
+
+function applyShopItemEffect(item) {
     switch (item.effect) {
         case 'heal':
             if (ufo) {
@@ -6366,6 +6882,28 @@ function purchaseShopItem() {
             playerInventory.hasTurret = true;
             break;
     }
+}
+
+function purchaseShopItem() {
+    const item = CONFIG.SHOP_ITEMS[selectedShopItem];
+
+    // Check if turret is already owned
+    if (item.effect === 'turret' && playerInventory.hasTurret) {
+        SFX.error && SFX.error();
+        createFloatingText(canvas.width / 2, 200, 'ALREADY OWNED!', '#f44');
+        return false;
+    }
+
+    if (score < item.cost) {
+        SFX.error && SFX.error();
+        return false;
+    }
+
+    // Deduct cost
+    score -= item.cost;
+
+    // Apply effect
+    applyShopItemEffect(item);
 
     // Play purchase sound
     SFX.powerup && SFX.powerup();
@@ -6514,6 +7052,7 @@ function update(dt) {
         wave++;
         shopTimer = CONFIG.SHOP_DURATION;
         selectedShopItem = 0;
+        shopCart = []; // Clear cart when entering shop
         gameState = 'SHOP';
     }
 }

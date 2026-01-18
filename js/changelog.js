@@ -1,6 +1,18 @@
 // Auto-generated changelog - do not edit manually
 const CHANGELOG = [
   {
+    "message": "Add changelog entry for sound spam fix and HUD redesign",
+    "timestamp": 1768756330000
+  },
+  {
+    "message": "Fix turret and beam sound spam when energy depletes",
+    "timestamp": 1768756261000
+  },
+  {
+    "message": "Fix sound spam when energy depletes + compact HUD redesign for bombs/turret",
+    "timestamp": 1768756310037
+  },
+  {
     "message": "Restore speed upgrade HUD indicator lost during merge",
     "timestamp": 1768752662000
   },

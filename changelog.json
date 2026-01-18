@@ -1,5 +1,9 @@
 [
   {
+    "message": "Add changelog entry for sound spam fix and HUD redesign",
+    "timestamp": 1768756330000
+  },
+  {
     "message": "Fix turret and beam sound spam when energy depletes",
     "timestamp": 1768756261000
   },
