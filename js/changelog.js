@@ -1,6 +1,10 @@
 // Auto-generated changelog - do not edit manually
 const CHANGELOG = [
   {
+    "message": "UFO Shopping Mall + tank stun threshold tweak",
+    "timestamp": 1768747252000
+  },
+  {
     "message": "Implement UFO Shopping Mall phases 2-6: Energy Cells, Bombs, Warp Juke, Laser...",
     "timestamp": 1768709726000
   },
