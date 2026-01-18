@@ -914,6 +914,7 @@ let combo = 0;
 
 // Game session tracking for leaderboard
 let gameStartTime = 0;
+let sessionTrackingTimer = null;
 let leaderboard = [];
 let leaderboardLoading = false;
 let activityStats = null;
@@ -3938,6 +3939,12 @@ function triggerGameOver() {
     // Stop beam sound if active
     SFX.stopBeamLoop();
 
+    // Clear session tracking timer (no need to track if game already ended)
+    if (sessionTrackingTimer) {
+        clearTimeout(sessionTrackingTimer);
+        sessionTrackingTimer = null;
+    }
+
     // Capture final game state FIRST, before any resets can occur
     finalScore = score;
     finalWave = wave;
@@ -4055,6 +4062,14 @@ const API_BASE = window.location.hostname === 'studio.mfelix.org'
     ? 'https://alien-abductorama.mfelixstudio.workers.dev'
     : '';
 
+async function trackSession() {
+    try {
+        await fetch(`${API_BASE}/api/session`, { method: 'POST' });
+    } catch (e) {
+        // Silently ignore - session tracking is non-critical
+    }
+}
+
 async function fetchLeaderboard() {
     leaderboardLoading = true;
     try {
@@ -4163,6 +4178,9 @@ function createCelebrationEffect() {
 function startGame() {
     gameState = 'PLAYING';
     gameStartTime = Date.now();
+    // Track session after 30 seconds of play
+    if (sessionTrackingTimer) clearTimeout(sessionTrackingTimer);
+    sessionTrackingTimer = setTimeout(trackSession, 30000);
     ufo = new UFO();
     targets = [];
     tanks = [];
