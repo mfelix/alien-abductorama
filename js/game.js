@@ -1081,28 +1081,39 @@ window.addEventListener('keydown', (e) => {
         dropBomb();
     }
 
-    // Handle warp juke (triple-tap left/right arrow)
-    if (gameState === 'PLAYING') {
+    // Handle warp juke (triple-tap left/right arrow OR shift+direction)
+    // Only count actual key presses, not key repeats from holding
+    if (gameState === 'PLAYING' && !e.repeat) {
         const now = Date.now();
         const tapWindow = CONFIG.WARP_JUKE_TRIPLE_TAP_TIME * 1000;
 
         if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
-            // Add current tap and filter out old taps
-            leftTapHistory.push(now);
-            leftTapHistory = leftTapHistory.filter(t => now - t < tapWindow);
-            // Check for triple-tap (3 taps within window)
-            if (leftTapHistory.length >= 3) {
-                triggerWarpJuke(-1); // Warp left
-                leftTapHistory = []; // Reset after successful warp
+            // Shift+direction for instant warp
+            if (e.shiftKey) {
+                triggerWarpJuke(-1);
+            } else {
+                // Add current tap and filter out old taps
+                leftTapHistory.push(now);
+                leftTapHistory = leftTapHistory.filter(t => now - t < tapWindow);
+                // Check for triple-tap (3 taps within window)
+                if (leftTapHistory.length >= 3) {
+                    triggerWarpJuke(-1); // Warp left
+                    leftTapHistory = []; // Reset after successful warp
+                }
             }
         } else if (e.code === 'ArrowRight' || e.code === 'KeyD') {
-            // Add current tap and filter out old taps
-            rightTapHistory.push(now);
-            rightTapHistory = rightTapHistory.filter(t => now - t < tapWindow);
-            // Check for triple-tap (3 taps within window)
-            if (rightTapHistory.length >= 3) {
-                triggerWarpJuke(1); // Warp right
-                rightTapHistory = []; // Reset after successful warp
+            // Shift+direction for instant warp
+            if (e.shiftKey) {
+                triggerWarpJuke(1);
+            } else {
+                // Add current tap and filter out old taps
+                rightTapHistory.push(now);
+                rightTapHistory = rightTapHistory.filter(t => now - t < tapWindow);
+                // Check for triple-tap (3 taps within window)
+                if (rightTapHistory.length >= 3) {
+                    triggerWarpJuke(1); // Warp right
+                    rightTapHistory = []; // Reset after successful warp
+                }
             }
         }
     }
