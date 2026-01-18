@@ -79,9 +79,9 @@ const CONFIG = {
 
     // Warp Juke
     WARP_JUKE_DISTANCE: 200,        // Distance to teleport
-    WARP_JUKE_COOLDOWN: 2.0,        // Seconds between warps
-    WARP_JUKE_DOUBLE_TAP_TIME: 0.3, // Time window for double-tap detection
+    WARP_JUKE_TRIPLE_TAP_TIME: 0.4, // Time window for triple-tap detection (slightly longer for 3 taps)
     WARP_JUKE_GHOST_DURATION: 0.5,  // Ghost trail duration
+    WARP_JUKE_ENERGY_COST: 25,      // Energy cost to warp
 
     // Laser Turret
     TURRET_DAMAGE_PER_SECOND: 40,   // Damage dealt per second to tanks
@@ -966,9 +966,9 @@ let playerInventory = {
 // Active bombs in the world
 let bombs = [];
 
-// Warp Juke double-tap detection
-let lastLeftTap = 0;
-let lastRightTap = 0;
+// Warp Juke triple-tap detection (track last 2 tap times for each direction)
+let leftTapHistory = [];
+let rightTapHistory = [];
 
 // Title screen UFO animation state
 let titleUfo = {
@@ -1078,19 +1078,29 @@ window.addEventListener('keydown', (e) => {
         dropBomb();
     }
 
-    // Handle warp juke (double-tap left/right arrow)
+    // Handle warp juke (triple-tap left/right arrow)
     if (gameState === 'PLAYING') {
         const now = Date.now();
+        const tapWindow = CONFIG.WARP_JUKE_TRIPLE_TAP_TIME * 1000;
+
         if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
-            if (now - lastLeftTap < CONFIG.WARP_JUKE_DOUBLE_TAP_TIME * 1000) {
+            // Add current tap and filter out old taps
+            leftTapHistory.push(now);
+            leftTapHistory = leftTapHistory.filter(t => now - t < tapWindow);
+            // Check for triple-tap (3 taps within window)
+            if (leftTapHistory.length >= 3) {
                 triggerWarpJuke(-1); // Warp left
+                leftTapHistory = []; // Reset after successful warp
             }
-            lastLeftTap = now;
         } else if (e.code === 'ArrowRight' || e.code === 'KeyD') {
-            if (now - lastRightTap < CONFIG.WARP_JUKE_DOUBLE_TAP_TIME * 1000) {
+            // Add current tap and filter out old taps
+            rightTapHistory.push(now);
+            rightTapHistory = rightTapHistory.filter(t => now - t < tapWindow);
+            // Check for triple-tap (3 taps within window)
+            if (rightTapHistory.length >= 3) {
                 triggerWarpJuke(1); // Warp right
+                rightTapHistory = []; // Reset after successful warp
             }
-            lastRightTap = now;
         }
     }
 
@@ -1531,7 +1541,6 @@ class UFO {
         this.hoverTime = 0;
         this.beamRotation = 0; // For spiral effect
         this.invincibleTimer = 0; // Invincibility after revive
-        this.warpCooldown = 0; // Warp juke cooldown
         this.warpGhosts = []; // Ghost trail positions for visual effect
         this.turretActive = false; // Laser turret active
         this.turretTarget = null; // Current turret target
@@ -1549,11 +1558,6 @@ class UFO {
         // Update invincibility timer
         if (this.invincibleTimer > 0) {
             this.invincibleTimer -= dt;
-        }
-
-        // Update warp cooldown
-        if (this.warpCooldown > 0) {
-            this.warpCooldown -= dt;
         }
 
         // Update warp ghosts
@@ -3797,7 +3801,11 @@ function renderBombs() {
 // ============================================
 
 function triggerWarpJuke(direction) {
-    if (!ufo || ufo.warpCooldown > 0) return;
+    // Check if we have enough beam energy to warp
+    if (!ufo || ufo.energy < CONFIG.WARP_JUKE_ENERGY_COST) return;
+
+    // Consume beam energy
+    ufo.energy -= CONFIG.WARP_JUKE_ENERGY_COST;
 
     // Store old position for ghost trail
     const oldX = ufo.x;
@@ -3813,9 +3821,6 @@ function triggerWarpJuke(direction) {
     // Calculate new position
     const warpDistance = CONFIG.WARP_JUKE_DISTANCE * direction;
     ufo.x = Math.max(ufo.width / 2, Math.min(canvas.width - ufo.width / 2, ufo.x + warpDistance));
-
-    // Set cooldown
-    ufo.warpCooldown = CONFIG.WARP_JUKE_COOLDOWN;
 
     // Create warp effect particles
     // Trail particles from old position to new
@@ -4319,11 +4324,8 @@ function renderUI() {
     // ========== BOMB COUNT (below energy cells) ==========
     renderBombCount(shieldX, shieldY + shieldBarHeight + 60);
 
-    // ========== WARP COOLDOWN (below bomb count) ==========
-    renderWarpCooldown(shieldX, shieldY + shieldBarHeight + 110);
-
-    // ========== TURRET INDICATOR (next to warp cooldown) ==========
-    renderTurretIndicator(shieldX + 80, shieldY + shieldBarHeight + 110);
+    // ========== TURRET INDICATOR (below bomb count) ==========
+    renderTurretIndicator(shieldX, shieldY + shieldBarHeight + 110);
 
     // ========== TOP CENTER: HARVEST COUNTER ==========
     renderHarvestCounter();
@@ -4425,44 +4427,6 @@ function renderBombCount(startX, startY) {
     ctx.font = 'bold 10px monospace';
     ctx.textAlign = 'left';
     ctx.fillText('BOMB [X]', startX + panelWidth + 5, startY + panelHeight / 2 + 4);
-}
-
-function renderWarpCooldown(startX, startY) {
-    if (!ufo) return;
-
-    const panelWidth = 70;
-    const panelHeight = 24;
-    const cooldownPercent = Math.max(0, ufo.warpCooldown / CONFIG.WARP_JUKE_COOLDOWN);
-
-    // Panel background
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
-    ctx.beginPath();
-    ctx.roundRect(startX, startY, panelWidth, panelHeight, 4);
-    ctx.fill();
-
-    // Cooldown bar background
-    ctx.fillStyle = 'rgba(100, 100, 255, 0.3)';
-    ctx.beginPath();
-    ctx.roundRect(startX + 4, startY + 4, panelWidth - 8, panelHeight - 8, 2);
-    ctx.fill();
-
-    // Cooldown bar fill (shows when ready)
-    const readyPercent = 1 - cooldownPercent;
-    if (readyPercent > 0) {
-        const gradient = ctx.createLinearGradient(startX, 0, startX + panelWidth, 0);
-        gradient.addColorStop(0, '#66f');
-        gradient.addColorStop(1, '#aaf');
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        ctx.roundRect(startX + 4, startY + 4, (panelWidth - 8) * readyPercent, panelHeight - 8, 2);
-        ctx.fill();
-    }
-
-    // Label
-    ctx.fillStyle = cooldownPercent <= 0 ? '#aaf' : '#666';
-    ctx.font = 'bold 10px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('WARP', startX + panelWidth / 2, startY + panelHeight / 2 + 4);
 }
 
 function renderTurretIndicator(startX, startY) {
