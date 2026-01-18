@@ -1,7 +1,7 @@
 // Auto-generated changelog - do not edit manually
 const CHANGELOG = [
   {
-    "message": "Update shop HUD, abduction visuals, and changelog",
+    "message": "Improve UFO Shopping Mall",
     "timestamp": 1768770781000
   },
   {
