@@ -1,52 +1,20 @@
 // Auto-generated changelog - do not edit manually
 const CHANGELOG = [
   {
-    "message": "Add changelog entry for sound spam fix and HUD redesign",
-    "timestamp": 1768756330000
+    "message": "Fix wave summary rendering and prune changelog",
+    "timestamp": 1768767791000
   },
   {
-    "message": "Fix turret and beam sound spam when energy depletes",
-    "timestamp": 1768756261000
-  },
-  {
-    "message": "Fix sound spam when energy depletes + compact HUD redesign for bombs/turret",
-    "timestamp": 1768756310037
-  },
-  {
-    "message": "Restore speed upgrade HUD indicator lost during merge",
-    "timestamp": 1768752662000
-  },
-  {
-    "message": "UFO Shopping Mall + tank stun threshold tweak",
-    "timestamp": 1768747252000
-  },
-  {
-    "message": "Implement UFO Shopping Mall phases 2-6: Energy Cells, Bombs, Warp Juke, Laser...",
-    "timestamp": 1768709726000
+    "message": "Restore wave summary screen with full targets/bonuses + UFO Bucks breakdown",
+    "timestamp": 1768767626000
   },
   {
     "message": "UFO Shopping Mall: buy Energy Cells, Bombs, Warp Juke & Laser Turret between waves!",
     "timestamp": 1768709794499
   },
   {
-    "message": "Tank stun now triggers at 33% lift (was 50%)",
-    "timestamp": 1768706937754
-  },
-  {
-    "message": "Changelog panel: bigger fonts, brighter colors, word wrap for full messages",
-    "timestamp": 1768604640000
-  },
-  {
     "message": "Redesign changelog: right column panel layout with title bar and row borders",
     "timestamp": 1768603722000
-  },
-  {
-    "message": "Fix changelog truncation: increase limit to 80, add word wrap in modal",
-    "timestamp": 1768603450000
-  },
-  {
-    "message": "Update changelog with tank stun feature",
-    "timestamp": 1768600928000
   },
   {
     "message": "Add tank stun mechanic: lift 50%+ and drop to disable",

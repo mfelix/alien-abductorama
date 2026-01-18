@@ -167,7 +167,7 @@ const CONFIG = {
             id: 'repair',
             name: 'REPAIR KIT',
             description: 'Restore 25 shield',
-            cost: 100,
+            cost: 25,
             color: '#0f0',
             effect: 'heal',
             value: 25
@@ -1039,7 +1039,7 @@ let playerInventory = {
     energyCells: 0,  // Revive charges - prevents game over
     bombs: 0,        // Bomb count
     maxBombs: 0,     // Max bomb capacity
-    bombRechargeTimer: 0,
+    bombRechargeTimers: [],
     bombReadyBounceTimer: 0,
     bombReadyBounceIndex: -1,
     energyRechargeBonus: 0,
@@ -1534,6 +1534,32 @@ class Target {
 
     render() {
         if (!this.alive) return;
+
+        if (this.beingAbducted) {
+            const progress = Math.min(1, this.abductionProgress / this.abductionTime);
+            const eased = progress * progress;
+            const spinSpeed = 0.1 + eased * 0.5;
+            const angle = (Date.now() / 1000) * spinSpeed * Math.PI * 2;
+            const scale = 1 - eased * 0.35;
+            const centerX = this.x + this.width / 2;
+            const centerY = this.y + this.height / 2;
+
+            ctx.save();
+            ctx.translate(centerX, centerY);
+            ctx.rotate(angle);
+            ctx.scale(scale, scale);
+            ctx.translate(-centerX, -centerY);
+
+            const img = images[this.type];
+            if (img && img.complete) {
+                ctx.drawImage(img, this.x, this.y, this.width, this.height);
+            } else {
+                ctx.fillStyle = this.getPlaceholderColor();
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+            }
+            ctx.restore();
+            return;
+        }
 
         const img = images[this.type];
         if (img && img.complete) {
@@ -2781,6 +2807,24 @@ class Tank {
     render() {
         if (!this.alive) return;
 
+        let abductedTransform = false;
+        if (this.beingAbducted) {
+            const progress = Math.min(1, this.abductionProgress / this.abductionTime);
+            const eased = progress * progress;
+            const spinSpeed = 0.09 + eased * 0.4;
+            const angle = (Date.now() / 1000) * spinSpeed * Math.PI * 2;
+            const scale = 1 - eased * 0.3;
+            const centerX = this.x + this.width / 2;
+            const centerY = this.y + this.height / 2;
+
+            ctx.save();
+            ctx.translate(centerX, centerY);
+            ctx.rotate(angle);
+            ctx.scale(scale, scale);
+            ctx.translate(-centerX, -centerY);
+            abductedTransform = true;
+        }
+
         const img = images.tank;
 
         // Check if being targeted by turret
@@ -2845,6 +2889,10 @@ class Tank {
         if (this.isStunned) {
             // Draw spinning stars effect above tank
             this.renderStunEffect();
+        }
+
+        if (abductedTransform) {
+            ctx.restore();
         }
     }
 
@@ -4048,6 +4096,24 @@ class HeavyTank {
     render() {
         if (!this.alive) return;
 
+        let abductedTransform = false;
+        if (this.beingAbducted) {
+            const progress = Math.min(1, this.abductionProgress / this.abductionTime);
+            const eased = progress * progress;
+            const spinSpeed = 0.07 + eased * 0.35;
+            const angle = (Date.now() / 1000) * spinSpeed * Math.PI * 2;
+            const scale = 1 - eased * 0.3;
+            const centerX = this.x + this.width / 2;
+            const centerY = this.y + this.height / 2;
+
+            ctx.save();
+            ctx.translate(centerX, centerY);
+            ctx.rotate(angle);
+            ctx.scale(scale, scale);
+            ctx.translate(-centerX, -centerY);
+            abductedTransform = true;
+        }
+
         const img = images.tank;
 
         // Check if being targeted by turret
@@ -4119,6 +4185,10 @@ class HeavyTank {
         if (this.isStunned) {
             // Draw spinning stars effect above tank
             this.renderStunEffect();
+        }
+
+        if (abductedTransform) {
+            ctx.restore();
         }
     }
 
@@ -4331,8 +4401,8 @@ function dropBomb() {
 
     // Consume a bomb
     playerInventory.bombs--;
-    if (playerInventory.bombs < playerInventory.maxBombs && playerInventory.bombRechargeTimer <= 0) {
-        playerInventory.bombRechargeTimer = CONFIG.BOMB_RECHARGE_TIME;
+    if (playerInventory.bombs < playerInventory.maxBombs) {
+        playerInventory.bombRechargeTimers.push(CONFIG.BOMB_RECHARGE_TIME);
     }
 
     // Create bomb at UFO position with UFO's horizontal velocity
@@ -4358,20 +4428,19 @@ function updateBombs(dt) {
         }
     }
 
-    if (playerInventory.maxBombs > 0 && playerInventory.bombs < playerInventory.maxBombs) {
-        if (playerInventory.bombRechargeTimer <= 0) {
-            playerInventory.bombRechargeTimer = CONFIG.BOMB_RECHARGE_TIME;
+    if (playerInventory.maxBombs > 0 && playerInventory.bombRechargeTimers.length > 0) {
+        for (let i = playerInventory.bombRechargeTimers.length - 1; i >= 0; i--) {
+            playerInventory.bombRechargeTimers[i] -= dt;
+            if (playerInventory.bombRechargeTimers[i] <= 0) {
+                playerInventory.bombRechargeTimers.splice(i, 1);
+                playerInventory.bombs = Math.min(playerInventory.maxBombs, playerInventory.bombs + 1);
+                playerInventory.bombReadyBounceTimer = 0.6;
+                playerInventory.bombReadyBounceIndex = playerInventory.bombs - 1;
+                SFX.bombReady && SFX.bombReady();
+            }
         }
-        playerInventory.bombRechargeTimer -= dt;
-        if (playerInventory.bombRechargeTimer <= 0) {
-            playerInventory.bombs++;
-            playerInventory.bombReadyBounceTimer = 0.6;
-            playerInventory.bombReadyBounceIndex = playerInventory.bombs - 1;
-            SFX.bombReady && SFX.bombReady();
-            playerInventory.bombRechargeTimer = playerInventory.bombs < playerInventory.maxBombs ? CONFIG.BOMB_RECHARGE_TIME : 0;
-        }
-    } else {
-        playerInventory.bombRechargeTimer = 0;
+    } else if (playerInventory.bombRechargeTimers.length === 0) {
+        playerInventory.bombRechargeTimers = [];
     }
 }
 
@@ -4784,7 +4853,7 @@ function startGame() {
         energyCells: 0,
         bombs: CONFIG.BOMB_START_COUNT,
         maxBombs: CONFIG.BOMB_START_COUNT,
-        bombRechargeTimer: 0,
+        bombRechargeTimers: [],
         bombReadyBounceTimer: 0,
         bombReadyBounceIndex: -1,
         energyRechargeBonus: 0,
@@ -4897,13 +4966,60 @@ function renderUI() {
     // ========== TOP RIGHT: SHIELD BAR ==========
     const shieldBarWidth = 180;
     const shieldBarHeight = 24;
-    const shieldX = canvas.width - shieldBarWidth - panelMargin - panelPadding;
+    const shieldPanelWidth = shieldBarWidth + panelPadding * 2;
+    const energyCellsWidth = (() => {
+        const cells = playerInventory.energyCells;
+        if (cells <= 0) return 0;
+        const cellSize = 18;
+        const spacing = 6;
+        const cellPadding = 8;
+        return (cellSize + spacing) * cells - spacing + cellPadding * 2;
+    })();
+    const bombPanelWidth = (() => {
+        const maxBombs = playerInventory.maxBombs;
+        if (maxBombs <= 0) return 0;
+        const bombSize = 18;
+        const spacing = 8;
+        const bombPadding = 8;
+        const keyWidth = 20;
+        const keyPadding = 6;
+        const labelText = 'BOMBS';
+        const labelGap = 8;
+        ctx.font = 'bold 10px monospace';
+        const labelWidth = ctx.measureText(labelText).width;
+        const bombsWidth = (bombSize + spacing) * maxBombs - spacing;
+        return labelWidth + labelGap + keyWidth + keyPadding + bombsWidth + bombPadding * 2;
+    })();
+    const turretPanelWidth = (() => {
+        if (!playerInventory.hasTurret) return 0;
+        const iconSize = 22;
+        const turretPadding = 8;
+        const keyWidth = 20;
+        const keyPadding = 6;
+        const labelText = 'TURRET';
+        const labelGap = 8;
+        ctx.font = 'bold 10px monospace';
+        const labelWidth = ctx.measureText(labelText).width;
+        return labelWidth + labelGap + keyWidth + keyPadding + iconSize + turretPadding * 2;
+    })();
+    const energyBonusWidth = playerInventory.maxEnergyBonus > 0 ? 110 : 0;
+    const speedWidth = playerInventory.speedBonus > 0 ? 90 : 0;
+    const rightHudWidth = Math.max(
+        shieldPanelWidth,
+        energyCellsWidth,
+        bombPanelWidth,
+        turretPanelWidth,
+        energyBonusWidth,
+        speedWidth
+    );
+    const rightHudPanelX = Math.max(panelMargin, canvas.width - rightHudWidth - panelMargin);
+    const shieldX = rightHudPanelX + panelPadding;
     const shieldY = panelMargin + panelPadding;
 
     // Shield panel background
     ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
     ctx.beginPath();
-    ctx.roundRect(canvas.width - shieldBarWidth - panelMargin - panelPadding * 2, panelMargin, shieldBarWidth + panelPadding * 2, shieldBarHeight + panelPadding * 2, 8);
+    ctx.roundRect(rightHudPanelX, panelMargin, shieldBarWidth + panelPadding * 2, shieldBarHeight + panelPadding * 2, 8);
     ctx.fill();
 
     // Shield bar background
@@ -4937,19 +5053,19 @@ function renderUI() {
     ctx.fillText('SHIELD', shieldX + shieldBarWidth / 2, shieldY + shieldBarHeight / 2 + 5);
 
     // ========== ENERGY CELLS (below shield bar) ==========
-    renderEnergyCells(shieldX, shieldY + shieldBarHeight + 10);
+    renderEnergyCells(rightHudPanelX, shieldY + shieldBarHeight + 10);
 
     // ========== BOMB COUNT (below energy cells) ==========
-    renderBombCount(shieldX, shieldY + shieldBarHeight + 60);
+    renderBombCount(rightHudPanelX, shieldY + shieldBarHeight + 60);
 
     // ========== TURRET INDICATOR (below bomb count) ==========
-    renderTurretIndicator(shieldX, shieldY + shieldBarHeight + 100);
+    renderTurretIndicator(rightHudPanelX, shieldY + shieldBarHeight + 100);
 
     // ========== ENERGY BONUS INDICATOR (below turret indicator) ==========
-    renderEnergyBonusIndicator(shieldX, shieldY + shieldBarHeight + 142);
+    renderEnergyBonusIndicator(rightHudPanelX, shieldY + shieldBarHeight + 142);
 
     // ========== SPEED INDICATOR (below energy bonus) ==========
-    renderSpeedIndicator(shieldX, shieldY + shieldBarHeight + 170);
+    renderSpeedIndicator(rightHudPanelX, shieldY + shieldBarHeight + 170);
 
     // ========== TOP CENTER: HARVEST COUNTER ==========
     renderHarvestCounter();
@@ -5008,18 +5124,23 @@ function renderEnergyCells(startX, startY) {
 function renderBombCount(startX, startY) {
     const bombCount = playerInventory.bombs;
     const maxBombs = playerInventory.maxBombs;
+    const rechargeTimers = playerInventory.bombRechargeTimers || [];
     if (maxBombs <= 0) return; // Don't show if no bombs
 
     const bombSize = 18;
-    const spacing = 4;
+    const spacing = 8;
     const panelPadding = 8;
     const keyWidth = 20;
     const keyHeight = 18;
     const keyPadding = 6;
+    const labelText = 'BOMBS';
+    const labelGap = 8;
 
-    // Calculate total width: key + bombs
+    // Calculate total width: label + key + bombs
     const bombsWidth = (bombSize + spacing) * maxBombs - spacing;
-    const panelWidth = keyWidth + keyPadding + bombsWidth + panelPadding * 2;
+    ctx.font = 'bold 10px monospace';
+    const labelWidth = ctx.measureText(labelText).width;
+    const panelWidth = labelWidth + labelGap + keyWidth + keyPadding + bombsWidth + panelPadding * 2;
     const panelHeight = Math.max(bombSize, keyHeight) + panelPadding * 2;
 
     // Panel background
@@ -5028,8 +5149,15 @@ function renderBombCount(startX, startY) {
     ctx.roundRect(startX, startY, panelWidth, panelHeight, 8);
     ctx.fill();
 
-    // Keyboard key badge for X (on the left)
-    const keyX = startX + panelPadding;
+    // Label text (left of key)
+    ctx.fillStyle = '#bbb';
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'left';
+    const labelX = startX + panelPadding;
+    ctx.fillText(labelText, labelX, startY + panelHeight / 2 + 4);
+
+    // Keyboard key badge for X (after label)
+    const keyX = labelX + labelWidth + labelGap;
     const keyY = startY + (panelHeight - keyHeight) / 2;
 
     // Key background (raised look)
@@ -5089,8 +5217,9 @@ function renderBombCount(startX, startY) {
 
         ctx.restore();
 
-        if (i === bombCount && playerInventory.bombRechargeTimer > 0 && bombCount < maxBombs) {
-            const progress = 1 - (playerInventory.bombRechargeTimer / CONFIG.BOMB_RECHARGE_TIME);
+        const missingIndex = i - bombCount;
+        if (missingIndex >= 0 && missingIndex < rechargeTimers.length) {
+            const progress = 1 - (rechargeTimers[missingIndex] / CONFIG.BOMB_RECHARGE_TIME);
             ctx.strokeStyle = 'rgba(255, 200, 0, 0.9)';
             ctx.lineWidth = 2;
             ctx.beginPath();
@@ -5098,6 +5227,7 @@ function renderBombCount(startX, startY) {
             ctx.stroke();
         }
     }
+
 }
 
 function renderTurretIndicator(startX, startY) {
@@ -5110,9 +5240,13 @@ function renderTurretIndicator(startX, startY) {
     const keyHeight = 18;
     const keyPadding = 6;
     const isActive = ufo.turretActive && ufo.turretTarget;
+    const labelText = 'TURRET';
+    const labelGap = 8;
 
-    // Calculate total width: key + icon
-    const panelWidth = keyWidth + keyPadding + iconSize + panelPadding * 2;
+    // Calculate total width: label + key + icon
+    ctx.font = 'bold 10px monospace';
+    const labelWidth = ctx.measureText(labelText).width;
+    const panelWidth = labelWidth + labelGap + keyWidth + keyPadding + iconSize + panelPadding * 2;
     const panelHeight = Math.max(iconSize, keyHeight) + panelPadding * 2;
 
     // Panel background
@@ -5129,8 +5263,15 @@ function renderTurretIndicator(startX, startY) {
         ctx.stroke();
     }
 
-    // Keyboard key badge for T (on the left)
-    const keyX = startX + panelPadding;
+    // Label text (left of key)
+    ctx.fillStyle = isActive ? '#ffb6b6' : '#bbb';
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'left';
+    const labelX = startX + panelPadding;
+    ctx.fillText(labelText, labelX, startY + panelHeight / 2 + 4);
+
+    // Keyboard key badge for T (after label)
+    const keyX = labelX + labelWidth + labelGap;
     const keyY = startY + (panelHeight - keyHeight) / 2;
 
     // Key background (raised look)
@@ -5200,6 +5341,7 @@ function renderTurretIndicator(startX, startY) {
     }
 
     ctx.restore();
+
 }
 
 function renderSpeedIndicator(startX, startY) {
@@ -7030,20 +7172,25 @@ function renderShop() {
     const timerBarWidth = 400;
     const timerBarHeight = 40;
     const timerBarX = (canvas.width - timerBarWidth) / 2;
+    const titleHeight = 44;
+    const titleToTimerGap = 18;
     const timerToHeaderGap = 45;
     const headerToGridGap = 25;
     const gridToDoneGap = 20;
     const doneHeight = 50;
     const doneToInstructionsGap = 22;
     const instructionsHeight = 16;
-    const layoutHeight = timerBarHeight + timerToHeaderGap + headerToGridGap + gridHeight + gridToDoneGap + doneHeight + doneToInstructionsGap + instructionsHeight;
+    const layoutHeight = titleHeight + titleToTimerGap + timerBarHeight + timerToHeaderGap + headerToGridGap + gridHeight + gridToDoneGap + doneHeight + doneToInstructionsGap + instructionsHeight;
     const layoutTop = (canvas.height - layoutHeight) / 2;
 
-    const timerY = layoutTop;
+    const titleY = layoutTop + titleHeight;
+    const timerY = titleY + titleToTimerGap;
     const headerY = timerY + timerBarHeight + timerToHeaderGap;
     const gridStartY = headerY + headerToGridGap;
     const cartX = gridStartX + gridWidth + cartGap;
     const cartY = gridStartY;
+
+    renderRainbowBouncyText('UFO SHOPPING MALL', canvas.width / 2, titleY - 6, 36);
 
     // Progress fill (shrinks as time runs out)
     const progress = shopTimer / CONFIG.SHOP_DURATION;
@@ -7753,6 +7900,10 @@ function applyShopItemEffect(item) {
             break;
         case 'bombCapacity':
             playerInventory.maxBombs = Math.min(CONFIG.BOMB_MAX_COUNT, playerInventory.maxBombs + item.value);
+            playerInventory.bombs = Math.min(playerInventory.maxBombs, playerInventory.bombs + item.value);
+            if (playerInventory.bombRechargeTimers.length > playerInventory.maxBombs - playerInventory.bombs) {
+                playerInventory.bombRechargeTimers.splice(playerInventory.maxBombs - playerInventory.bombs);
+            }
             break;
         case 'turret':
             playerInventory.hasTurret = true;
