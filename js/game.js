@@ -12,7 +12,7 @@ const CONFIG = {
     // Energy
     ENERGY_MAX: 100,
     ENERGY_DRAIN_RATE: 20,
-    ENERGY_RECHARGE_RATE: 10,
+    ENERGY_RECHARGE_RATE: 14,
     ENERGY_MIN_TO_FIRE: 10,
 
     // Targets
@@ -74,18 +74,19 @@ const CONFIG = {
     BOMB_MAX_BOUNCES: 3,            // Max bounces before explosion
     BOMB_EXPLOSION_RADIUS: 120,     // Blast radius
     BOMB_EXPLOSION_DAMAGE: 50,      // Damage to tanks in blast radius
-    BOMB_START_COUNT: 3,            // Starting bomb count per game
+    BOMB_START_COUNT: 1,            // Starting bomb count per game
     BOMB_MAX_COUNT: 6,              // Maximum bombs player can hold
+    BOMB_RECHARGE_TIME: 12,         // Seconds to recharge one bomb
 
     // Warp Juke
     WARP_JUKE_DISTANCE: 200,        // Distance to teleport
-    WARP_JUKE_TRIPLE_TAP_TIME: 0.4, // Time window for triple-tap detection (slightly longer for 3 taps)
+    WARP_JUKE_DOUBLE_TAP_TIME: 0.4, // Time window for double-tap detection
     WARP_JUKE_GHOST_DURATION: 0.5,  // Ghost trail duration
     WARP_JUKE_ENERGY_COST: 25,      // Energy cost to warp
 
     // Laser Turret
-    TURRET_DAMAGE_PER_SECOND: 20,   // Damage dealt per second to tanks (~2.5s to kill light tank, ~5s for heavy)
-    TURRET_ENERGY_COST: 40,         // Energy per second to fire (drains energy quickly)
+    TURRET_DAMAGE_PER_SECOND: 32,   // Damage dealt per second to tanks (~1.5s to kill light tank, ~3s for heavy)
+    TURRET_ENERGY_COST: 25,         // Energy per second to fire (drains energy slower)
     TURRET_BEAM_WIDTH: 4,           // Visual beam width
     TURRET_RANGE: 800,              // Max range of turret
 
@@ -181,6 +182,15 @@ const CONFIG = {
             value: 3
         },
         {
+            id: 'shield_single',
+            name: 'SHIELD CELL',
+            description: '+1 shield charge',
+            cost: 60,
+            color: '#0af',
+            effect: 'shield',
+            value: 1
+        },
+        {
             id: 'max_energy',
             name: 'ENERGY CELL',
             description: '+20 max energy',
@@ -188,6 +198,15 @@ const CONFIG = {
             color: '#f0f',
             effect: 'maxEnergy',
             value: 20
+        },
+        {
+            id: 'energy_recharge',
+            name: 'ENERGY COIL',
+            description: '+15% recharge rate',
+            cost: 140,
+            color: '#66ffff',
+            effect: 'energyRecharge',
+            value: 0.15
         },
         {
             id: 'speed_boost',
@@ -201,29 +220,39 @@ const CONFIG = {
         {
             id: 'revive_cell',
             name: 'REVIVE CELL',
-            description: 'Auto-revive on death',
+            description: 'Auto-revive',
             cost: 300,
             color: '#f55',
             effect: 'energyCell',
             value: 1
         },
         {
-            id: 'bomb_pack',
-            name: 'BOMB PACK',
-            description: '+2 bombs (press X)',
-            cost: 150,
+            id: 'bomb_single',
+            name: 'BOMB AMMO',
+            description: '+1 max bomb',
+            cost: 120,
             color: '#ff8800',
-            effect: 'bombs',
-            value: 2
+            effect: 'bombCapacity',
+            value: 1
         },
         {
             id: 'laser_turret',
             name: 'LASER TURRET',
-            description: 'Anti-tank laser (press T)',
+            description: 'Anti-tank laser',
             cost: 400,
             color: '#f44',
             effect: 'turret',
             value: 1
+        },
+        {
+            id: 'turret_damage',
+            name: 'LASER DAMAGE',
+            description: '+25% laser damage',
+            cost: 220,
+            color: '#ff6666',
+            effect: 'turretDamage',
+            value: 0.25,
+            requiresTurret: true
         }
     ]
 };
@@ -325,6 +354,18 @@ const SFX = {
         // Happy ascending jingle
         [400, 500, 600, 800].forEach((freq, i) => {
             setTimeout(() => playTone(freq, 0.15, 'sine', 0.2), i * 80);
+        });
+    },
+
+    countTick: (frequency = 600) => {
+        if (!audioCtx) return;
+        playTone(frequency, 0.05, 'square', 0.08);
+    },
+
+    bucksAward: () => {
+        if (!audioCtx) return;
+        [500, 700, 900].forEach((freq, i) => {
+            setTimeout(() => playTone(freq, 0.12, 'triangle', 0.12), i * 70);
         });
     },
 
@@ -698,6 +739,23 @@ const SFX = {
         osc.stop(audioCtx.currentTime + 0.2);
     },
 
+    bombReady: () => {
+        if (!audioCtx) return;
+        playTone(900, 0.08, 'triangle', 0.12);
+        setTimeout(() => playTone(1200, 0.06, 'triangle', 0.1), 60);
+    },
+
+    targetReveal: () => {
+        if (!audioCtx) return;
+        playTone(600, 0.07, 'square', 0.12);
+    },
+
+    targetMax: () => {
+        if (!audioCtx) return;
+        playTone(900, 0.08, 'square', 0.14);
+        setTimeout(() => playTone(1200, 0.08, 'square', 0.12), 70);
+    },
+
     bombBounce: () => {
         if (!audioCtx) return;
         // Short thud
@@ -890,7 +948,7 @@ resize();
 // GAME STATE
 // ============================================
 
-let gameState = 'TITLE'; // TITLE, PLAYING, GAME_OVER, WAVE_TRANSITION, SHOP
+let gameState = 'TITLE'; // TITLE, PLAYING, GAME_OVER, WAVE_TRANSITION, WAVE_SUMMARY, SHOP
 let ufo = null;
 let targets = [];
 let tanks = [];
@@ -911,6 +969,7 @@ let activePowerups = {
 let score = 0;
 let highScore = parseInt(localStorage.getItem('alienAbductoramaHighScore')) || 0;
 let combo = 0;
+let ufoBucks = 0;
 
 // Game session tracking for leaderboard
 let gameStartTime = 0;
@@ -936,6 +995,7 @@ let nameEntryComplete = false;
 let newHighScoreRank = null;
 
 // Harvest counter - tracks how many of each target type has been abducted
+const TARGET_TYPES = ['human', 'cow', 'sheep', 'cat', 'dog', 'tank'];
 let harvestCount = {
     human: 0,
     cow: 0,
@@ -960,6 +1020,9 @@ let wave = 1;
 let waveTimer = CONFIG.WAVE_DURATION;
 let waveTransitionTimer = 0;
 let lastTimerWarningSecond = -1; // Track when we last played timer warning
+let waveStats = createWaveStats();
+let waveSummary = null;
+let waveSummaryState = null;
 
 // Shop state
 let shopTimer = 0;
@@ -975,13 +1038,19 @@ let playerInventory = {
     speedBonus: 0,
     energyCells: 0,  // Revive charges - prevents game over
     bombs: 0,        // Bomb count
+    maxBombs: 0,     // Max bomb capacity
+    bombRechargeTimer: 0,
+    bombReadyBounceTimer: 0,
+    bombReadyBounceIndex: -1,
+    energyRechargeBonus: 0,
+    turretDamageBonus: 0,
     hasTurret: false // Laser turret ownership
 };
 
 // Active bombs in the world
 let bombs = [];
 
-// Warp Juke triple-tap detection (track last 2 tap times for each direction)
+// Warp Juke double-tap detection (track last 2 tap times for each direction)
 let leftTapHistory = [];
 let rightTapHistory = [];
 
@@ -1080,7 +1149,7 @@ window.addEventListener('keydown', (e) => {
 
         // Grid navigation (3x3)
         const gridCols = 3;
-        const maxItems = 7; // Number of actual items in grid
+        const maxItems = 9; // Number of actual items in grid
         if (e.code === 'ArrowUp') {
             selectedShopItem = Math.max(0, selectedShopItem - gridCols);
         } else if (e.code === 'ArrowDown') {
@@ -1107,16 +1176,24 @@ window.addEventListener('keydown', (e) => {
         return;
     }
 
+    // Handle wave summary input (unskippable)
+    if (gameState === 'WAVE_SUMMARY') {
+        if (e.code === 'Space' || e.code === 'Enter') {
+            e.preventDefault();
+        }
+        return;
+    }
+
     // Handle bomb drop during gameplay (X or B key)
     if (gameState === 'PLAYING' && (e.code === 'KeyX' || e.code === 'KeyB')) {
         dropBomb();
     }
 
-    // Handle warp juke (triple-tap left/right arrow OR shift+direction)
+    // Handle warp juke (double-tap left/right arrow OR shift+direction)
     // Only count actual key presses, not key repeats from holding
     if (gameState === 'PLAYING' && !e.repeat) {
         const now = Date.now();
-        const tapWindow = CONFIG.WARP_JUKE_TRIPLE_TAP_TIME * 1000;
+        const tapWindow = CONFIG.WARP_JUKE_DOUBLE_TAP_TIME * 1000;
 
         if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
             // Shift+direction for instant warp
@@ -1126,8 +1203,8 @@ window.addEventListener('keydown', (e) => {
                 // Add current tap and filter out old taps
                 leftTapHistory.push(now);
                 leftTapHistory = leftTapHistory.filter(t => now - t < tapWindow);
-                // Check for triple-tap (3 taps within window)
-                if (leftTapHistory.length >= 3) {
+                // Check for double-tap (2 taps within window)
+                if (leftTapHistory.length >= 2) {
                     triggerWarpJuke(-1); // Warp left
                     leftTapHistory = []; // Reset after successful warp
                 }
@@ -1140,8 +1217,8 @@ window.addEventListener('keydown', (e) => {
                 // Add current tap and filter out old taps
                 rightTapHistory.push(now);
                 rightTapHistory = rightTapHistory.filter(t => now - t < tapWindow);
-                // Check for triple-tap (3 taps within window)
-                if (rightTapHistory.length >= 3) {
+                // Check for double-tap (2 taps within window)
+                if (rightTapHistory.length >= 2) {
                     triggerWarpJuke(1); // Warp right
                     rightTapHistory = []; // Reset after successful warp
                 }
@@ -1378,10 +1455,16 @@ class Target {
                 // Increment harvest counter and trigger bounce
                 harvestCount[this.type]++;
                 harvestBounce[this.type] = 1.0;
+                waveStats.targetsBeamed[this.type]++;
                 // Award points
-                const multiplier = CONFIG.COMBO_MULTIPLIERS[Math.min(combo, CONFIG.COMBO_MULTIPLIERS.length - 1)];
+                const multiplierIndex = Math.min(combo, CONFIG.COMBO_MULTIPLIERS.length - 1);
+                const multiplier = CONFIG.COMBO_MULTIPLIERS[multiplierIndex];
                 const pointsEarned = Math.floor(this.points * multiplier);
                 score += pointsEarned;
+                waveStats.points += pointsEarned;
+                if (multiplierIndex === CONFIG.COMBO_MULTIPLIERS.length - 1) {
+                    waveStats.maxComboHit = true;
+                }
                 combo++;
 
                 // Heal UFO
@@ -1635,6 +1718,9 @@ function spawnTarget() {
     ));
 
     targets.push(new Target(type, x));
+    if (waveStats.targetsSpawned[type] !== undefined) {
+        waveStats.targetsSpawned[type]++;
+    }
 }
 
 function updateTargetSpawning(dt) {
@@ -1649,6 +1735,21 @@ function updateTargetSpawning(dt) {
 // ============================================
 // UFO CLASS
 // ============================================
+
+function applyStunDropDamage(target) {
+    const isHeavy = target && target.hasOwnProperty('turretAngleLeft');
+    const ratio = isHeavy ? 0.25 : (1 / 3);
+    const damage = Math.max(1, Math.floor(target.health * ratio));
+    target.health -= damage;
+    if (target.health <= 0) {
+        target.health = 0;
+        if (typeof target.destroy === 'function') {
+            target.destroy();
+        }
+        return true;
+    }
+    return false;
+}
 
 class UFO {
     constructor() {
@@ -1737,7 +1838,7 @@ class UFO {
 
             // Deal damage to target
             if (this.turretTarget) {
-                const damage = CONFIG.TURRET_DAMAGE_PER_SECOND * dt;
+                const damage = CONFIG.TURRET_DAMAGE_PER_SECOND * (1 + playerInventory.turretDamageBonus) * dt;
                 this.turretTarget.takeDamage(damage);
 
                 // Play continuous firing sound
@@ -1810,17 +1911,20 @@ class UFO {
                         const actualLiftDistance = this.beamTarget.groundY - this.beamTarget.y;
                         const liftRatio = actualLiftDistance / totalLiftDistance;
 
-                        if (liftRatio > 0.33) {
+                    if (liftRatio > 0.33) {
+                        const destroyed = applyStunDropDamage(this.beamTarget);
+                        if (!destroyed) {
                             // Stun the tank!
                             this.beamTarget.isStunned = true;
                             this.beamTarget.stunTimer = 4; // 4 second stun
                             this.beamTarget.stunEffectTime = 0;
                             createFloatingText(this.beamTarget.x + this.beamTarget.width / 2, this.beamTarget.groundY - 30, 'STUNNED!', '#ff0');
                             SFX.tankStunned();
-                        } else {
-                            createFloatingText(this.x, this.y + 100, 'DROPPED!', '#f00');
-                            SFX.targetDropped();
                         }
+                    } else {
+                        createFloatingText(this.x, this.y + 100, 'DROPPED!', '#f00');
+                        SFX.targetDropped();
+                    }
                     } else {
                         // Regular target dropped
                         createFloatingText(this.x, this.y + 100, 'DROPPED!', '#f00');
@@ -1836,7 +1940,8 @@ class UFO {
             this.beamActive = false;
 
             // Energy recharge when not beaming
-            this.energy = Math.min(this.maxEnergy, this.energy + CONFIG.ENERGY_RECHARGE_RATE * dt);
+        const rechargeRate = CONFIG.ENERGY_RECHARGE_RATE * (1 + playerInventory.energyRechargeBonus);
+        this.energy = Math.min(this.maxEnergy, this.energy + rechargeRate * dt);
         }
 
         // Clamp energy
@@ -1856,12 +1961,15 @@ class UFO {
                     const liftRatio = actualLiftDistance / totalLiftDistance;
 
                     if (liftRatio > 0.33) {
-                        // Stun the tank!
-                        this.beamTarget.isStunned = true;
-                        this.beamTarget.stunTimer = 4; // 4 second stun
-                        this.beamTarget.stunEffectTime = 0;
-                        createFloatingText(this.beamTarget.x + this.beamTarget.width / 2, this.beamTarget.groundY - 30, 'STUNNED!', '#ff0');
-                        SFX.tankStunned();
+                        const destroyed = applyStunDropDamage(this.beamTarget);
+                        if (!destroyed) {
+                            // Stun the tank!
+                            this.beamTarget.isStunned = true;
+                            this.beamTarget.stunTimer = 4; // 4 second stun
+                            this.beamTarget.stunEffectTime = 0;
+                            createFloatingText(this.beamTarget.x + this.beamTarget.width / 2, this.beamTarget.groundY - 30, 'STUNNED!', '#ff0');
+                            SFX.tankStunned();
+                        }
                     }
                 }
                 this.beamTarget.beingAbducted = false;
@@ -2396,6 +2504,28 @@ class UFO {
 // TANK CLASS
 // ============================================
 
+function renderTankHealthBar(x, y, width, health, maxHealth) {
+    const barWidth = width * 0.8;
+    const barHeight = 6;
+    const barX = x + (width - barWidth) / 2;
+    const barY = y - 10;
+    const healthPercent = Math.max(0, Math.min(1, health / maxHealth));
+
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.fillRect(barX, barY, barWidth, barHeight);
+
+    const gradient = ctx.createLinearGradient(barX, 0, barX + barWidth, 0);
+    gradient.addColorStop(0, '#f33');
+    gradient.addColorStop(0.5, '#ff0');
+    gradient.addColorStop(1, '#0f0');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(barX, barY, barWidth * healthPercent, barHeight);
+
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barX, barY, barWidth, barHeight);
+}
+
 class Tank {
     constructor(x, direction) {
         this.width = 120;
@@ -2454,6 +2584,9 @@ class Tank {
         score += CONFIG.TANK_POINTS;
         harvestCount.tank++;
         harvestBounce.tank = 1;
+        waveStats.targetsBeamed.tank++;
+        waveStats.tanksDestroyed++;
+        waveStats.points += CONFIG.TANK_POINTS;
 
         // Floating text
         createFloatingText(this.x + this.width / 2, this.y, `+${CONFIG.TANK_POINTS}`, '#ff0');
@@ -2527,11 +2660,18 @@ class Tank {
 
                 // Increment tank harvest counter
                 harvestCount.tank++;
+                waveStats.targetsBeamed.tank++;
+                waveStats.tanksDestroyed++;
 
                 // Award points
-                const multiplier = CONFIG.COMBO_MULTIPLIERS[Math.min(combo, CONFIG.COMBO_MULTIPLIERS.length - 1)];
+                const multiplierIndex = Math.min(combo, CONFIG.COMBO_MULTIPLIERS.length - 1);
+                const multiplier = CONFIG.COMBO_MULTIPLIERS[multiplierIndex];
                 const pointsEarned = Math.floor(CONFIG.TANK_POINTS * multiplier);
                 score += pointsEarned;
+                waveStats.points += pointsEarned;
+                if (multiplierIndex === CONFIG.COMBO_MULTIPLIERS.length - 1) {
+                    waveStats.maxComboHit = true;
+                }
                 combo++;
 
                 // Heal UFO
@@ -2696,6 +2836,13 @@ class Tank {
 
         if (this.isStunned) {
             ctx.restore();
+        }
+
+        if (this.health < this.maxHealth) {
+            renderTankHealthBar(this.x, this.y, this.width, this.health, this.maxHealth);
+        }
+
+        if (this.isStunned) {
             // Draw spinning stars effect above tank
             this.renderStunEffect();
         }
@@ -2840,6 +2987,7 @@ class Projectile {
             } else {
                 // Normal damage
                 ufo.health -= this.damage;
+                waveStats.hitsTaken++;
 
                 // Create small explosion at hit point
                 createExplosion(this.x, this.y, 'small');
@@ -3695,6 +3843,9 @@ class HeavyTank {
         score += this.points;
         harvestCount.tank++;
         harvestBounce.tank = 1;
+        waveStats.targetsBeamed.tank++;
+        waveStats.tanksDestroyed++;
+        waveStats.points += this.points;
 
         // Floating text
         createFloatingText(this.x + this.width / 2, this.y, `+${this.points}`, '#ff0');
@@ -3775,11 +3926,18 @@ class HeavyTank {
 
                 // Increment tank harvest counter
                 harvestCount.tank++;
+                waveStats.targetsBeamed.tank++;
+                waveStats.tanksDestroyed++;
 
                 // Award points (more than regular tank)
-                const multiplier = CONFIG.COMBO_MULTIPLIERS[Math.min(combo, CONFIG.COMBO_MULTIPLIERS.length - 1)];
+                const multiplierIndex = Math.min(combo, CONFIG.COMBO_MULTIPLIERS.length - 1);
+                const multiplier = CONFIG.COMBO_MULTIPLIERS[multiplierIndex];
                 const pointsEarned = Math.floor(this.points * multiplier);
                 score += pointsEarned;
+                waveStats.points += pointsEarned;
+                if (multiplierIndex === CONFIG.COMBO_MULTIPLIERS.length - 1) {
+                    waveStats.maxComboHit = true;
+                }
                 combo++;
 
                 // Heal UFO (more healing for heavy tank)
@@ -3950,10 +4108,17 @@ class HeavyTank {
 
         if (this.isStunned) {
             ctx.restore();
-            // Draw spinning stars effect above tank
-            this.renderStunEffect();
         } else if (this.isDamaged) {
             ctx.restore();
+        }
+
+        if (this.health < this.maxHealth) {
+            renderTankHealthBar(this.x, this.y, this.width, this.health, this.maxHealth);
+        }
+
+        if (this.isStunned) {
+            // Draw spinning stars effect above tank
+            this.renderStunEffect();
         }
     }
 
@@ -4166,6 +4331,9 @@ function dropBomb() {
 
     // Consume a bomb
     playerInventory.bombs--;
+    if (playerInventory.bombs < playerInventory.maxBombs && playerInventory.bombRechargeTimer <= 0) {
+        playerInventory.bombRechargeTimer = CONFIG.BOMB_RECHARGE_TIME;
+    }
 
     // Create bomb at UFO position with UFO's horizontal velocity
     bombs.push(new Bomb(ufo.x, ufo.y + ufo.height / 2, ufo.vx));
@@ -4182,6 +4350,29 @@ function updateBombs(dt) {
         bomb.update(dt);
     }
     bombs = bombs.filter(b => b.alive);
+
+    if (playerInventory.bombReadyBounceTimer > 0) {
+        playerInventory.bombReadyBounceTimer = Math.max(0, playerInventory.bombReadyBounceTimer - dt);
+        if (playerInventory.bombReadyBounceTimer === 0) {
+            playerInventory.bombReadyBounceIndex = -1;
+        }
+    }
+
+    if (playerInventory.maxBombs > 0 && playerInventory.bombs < playerInventory.maxBombs) {
+        if (playerInventory.bombRechargeTimer <= 0) {
+            playerInventory.bombRechargeTimer = CONFIG.BOMB_RECHARGE_TIME;
+        }
+        playerInventory.bombRechargeTimer -= dt;
+        if (playerInventory.bombRechargeTimer <= 0) {
+            playerInventory.bombs++;
+            playerInventory.bombReadyBounceTimer = 0.6;
+            playerInventory.bombReadyBounceIndex = playerInventory.bombs - 1;
+            SFX.bombReady && SFX.bombReady();
+            playerInventory.bombRechargeTimer = playerInventory.bombs < playerInventory.maxBombs ? CONFIG.BOMB_RECHARGE_TIME : 0;
+        }
+    } else {
+        playerInventory.bombRechargeTimer = 0;
+    }
 }
 
 function renderBombs() {
@@ -4559,12 +4750,16 @@ function startGame() {
     floatingTexts = [];
     score = 0;
     combo = 0;
+    ufoBucks = 0;
     // Reset title screen state for next time
     titleHumans = [];
     highlightedEntryId = null;
     // Reset harvest counters
     harvestCount = { human: 0, cow: 0, sheep: 0, cat: 0, dog: 0, tank: 0 };
     harvestBounce = { human: 0, cow: 0, sheep: 0, cat: 0, dog: 0, tank: 0 };
+    resetWaveStats();
+    waveSummary = null;
+    waveSummaryState = null;
     wave = 1;
     waveTimer = CONFIG.WAVE_DURATION;
     targetSpawnTimer = 0; // Spawn first target immediately
@@ -4588,6 +4783,12 @@ function startGame() {
         speedBonus: 0,
         energyCells: 0,
         bombs: CONFIG.BOMB_START_COUNT,
+        maxBombs: CONFIG.BOMB_START_COUNT,
+        bombRechargeTimer: 0,
+        bombReadyBounceTimer: 0,
+        bombReadyBounceIndex: -1,
+        energyRechargeBonus: 0,
+        turretDamageBonus: 0,
         hasTurret: titleTurretUnlocked // Easter egg: free turret if unlocked on title screen
     };
 
@@ -4657,7 +4858,7 @@ function renderUI() {
     const infoY = panelMargin + scorePanelHeight + 10;
 
     ctx.fillStyle = '#fff';
-    ctx.font = 'bold 18px monospace';
+    ctx.font = 'bold 20px monospace';
     ctx.fillText(`WAVE ${wave}`, panelMargin + panelPadding, infoY + 18);
 
     // Timer
@@ -4744,8 +4945,11 @@ function renderUI() {
     // ========== TURRET INDICATOR (below bomb count) ==========
     renderTurretIndicator(shieldX, shieldY + shieldBarHeight + 100);
 
-    // ========== SPEED INDICATOR (below turret indicator) ==========
-    renderSpeedIndicator(shieldX, shieldY + shieldBarHeight + 142);
+    // ========== ENERGY BONUS INDICATOR (below turret indicator) ==========
+    renderEnergyBonusIndicator(shieldX, shieldY + shieldBarHeight + 142);
+
+    // ========== SPEED INDICATOR (below energy bonus) ==========
+    renderSpeedIndicator(shieldX, shieldY + shieldBarHeight + 170);
 
     // ========== TOP CENTER: HARVEST COUNTER ==========
     renderHarvestCounter();
@@ -4803,7 +5007,8 @@ function renderEnergyCells(startX, startY) {
 
 function renderBombCount(startX, startY) {
     const bombCount = playerInventory.bombs;
-    if (bombCount <= 0) return; // Don't show if no bombs
+    const maxBombs = playerInventory.maxBombs;
+    if (maxBombs <= 0) return; // Don't show if no bombs
 
     const bombSize = 18;
     const spacing = 4;
@@ -4813,7 +5018,7 @@ function renderBombCount(startX, startY) {
     const keyPadding = 6;
 
     // Calculate total width: key + bombs
-    const bombsWidth = (bombSize + spacing) * bombCount - spacing;
+    const bombsWidth = (bombSize + spacing) * maxBombs - spacing;
     const panelWidth = keyWidth + keyPadding + bombsWidth + panelPadding * 2;
     const panelHeight = Math.max(bombSize, keyHeight) + panelPadding * 2;
 
@@ -4847,28 +5052,51 @@ function renderBombCount(startX, startY) {
 
     // Draw bomb icons (after the key)
     const bombsStartX = keyX + keyWidth + keyPadding;
-    for (let i = 0; i < bombCount; i++) {
+    for (let i = 0; i < maxBombs; i++) {
         const x = bombsStartX + i * (bombSize + spacing) + bombSize / 2;
         const y = startY + panelHeight / 2;
+        const filled = i < bombCount;
+
+        let scale = 1;
+        if (i === playerInventory.bombReadyBounceIndex && playerInventory.bombReadyBounceTimer > 0) {
+            scale = 1 + Math.sin(playerInventory.bombReadyBounceTimer * 12) * 0.18;
+        }
+
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.scale(scale, scale);
 
         // Bomb body
-        ctx.fillStyle = '#333';
+        ctx.fillStyle = filled ? '#333' : '#1a1a1a';
         ctx.beginPath();
-        ctx.arc(x, y, bombSize / 2, 0, Math.PI * 2);
+        ctx.arc(0, 0, bombSize / 2, 0, Math.PI * 2);
         ctx.fill();
 
         // Highlight
-        ctx.fillStyle = '#555';
+        ctx.fillStyle = filled ? '#555' : '#2a2a2a';
         ctx.beginPath();
-        ctx.arc(x - 2, y - 2, bombSize / 4, 0, Math.PI * 2);
+        ctx.arc(-2, -2, bombSize / 4, 0, Math.PI * 2);
         ctx.fill();
 
         // Fuse spark
-        const sparkIntensity = Math.sin(Date.now() / 100 + i) * 0.5 + 0.5;
-        ctx.fillStyle = `rgba(255, ${150 + sparkIntensity * 100}, 0, ${0.7 + sparkIntensity * 0.3})`;
-        ctx.beginPath();
-        ctx.arc(x, y - bombSize / 2 - 2, 2 + sparkIntensity, 0, Math.PI * 2);
-        ctx.fill();
+        if (filled) {
+            const sparkIntensity = Math.sin(Date.now() / 100 + i) * 0.5 + 0.5;
+            ctx.fillStyle = `rgba(255, ${150 + sparkIntensity * 100}, 0, ${0.7 + sparkIntensity * 0.3})`;
+            ctx.beginPath();
+            ctx.arc(0, -bombSize / 2 - 2, 2 + sparkIntensity, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        ctx.restore();
+
+        if (i === bombCount && playerInventory.bombRechargeTimer > 0 && bombCount < maxBombs) {
+            const progress = 1 - (playerInventory.bombRechargeTimer / CONFIG.BOMB_RECHARGE_TIME);
+            ctx.strokeStyle = 'rgba(255, 200, 0, 0.9)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(x, y, bombSize / 2 + 4, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress);
+            ctx.stroke();
+        }
     }
 }
 
@@ -5011,11 +5239,47 @@ function renderSpeedIndicator(startX, startY) {
     ctx.fillText(`SPEED +${bonusPercent}%`, startX + panelWidth / 2, startY + panelHeight / 2 + 4);
 }
 
+function renderEnergyBonusIndicator(startX, startY) {
+    const energyBonus = playerInventory.maxEnergyBonus;
+    if (energyBonus <= 0) return; // Don't show if no energy upgrades
+
+    const panelWidth = 110;
+    const panelHeight = 24;
+    const bonusText = `ENERGY +${energyBonus}`;
+
+    // Panel background
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    ctx.beginPath();
+    ctx.roundRect(startX, startY, panelWidth, panelHeight, 4);
+    ctx.fill();
+
+    // Energy bar background
+    ctx.fillStyle = 'rgba(0, 200, 255, 0.2)';
+    ctx.beginPath();
+    ctx.roundRect(startX + 4, startY + 4, panelWidth - 8, panelHeight - 8, 2);
+    ctx.fill();
+
+    // Energy bar fill (scale to 100 bonus for display)
+    const fillPercent = Math.min(energyBonus / 100, 1);
+    const gradient = ctx.createLinearGradient(startX, 0, startX + panelWidth, 0);
+    gradient.addColorStop(0, '#0cc');
+    gradient.addColorStop(1, '#6ff');
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.roundRect(startX + 4, startY + 4, (panelWidth - 8) * fillPercent, panelHeight - 8, 2);
+    ctx.fill();
+
+    // Label showing bonus
+    ctx.fillStyle = '#7ff';
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(bonusText, startX + panelWidth / 2, startY + panelHeight / 2 + 4);
+}
+
 function renderHarvestCounter() {
-    const targetTypes = ['human', 'cow', 'sheep', 'cat', 'dog', 'tank'];
     const baseIconSize = 24;
     const spacing = 50;
-    const totalWidth = targetTypes.length * spacing;
+    const totalWidth = TARGET_TYPES.length * spacing;
     const panelWidth = totalWidth + 20;
     const panelHeight = 50;
     const panelX = (canvas.width - panelWidth) / 2;
@@ -5032,8 +5296,8 @@ function renderHarvestCounter() {
 
     ctx.textAlign = 'center';
 
-    for (let i = 0; i < targetTypes.length; i++) {
-        const type = targetTypes[i];
+    for (let i = 0; i < TARGET_TYPES.length; i++) {
+        const type = TARGET_TYPES[i];
         const x = startX + i * spacing;
         const count = harvestCount[type];
 
@@ -5993,8 +6257,8 @@ function renderTitleScreen() {
                 ctx.shadowBlur = 0;
             }
         }
-        ctx.textAlign = 'center';
     }
+    ctx.textAlign = 'center';
 
     // Changelog panel (right side)
     renderChangelogPanel();
@@ -6059,6 +6323,43 @@ function renderTitleScreen() {
     ctx.fillText('Built by Ruby, Odessa, & Papa!!! We hope you love it and have fun!', canvas.width / 2, canvas.height - 30);
 }
 
+function renderRainbowBouncyText(text, centerX, baselineY, fontSize) {
+    const phase = (Date.now() / 1000) * 3;
+    ctx.save();
+    ctx.globalAlpha = 1;
+    ctx.font = `bold ${fontSize}px monospace`;
+    ctx.textAlign = 'center';
+
+    const totalWidth = ctx.measureText(text).width;
+    let currentX = centerX - totalWidth / 2;
+
+    const glowPulse = Math.sin(phase * 0.5) * 0.3 + 0.7;
+    ctx.shadowColor = `rgba(0, 255, 255, ${glowPulse})`;
+    ctx.shadowBlur = 30 + Math.sin(phase) * 15;
+    ctx.fillStyle = 'transparent';
+    ctx.fillText(text, centerX, baselineY);
+
+    ctx.textAlign = 'left';
+    for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        const charWidth = ctx.measureText(char).width;
+        const hue = (phase * 50 + i * 20) % 360;
+        const waveOffset = Math.sin(phase * 2 + i * 0.4) * 12;
+
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.lineWidth = 3;
+        ctx.strokeText(char, currentX, baselineY + waveOffset);
+
+        ctx.fillStyle = `hsl(${hue}, 100%, 60%)`;
+        ctx.shadowColor = `hsl(${hue}, 100%, 50%)`;
+        ctx.shadowBlur = 20;
+        ctx.fillText(char, currentX, baselineY + waveOffset);
+        currentX += charWidth;
+    }
+
+    ctx.restore();
+}
+
 function renderGameOverScreen() {
     renderBackground();
 
@@ -6085,6 +6386,497 @@ function renderGameOverScreen() {
 }
 
 // ============================================
+// WAVE SUMMARY
+// ============================================
+
+const WAVE_SUMMARY_TIMING = {
+    title: 0.5,
+    targetPer: 0.3,
+    points: 1.2,
+    bonusPer: 0.4,
+    bucks: 0.8,
+    totals: 0.5,
+    autoContinue: 4.0
+};
+
+const UFO_BUCKS_RATE = 10;
+
+class CountUpAnimation {
+    constructor(startValue, endValue, duration) {
+        this.startValue = startValue;
+        this.endValue = endValue;
+        this.duration = Math.max(0.1, duration);
+        this.elapsed = 0;
+        this.current = startValue;
+        this.complete = false;
+    }
+
+    update(dt) {
+        if (this.complete) return;
+        this.elapsed += dt;
+        const progress = Math.min(1, this.elapsed / this.duration);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        this.current = Math.floor(this.startValue + (this.endValue - this.startValue) * eased);
+        if (progress >= 1) {
+            this.current = this.endValue;
+            this.complete = true;
+        }
+    }
+
+    finish() {
+        this.current = this.endValue;
+        this.complete = true;
+    }
+}
+
+function createWaveStats() {
+    return {
+        targetsBeamed: { human: 0, cow: 0, sheep: 0, cat: 0, dog: 0, tank: 0 },
+        targetsSpawned: { human: 0, cow: 0, sheep: 0, cat: 0, dog: 0, tank: 0 },
+        hitsTaken: 0,
+        tanksDestroyed: 0,
+        points: 0,
+        bonusPoints: 0,
+        maxComboHit: false
+    };
+}
+
+function resetWaveStats() {
+    waveStats = createWaveStats();
+}
+
+function getTotalTargets(targetsMap) {
+    return TARGET_TYPES.reduce((sum, type) => sum + (targetsMap[type] || 0), 0);
+}
+
+function getWaveBonuses(stats) {
+    const totalTargets = getTotalTargets(stats.targetsBeamed);
+    const bonuses = [
+        {
+            id: 'abduction',
+            label: 'ABDUCTION MASTER',
+            earned: totalTargets >= 10,
+            detail: `${totalTargets} targets`,
+            multiplier: 0.25
+        },
+        {
+            id: 'tank',
+            label: 'TANK HUNTER',
+            earned: stats.tanksDestroyed >= 3,
+            detail: `${stats.tanksDestroyed} tanks`,
+            multiplier: 0.25
+        },
+        {
+            id: 'combo',
+            label: 'COMBO KING',
+            earned: stats.maxComboHit,
+            detail: '3x combo',
+            multiplier: 0.25
+        }
+    ];
+    const earnedBonusCount = bonuses.filter(bonus => bonus.earned).length;
+    const bonusMultiplier = earnedBonusCount * 0.25;
+    return { bonuses, bonusMultiplier, totalTargets };
+}
+
+function buildWaveSummary(completedWave) {
+    const { bonuses, bonusMultiplier, totalTargets } = getWaveBonuses(waveStats);
+    const wavePoints = waveStats.points;
+    const baseUfoBucks = Math.floor(wavePoints / UFO_BUCKS_RATE);
+    const bonusUfoBucks = Math.floor(baseUfoBucks * bonusMultiplier);
+    const ufoBucksEarned = baseUfoBucks + bonusUfoBucks;
+
+    return {
+        wave: completedWave,
+        wavePoints,
+        bonusPoints: waveStats.bonusPoints,
+        targets: { ...waveStats.targetsBeamed },
+        targetsSpawned: { ...waveStats.targetsSpawned },
+        totalTargets,
+        cumulativeTargets: { ...harvestCount },
+        bonuses,
+        baseUfoBucks,
+        bonusUfoBucks,
+        ufoBucksEarned,
+        ufoBucksBefore: ufoBucks,
+        ufoBucksAfter: ufoBucks + ufoBucksEarned,
+        cumulativeScore: score
+    };
+}
+
+function startWaveSummary(completedWave) {
+    waveSummary = buildWaveSummary(completedWave);
+
+    const targetsDuration = TARGET_TYPES.length * WAVE_SUMMARY_TIMING.targetPer;
+    const bonusesDuration = waveSummary.bonuses.length * WAVE_SUMMARY_TIMING.bonusPer;
+    const titleEnd = WAVE_SUMMARY_TIMING.title;
+    const targetsEnd = titleEnd + targetsDuration;
+    const pointsEnd = targetsEnd + WAVE_SUMMARY_TIMING.points;
+    const bonusesEnd = pointsEnd + bonusesDuration;
+    const bucksEnd = bonusesEnd + WAVE_SUMMARY_TIMING.bucks;
+    const totalsEnd = bucksEnd + WAVE_SUMMARY_TIMING.totals;
+
+    waveSummaryState = {
+        elapsed: 0,
+        pointsCount: new CountUpAnimation(0, waveSummary.wavePoints, WAVE_SUMMARY_TIMING.points),
+        bucksCount: new CountUpAnimation(0, waveSummary.ufoBucksEarned, WAVE_SUMMARY_TIMING.bucks),
+        pointsStarted: false,
+        bucksStarted: false,
+        targetsRevealed: 0,
+        lastTargetsRevealed: 0,
+        bonusesRevealed: 0,
+        complete: false,
+        postCompleteTimer: 0,
+        awarded: false,
+        pointsTickCooldown: 0,
+        bucksTickCooldown: 0,
+        lastPointsValue: 0,
+        lastBucksValue: 0,
+        timings: { titleEnd, targetsEnd, pointsEnd, bonusesEnd, bucksEnd, totalsEnd }
+    };
+}
+
+function finalizeWaveSummary() {
+    if (!waveSummary || !waveSummaryState || waveSummaryState.awarded) return;
+    if (waveSummary.ufoBucksEarned > 0) {
+        SFX.bucksAward();
+    }
+    ufoBucks += waveSummary.ufoBucksEarned;
+    waveSummaryState.awarded = true;
+}
+
+function finishWaveSummaryAnimations() {
+    if (!waveSummaryState) return;
+    waveSummaryState.elapsed = waveSummaryState.timings.totalsEnd;
+    waveSummaryState.targetsRevealed = TARGET_TYPES.length;
+    waveSummaryState.bonusesRevealed = waveSummary.bonuses.length;
+    waveSummaryState.pointsStarted = true;
+    waveSummaryState.bucksStarted = true;
+    waveSummaryState.pointsCount.finish();
+    waveSummaryState.bucksCount.finish();
+    waveSummaryState.complete = true;
+    waveSummaryState.postCompleteTimer = 0;
+    finalizeWaveSummary();
+}
+
+function enterShopFromSummary() {
+    finalizeWaveSummary();
+    shopTimer = CONFIG.SHOP_DURATION;
+    selectedShopItem = 0;
+    shopCart = [];
+    gameState = 'SHOP';
+}
+
+function updateWaveSummary(dt) {
+    if (!waveSummary || !waveSummaryState) return;
+
+    waveSummaryState.elapsed += dt;
+    waveSummaryState.pointsTickCooldown = Math.max(0, waveSummaryState.pointsTickCooldown - dt);
+    waveSummaryState.bucksTickCooldown = Math.max(0, waveSummaryState.bucksTickCooldown - dt);
+
+    if (waveSummaryState.elapsed >= waveSummaryState.timings.titleEnd) {
+        const revealCount = Math.floor((waveSummaryState.elapsed - waveSummaryState.timings.titleEnd) / WAVE_SUMMARY_TIMING.targetPer) + 1;
+        const nextRevealed = Math.min(TARGET_TYPES.length, Math.max(0, revealCount));
+        if (nextRevealed > waveSummaryState.targetsRevealed) {
+            for (let i = waveSummaryState.targetsRevealed; i < nextRevealed; i++) {
+                const type = TARGET_TYPES[i];
+                const beamed = waveSummary.targets[type] || 0;
+                const spawned = waveSummary.targetsSpawned[type] || 0;
+                const gotAll = spawned > 0 && beamed >= spawned;
+                if (gotAll) {
+                    SFX.targetMax && SFX.targetMax();
+                } else {
+                    SFX.targetReveal && SFX.targetReveal();
+                }
+            }
+            waveSummaryState.targetsRevealed = nextRevealed;
+        }
+    }
+
+    if (waveSummaryState.elapsed >= waveSummaryState.timings.targetsEnd) {
+        waveSummaryState.pointsStarted = true;
+    }
+    if (waveSummaryState.pointsStarted) {
+        waveSummaryState.pointsCount.update(dt);
+        if (waveSummaryState.pointsCount.current !== waveSummaryState.lastPointsValue && waveSummaryState.pointsTickCooldown <= 0) {
+            const progress = waveSummary.wavePoints > 0 ? waveSummaryState.pointsCount.current / waveSummary.wavePoints : 0;
+            SFX.countTick(500 + Math.floor(progress * 300));
+            waveSummaryState.lastPointsValue = waveSummaryState.pointsCount.current;
+            waveSummaryState.pointsTickCooldown = 0.03;
+        }
+    }
+
+    if (waveSummaryState.elapsed >= waveSummaryState.timings.pointsEnd) {
+        const revealCount = Math.floor((waveSummaryState.elapsed - waveSummaryState.timings.pointsEnd) / WAVE_SUMMARY_TIMING.bonusPer) + 1;
+        waveSummaryState.bonusesRevealed = Math.min(waveSummary.bonuses.length, Math.max(0, revealCount));
+    }
+
+    if (waveSummaryState.elapsed >= waveSummaryState.timings.bonusesEnd) {
+        waveSummaryState.bucksStarted = true;
+    }
+    if (waveSummaryState.bucksStarted) {
+        waveSummaryState.bucksCount.update(dt);
+        if (waveSummaryState.bucksCount.current !== waveSummaryState.lastBucksValue && waveSummaryState.bucksTickCooldown <= 0) {
+            const progress = waveSummary.ufoBucksEarned > 0 ? waveSummaryState.bucksCount.current / waveSummary.ufoBucksEarned : 0;
+            SFX.countTick(650 + Math.floor(progress * 250));
+            waveSummaryState.lastBucksValue = waveSummaryState.bucksCount.current;
+            waveSummaryState.bucksTickCooldown = 0.05;
+        }
+    }
+
+    if (!waveSummaryState.complete && waveSummaryState.elapsed >= waveSummaryState.timings.totalsEnd) {
+        waveSummaryState.complete = true;
+        waveSummaryState.postCompleteTimer = 0;
+        finalizeWaveSummary();
+    }
+
+    if (waveSummaryState.complete) {
+        waveSummaryState.postCompleteTimer += dt;
+        if (waveSummaryState.postCompleteTimer >= WAVE_SUMMARY_TIMING.autoContinue) {
+            enterShopFromSummary();
+        }
+    }
+
+    updateParticles(dt);
+    updateFloatingTexts(dt);
+}
+
+function renderTargetRow(counts, totals, startX, y, iconSize, spacing, revealCount) {
+    ctx.textAlign = 'center';
+    const visibleCount = Math.min(TARGET_TYPES.length, revealCount);
+    for (let i = 0; i < visibleCount; i++) {
+        const type = TARGET_TYPES[i];
+        const x = startX + i * spacing;
+        const count = counts[type] || 0;
+        const total = totals ? (totals[type] || 0) : 0;
+        const img = images[type];
+        if (img && img.complete) {
+            const aspectRatio = img.width / img.height;
+            let drawWidth, drawHeight;
+            if (aspectRatio > 1) {
+                drawWidth = iconSize;
+                drawHeight = iconSize / aspectRatio;
+            } else {
+                drawHeight = iconSize;
+                drawWidth = iconSize * aspectRatio;
+            }
+            ctx.drawImage(img, x - drawWidth / 2, y - drawHeight / 2, drawWidth, drawHeight);
+        } else {
+            const colors = { human: '#ffccaa', cow: '#fff', sheep: '#eee', cat: '#ff9944', dog: '#aa7744', tank: '#556b2f' };
+            ctx.fillStyle = colors[type];
+            if (type === 'tank') {
+                ctx.fillRect(x - iconSize / 2, y - 6, iconSize, 12);
+                ctx.fillRect(x - 4, y - 12, 8, 10);
+            } else {
+                ctx.beginPath();
+                ctx.arc(x, y, iconSize / 3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        ctx.fillStyle = count > 0 ? '#0f0' : '#555';
+        ctx.font = 'bold 16px monospace';
+        const label = totals ? `${count}/${total}` : count.toString();
+        ctx.fillText(label, x, y + iconSize / 2 + 18);
+    }
+}
+
+function renderWaveSummary() {
+    if (!waveSummary || !waveSummaryState) return;
+
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.shadowBlur = 0;
+
+    // Render the game scene frozen (dimmed)
+    renderBackground();
+    for (const target of targets) {
+        target.render();
+    }
+    renderTanks();
+    if (ufo) {
+        ufo.render();
+    }
+    renderParticles();
+    renderFloatingTexts();
+
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const panelWidth = Math.min(760, canvas.width * 0.88);
+    const panelHeight = Math.min(600, canvas.height * 0.85);
+    const panelX = (canvas.width - panelWidth) / 2;
+    const panelY = (canvas.height - panelHeight) / 2;
+    const padding = 30;
+
+    ctx.fillStyle = 'rgba(15, 15, 40, 0.95)';
+    ctx.beginPath();
+    ctx.roundRect(panelX, panelY, panelWidth, panelHeight, 18);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0, 255, 255, 0.3)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    let cursorY = panelY + padding;
+
+    // Title
+    renderRainbowBouncyText(`WAVE ${waveSummary.wave} COMPLETE!`, panelX + panelWidth / 2, cursorY + 10, 38);
+    cursorY += 52;
+
+    // Targets beamed (wave/total)
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 20px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('TARGETS BEAMED (WAVE/TOTAL)', panelX + padding, cursorY);
+    cursorY += 22;
+
+    const iconSpacing = (panelWidth - padding * 2) / TARGET_TYPES.length;
+    const iconStartX = panelX + padding + iconSpacing / 2;
+    renderTargetRow(waveSummary.targets, waveSummary.cumulativeTargets, iconStartX, cursorY + 16, 54, iconSpacing, waveSummaryState.targetsRevealed);
+    cursorY += 82;
+
+    // Divider
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(panelX + padding, cursorY);
+    ctx.lineTo(panelX + panelWidth - padding, cursorY);
+    ctx.stroke();
+    cursorY += 26;
+
+    // Wave points
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 20px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('WAVE POINTS', panelX + padding, cursorY);
+    ctx.textAlign = 'right';
+    const pointsValue = waveSummaryState.pointsStarted ? waveSummaryState.pointsCount.current : 0;
+    ctx.fillStyle = '#ff0';
+    ctx.fillText(pointsValue.toLocaleString(), panelX + panelWidth - padding, cursorY);
+    cursorY += 30;
+
+    if (waveSummary.bonusPoints > 0 && waveSummaryState.pointsStarted) {
+        ctx.fillStyle = '#aaa';
+        ctx.font = 'bold 16px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText('BONUS POINTS', panelX + padding, cursorY);
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#0f0';
+        ctx.fillText(`+${waveSummary.bonusPoints.toLocaleString()}`, panelX + panelWidth - padding, cursorY);
+        cursorY += 26;
+    }
+
+    // Bonuses
+    ctx.fillStyle = '#aaa';
+    ctx.textAlign = 'left';
+    ctx.font = 'bold 18px monospace';
+    ctx.fillText('BONUSES', panelX + padding, cursorY);
+    cursorY += 22;
+
+    ctx.font = 'bold 16px monospace';
+    for (let i = 0; i < waveSummary.bonuses.length; i++) {
+        if (waveSummaryState.bonusesRevealed <= i) break;
+        const bonus = waveSummary.bonuses[i];
+        ctx.fillStyle = bonus.earned ? '#0f0' : '#555';
+        ctx.textAlign = 'left';
+        ctx.fillText(bonus.label, panelX + padding, cursorY);
+        ctx.fillStyle = bonus.earned ? '#fff' : '#444';
+        ctx.font = '14px monospace';
+        ctx.fillText(`(${bonus.detail})`, panelX + padding + 210, cursorY);
+        ctx.font = 'bold 18px monospace';
+        ctx.textAlign = 'right';
+        ctx.fillStyle = bonus.earned ? '#ff0' : '#444';
+        ctx.fillText(bonus.earned ? '+25%' : '--', panelX + panelWidth - padding, cursorY);
+        cursorY += 22;
+    }
+    cursorY += 8;
+
+    // Divider
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+    ctx.beginPath();
+    ctx.moveTo(panelX + padding, cursorY);
+    ctx.lineTo(panelX + panelWidth - padding, cursorY);
+    ctx.stroke();
+    cursorY += 24;
+
+    // UFO Bucks calculation
+    if (waveSummaryState.bucksStarted) {
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 18px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText('UFO BUCKS', panelX + padding, cursorY);
+        cursorY += 20;
+
+        ctx.font = '16px monospace';
+        ctx.fillStyle = '#aaa';
+        ctx.textAlign = 'left';
+        ctx.fillText('BASE', panelX + padding, cursorY);
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#fff';
+        ctx.fillText(waveSummary.baseUfoBucks.toString(), panelX + panelWidth - padding, cursorY);
+        cursorY += 18;
+
+        ctx.fillStyle = '#aaa';
+        ctx.textAlign = 'left';
+        ctx.fillText('BONUS', panelX + padding, cursorY);
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#fff';
+        ctx.fillText(waveSummary.bonusUfoBucks.toString(), panelX + panelWidth - padding, cursorY);
+        cursorY += 20;
+
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+        ctx.beginPath();
+        ctx.moveTo(panelX + padding, cursorY);
+        ctx.lineTo(panelX + panelWidth - padding, cursorY);
+        ctx.stroke();
+        cursorY += 18;
+
+        ctx.font = 'bold 20px monospace';
+        ctx.fillStyle = '#ff0';
+        ctx.textAlign = 'left';
+        ctx.fillText('UFO BUCKS EARNED', panelX + padding, cursorY);
+        ctx.textAlign = 'right';
+        const bucksValue = waveSummaryState.bucksCount.current;
+        ctx.fillText(bucksValue.toString(), panelX + panelWidth - padding, cursorY);
+        cursorY += 28;
+    }
+
+    if (waveSummaryState.elapsed >= waveSummaryState.timings.bucksEnd) {
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 18px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText('TOTAL UFO BUCKS', panelX + padding, cursorY);
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#0f0';
+        ctx.fillText(waveSummary.ufoBucksAfter.toString(), panelX + panelWidth - padding, cursorY);
+        cursorY += 22;
+
+        ctx.fillStyle = '#bbb';
+        ctx.textAlign = 'left';
+        ctx.fillText('CUMULATIVE SCORE', panelX + padding, cursorY);
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#fff';
+        ctx.fillText(waveSummary.cumulativeScore.toLocaleString(), panelX + panelWidth - padding, cursorY);
+        cursorY += 26;
+    }
+
+    if (waveSummaryState.complete) {
+        const remaining = Math.max(0, Math.ceil(WAVE_SUMMARY_TIMING.autoContinue - waveSummaryState.postCompleteTimer));
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 20px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`CONTINUING IN ${remaining}...`, panelX + panelWidth / 2, panelY + panelHeight - 28);
+    }
+
+    ctx.restore();
+}
+
+// ============================================
 // WAVE TRANSITION
 // ============================================
 
@@ -6097,6 +6889,7 @@ function updateWaveTransition(dt) {
 
     if (waveTransitionTimer <= 0) {
         // Start the new wave
+        resetWaveStats();
         waveTimer = CONFIG.WAVE_DURATION;
         lastTimerWarningSecond = -1; // Reset timer warning
         gameState = 'PLAYING';
@@ -6180,6 +6973,10 @@ function renderWaveTransition() {
 // ============================================
 
 function updateShop(dt) {
+    if (waveSummary || waveSummaryState) {
+        waveSummary = null;
+        waveSummaryState = null;
+    }
     shopTimer -= dt;
 
     // Continue updating particles for visual effect
@@ -6226,18 +7023,27 @@ function renderShop() {
     const startX = (canvas.width - totalWidth) / 2;
 
     const gridStartX = startX;
-    const gridStartY = 140;
-    const cartX = gridStartX + gridWidth + cartGap;
-    const cartY = gridStartY;
 
     // ========== PROMINENT TIMER AT TOP ==========
     const secondsLeft = Math.ceil(shopTimer);
-    const timerY = 50;
 
-    // Timer background bar
     const timerBarWidth = 400;
     const timerBarHeight = 40;
     const timerBarX = (canvas.width - timerBarWidth) / 2;
+    const timerToHeaderGap = 45;
+    const headerToGridGap = 25;
+    const gridToDoneGap = 20;
+    const doneHeight = 50;
+    const doneToInstructionsGap = 22;
+    const instructionsHeight = 16;
+    const layoutHeight = timerBarHeight + timerToHeaderGap + headerToGridGap + gridHeight + gridToDoneGap + doneHeight + doneToInstructionsGap + instructionsHeight;
+    const layoutTop = (canvas.height - layoutHeight) / 2;
+
+    const timerY = layoutTop;
+    const headerY = timerY + timerBarHeight + timerToHeaderGap;
+    const gridStartY = headerY + headerToGridGap;
+    const cartX = gridStartX + gridWidth + cartGap;
+    const cartY = gridStartY;
 
     // Progress fill (shrinks as time runs out)
     const progress = shopTimer / CONFIG.SHOP_DURATION;
@@ -6272,19 +7078,19 @@ function renderShop() {
     ctx.fillStyle = '#0ff';
     ctx.font = 'bold 32px monospace';
     ctx.textAlign = 'left';
-    ctx.fillText('UFO SHOP', gridStartX, 115);
+    ctx.fillText('UFO SHOP', gridStartX, headerY);
 
     ctx.fillStyle = '#ff0';
     ctx.font = 'bold 24px monospace';
     ctx.textAlign = 'right';
-    ctx.fillText(`${score} PTS`, gridStartX + gridWidth, 115);
+    ctx.fillText(`${ufoBucks} UFO BUCKS`, gridStartX + gridWidth, headerY);
 
     // Calculate cart total
     const cartTotal = shopCart.reduce((sum, itemId) => {
         const item = CONFIG.SHOP_ITEMS.find(i => i.id === itemId);
         return sum + (item ? item.cost : 0);
     }, 0);
-    const pointsAfter = score - cartTotal;
+    const bucksAfter = ufoBucks - cartTotal;
 
     // Clear bounds arrays
     shopItemBounds = [];
@@ -6292,9 +7098,9 @@ function renderShop() {
 
     // Define shop grid items (9 slots, some may be empty/locked)
     const gridItems = [
-        'repair', 'shield_charge', 'max_energy',
-        'speed_boost', 'revive_cell', 'bomb_pack',
-        'laser_turret', null, null  // Last two slots are locked
+        'repair', 'shield_single', 'revive_cell',
+        'shield_charge', 'max_energy', 'energy_recharge',
+        'bomb_single', 'laser_turret', 'turret_damage'
     ];
 
     // Render 3x3 grid
@@ -6338,8 +7144,9 @@ function renderShop() {
             }
 
             const isOwned = item.effect === 'turret' && playerInventory.hasTurret;
+            const isLocked = item.requiresTurret && !playerInventory.hasTurret;
             const inCart = shopCart.filter(id => id === item.id).length;
-            const canAfford = (score - cartTotal) >= item.cost || inCart > 0;
+            const canAfford = !isLocked && ((ufoBucks - cartTotal) >= item.cost || inCart > 0);
             const isSelected = idx === selectedShopItem;
 
             // Cell background
@@ -6347,6 +7154,10 @@ function renderShop() {
                 ctx.fillStyle = 'rgba(0, 80, 0, 0.8)';
             } else if (inCart > 0) {
                 ctx.fillStyle = 'rgba(0, 100, 100, 0.8)';
+            } else if (isLocked) {
+                ctx.fillStyle = 'rgba(30, 30, 30, 0.85)';
+            } else if (canAfford) {
+                ctx.fillStyle = 'rgba(20, 70, 40, 0.9)';
             } else if (isSelected) {
                 ctx.fillStyle = 'rgba(60, 60, 80, 0.95)';
             } else {
@@ -6356,8 +7167,15 @@ function renderShop() {
             ctx.roundRect(x, y, cellSize, cellSize, 10);
             ctx.fill();
 
+            if (canAfford && !isOwned && inCart === 0) {
+                ctx.fillStyle = 'rgba(0, 255, 140, 0.08)';
+                ctx.beginPath();
+                ctx.roundRect(x + 2, y + 2, cellSize - 4, cellSize - 4, 8);
+                ctx.fill();
+            }
+
             // Border
-            if (isSelected && !isOwned) {
+            if (isSelected && !isOwned && !isLocked) {
                 ctx.strokeStyle = '#ff0';
                 ctx.lineWidth = 3;
             } else if (isOwned) {
@@ -6366,9 +7184,12 @@ function renderShop() {
             } else if (inCart > 0) {
                 ctx.strokeStyle = '#0ff';
                 ctx.lineWidth = 3;
-            } else {
-                ctx.strokeStyle = canAfford ? '#666' : '#333';
+            } else if (isLocked) {
+                ctx.strokeStyle = '#444';
                 ctx.lineWidth = 2;
+            } else {
+                ctx.strokeStyle = canAfford ? '#0f0' : '#333';
+                ctx.lineWidth = canAfford ? 3 : 2;
             }
             ctx.stroke();
 
@@ -6388,8 +7209,12 @@ function renderShop() {
                 ctx.fillStyle = '#0f0';
                 ctx.font = 'bold 14px monospace';
                 ctx.fillText('OWNED', x + cellSize / 2, y + 100);
+            } else if (isLocked) {
+                ctx.fillStyle = '#888';
+                ctx.font = 'bold 12px monospace';
+                ctx.fillText('REQ TURRET', x + cellSize / 2, y + 100);
             } else {
-                ctx.fillStyle = canAfford ? '#ff0' : '#600';
+                ctx.fillStyle = canAfford ? '#ff0' : '#b55';
                 ctx.font = 'bold 16px monospace';
                 ctx.fillText(`${item.cost}`, x + cellSize / 2, y + 100);
             }
@@ -6406,9 +7231,22 @@ function renderShop() {
             }
 
             // Description tooltip area
-            ctx.fillStyle = isOwned ? '#060' : '#444';
-            ctx.font = '10px monospace';
+            if (isOwned) {
+                ctx.fillStyle = '#8f8';
+            } else if (isSelected) {
+                ctx.fillStyle = '#fff';
+            } else if (canAfford) {
+                ctx.fillStyle = '#ddd';
+            } else if (isLocked) {
+                ctx.fillStyle = '#888';
+            } else {
+                ctx.fillStyle = '#bbb';
+            }
+            ctx.font = '11px monospace';
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+            ctx.shadowBlur = 4;
             ctx.fillText(item.description, x + cellSize / 2, y + cellSize - 12);
+            ctx.shadowBlur = 0;
         }
     }
 
@@ -6515,7 +7353,7 @@ function renderShop() {
     ctx.textAlign = 'left';
     ctx.fillText('TOTAL:', cartX + 20, totalY + 25);
 
-    ctx.fillStyle = pointsAfter >= 0 ? '#ff0' : '#f00';
+    ctx.fillStyle = bucksAfter >= 0 ? '#ff0' : '#f00';
     ctx.textAlign = 'right';
     ctx.fillText(`${cartTotal}`, cartX + cartWidth - 20, totalY + 25);
 
@@ -6526,7 +7364,7 @@ function renderShop() {
 
     // Checkout button
     const checkoutX = cartX + 15;
-    const canCheckout = shopCart.length > 0 && pointsAfter >= 0;
+    const canCheckout = shopCart.length > 0 && bucksAfter >= 0;
 
     ctx.fillStyle = canCheckout ? 'rgba(0, 150, 0, 0.8)' : 'rgba(50, 50, 50, 0.8)';
     ctx.beginPath();
@@ -6564,9 +7402,8 @@ function renderShop() {
 
     // ========== START WAVE BUTTON (spans full width below both) ==========
     const doneWidth = totalWidth;
-    const doneHeight = 50;
     const doneX = gridStartX;
-    const doneY = gridStartY + gridHeight + 20;
+    const doneY = gridStartY + gridHeight + gridToDoneGap;
 
     ctx.fillStyle = 'rgba(0, 150, 150, 0.8)';
     ctx.beginPath();
@@ -6579,7 +7416,7 @@ function renderShop() {
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 20px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('START WAVE  [ENTER]', doneX + doneWidth / 2, doneY + 32);
+    ctx.fillText('START WAVE', doneX + doneWidth / 2, doneY + 32);
 
     shopButtonBounds.done = { x: doneX, y: doneY, width: doneWidth, height: doneHeight };
 
@@ -6587,7 +7424,7 @@ function renderShop() {
     ctx.fillStyle = '#666';
     ctx.font = '13px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('Click items to add to cart  |  SPACE to add  |  C to checkout  |  ESC to empty cart', canvas.width / 2, doneY + doneHeight + 22);
+    ctx.fillText('Click items to add to cart  |  SPACE to add  |  C to checkout  |  ESC to empty cart', canvas.width / 2, doneY + doneHeight + doneToInstructionsGap);
 
     // Don't render game UI - shop overlay covers everything
 }
@@ -6620,6 +7457,7 @@ function renderShopIcon(itemId, x, y, size, color) {
             break;
 
         case 'shield_charge':
+        case 'shield_single':
             // Shield icon
             ctx.fillStyle = color;
             ctx.beginPath();
@@ -6656,6 +7494,21 @@ function renderShopIcon(itemId, x, y, size, color) {
             // Cap
             ctx.fillStyle = color;
             ctx.fillRect(-5 * s, -22 * s, 10 * s, 5 * s);
+            break;
+
+        case 'energy_recharge':
+            // Lightning/charge icon
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.moveTo(-6 * s, -20 * s);
+            ctx.lineTo(6 * s, -20 * s);
+            ctx.lineTo(0 * s, -4 * s);
+            ctx.lineTo(10 * s, -4 * s);
+            ctx.lineTo(-4 * s, 20 * s);
+            ctx.lineTo(-2 * s, 4 * s);
+            ctx.lineTo(-12 * s, 4 * s);
+            ctx.closePath();
+            ctx.fill();
             break;
 
         case 'speed_boost':
@@ -6695,7 +7548,7 @@ function renderShopIcon(itemId, x, y, size, color) {
             ctx.fillRect(-6 * s, -6 * s, 12 * s, 4 * s);
             break;
 
-        case 'bomb_pack':
+        case 'bomb_single':
             // Bomb icon
             ctx.fillStyle = '#333';
             ctx.beginPath();
@@ -6740,6 +7593,21 @@ function renderShopIcon(itemId, x, y, size, color) {
             ctx.stroke();
             break;
 
+        case 'turret_damage':
+            // Power bolt icon
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.moveTo(-6 * s, -18 * s);
+            ctx.lineTo(6 * s, -18 * s);
+            ctx.lineTo(0 * s, -2 * s);
+            ctx.lineTo(10 * s, -2 * s);
+            ctx.lineTo(-4 * s, 18 * s);
+            ctx.lineTo(-2 * s, 4 * s);
+            ctx.lineTo(-12 * s, 4 * s);
+            ctx.closePath();
+            ctx.fill();
+            break;
+
         default:
             // Default circle
             ctx.fillStyle = color;
@@ -6765,6 +7633,11 @@ function addToCart(gridIndex) {
         createFloatingText(canvas.width / 2, 300, 'ALREADY OWNED!', '#f44');
         return;
     }
+    if (item.requiresTurret && !playerInventory.hasTurret) {
+        SFX.error && SFX.error();
+        createFloatingText(canvas.width / 2, 300, 'REQUIRES TURRET!', '#f44');
+        return;
+    }
 
     // Check if turret already in cart
     if (item.effect === 'turret' && shopCart.includes(item.id)) {
@@ -6779,9 +7652,9 @@ function addToCart(gridIndex) {
         return sum + (i ? i.cost : 0);
     }, 0);
 
-    if (score < currentCartTotal + item.cost) {
+    if (ufoBucks < currentCartTotal + item.cost) {
         SFX.error && SFX.error();
-        createFloatingText(canvas.width / 2, 300, 'NOT ENOUGH POINTS!', '#f44');
+        createFloatingText(canvas.width / 2, 300, 'NOT ENOUGH BUCKS!', '#f44');
         return;
     }
 
@@ -6819,9 +7692,9 @@ function checkoutCart() {
         return sum + (item ? item.cost : 0);
     }, 0);
 
-    if (score < total) {
+    if (ufoBucks < total) {
         SFX.error && SFX.error();
-        createFloatingText(canvas.width / 2, 300, 'NOT ENOUGH POINTS!', '#f44');
+        createFloatingText(canvas.width / 2, 300, 'NOT ENOUGH BUCKS!', '#f44');
         return;
     }
 
@@ -6831,7 +7704,7 @@ function checkoutCart() {
         if (!item) continue;
 
         // Deduct cost
-        score -= item.cost;
+        ufoBucks -= item.cost;
 
         // Apply effect
         applyShopItemEffect(item);
@@ -6869,17 +7742,23 @@ function applyShopItemEffect(item) {
                 ufo.maxEnergy = CONFIG.ENERGY_MAX + playerInventory.maxEnergyBonus;
             }
             break;
+        case 'energyRecharge':
+            playerInventory.energyRechargeBonus += item.value;
+            break;
         case 'speed':
             playerInventory.speedBonus += item.value;
             break;
         case 'energyCell':
             playerInventory.energyCells += item.value;
             break;
-        case 'bombs':
-            playerInventory.bombs = Math.min(CONFIG.BOMB_MAX_COUNT, playerInventory.bombs + item.value);
+        case 'bombCapacity':
+            playerInventory.maxBombs = Math.min(CONFIG.BOMB_MAX_COUNT, playerInventory.maxBombs + item.value);
             break;
         case 'turret':
             playerInventory.hasTurret = true;
+            break;
+        case 'turretDamage':
+            playerInventory.turretDamageBonus += item.value;
             break;
     }
 }
@@ -6893,14 +7772,19 @@ function purchaseShopItem() {
         createFloatingText(canvas.width / 2, 200, 'ALREADY OWNED!', '#f44');
         return false;
     }
+    if (item.requiresTurret && !playerInventory.hasTurret) {
+        SFX.error && SFX.error();
+        createFloatingText(canvas.width / 2, 200, 'REQUIRES TURRET!', '#f44');
+        return false;
+    }
 
-    if (score < item.cost) {
+    if (ufoBucks < item.cost) {
         SFX.error && SFX.error();
         return false;
     }
 
     // Deduct cost
-    score -= item.cost;
+    ufoBucks -= item.cost;
 
     // Apply effect
     applyShopItemEffect(item);
@@ -6950,6 +7834,11 @@ function gameLoop(timestamp) {
         case 'WAVE_TRANSITION':
             updateWaveTransition(dt);
             renderWaveTransition();
+            break;
+
+        case 'WAVE_SUMMARY':
+            updateWaveSummary(dt);
+            renderWaveSummary();
             break;
 
         case 'SHOP':
@@ -7038,8 +7927,18 @@ function update(dt) {
             ufo.beamActive = false;
         }
 
+        const completedWave = wave;
         score += CONFIG.WAVE_COMPLETE_BONUS;
-        createFloatingText(canvas.width / 2, canvas.height / 2, `WAVE ${wave} COMPLETE! +${CONFIG.WAVE_COMPLETE_BONUS}`, '#ff0');
+        waveStats.points += CONFIG.WAVE_COMPLETE_BONUS;
+        const { bonusMultiplier } = getWaveBonuses(waveStats);
+        const bonusPoints = Math.floor(waveStats.points * bonusMultiplier);
+        if (bonusPoints > 0) {
+            score += bonusPoints;
+            waveStats.points += bonusPoints;
+            waveStats.bonusPoints = bonusPoints;
+            createFloatingText(canvas.width / 2, canvas.height / 2 + 40, `BONUS +${bonusPoints}`, '#0f0');
+        }
+        createFloatingText(canvas.width / 2, canvas.height / 2, `WAVE ${completedWave} COMPLETE! +${CONFIG.WAVE_COMPLETE_BONUS}`, '#ff0');
         SFX.waveComplete();
 
         // Update high score
@@ -7048,12 +7947,9 @@ function update(dt) {
             localStorage.setItem('alienAbductoramaHighScore', highScore);
         }
 
-        // Start shop phase between waves
         wave++;
-        shopTimer = CONFIG.SHOP_DURATION;
-        selectedShopItem = 0;
-        shopCart = []; // Clear cart when entering shop
-        gameState = 'SHOP';
+        startWaveSummary(completedWave);
+        gameState = 'WAVE_SUMMARY';
     }
 }
 
