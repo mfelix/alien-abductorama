@@ -13,6 +13,9 @@ dist/
 # Environment files
 .env
 .env.local
+<<<<<<< HEAD
 
 # Gas Town
+=======
+>>>>>>> 1f61ac3 (Add .beads to gitignore)
 .beads/
