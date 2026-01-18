@@ -1655,15 +1655,24 @@ class Target {
 // ============================================
 
 let floatingTexts = [];
+let tutorialTimeouts = [];
+let turretHintPending = false;
 
-function createFloatingText(x, y, text, color) {
+function createFloatingText(x, y, text, color, options = {}) {
+    const {
+        lifetime = 1.0,
+        vy = -50,
+        fontSize = 24
+    } = options;
+
     floatingTexts.push({
         x,
         y,
         text,
         color,
-        lifetime: 1.0,
-        vy: -50
+        lifetime,
+        vy,
+        fontSize
     });
 }
 
@@ -1679,14 +1688,48 @@ function updateFloatingTexts(dt) {
 }
 
 function renderFloatingTexts() {
-    ctx.font = 'bold 24px monospace';
     ctx.textAlign = 'center';
     for (const ft of floatingTexts) {
+        ctx.font = `bold ${ft.fontSize || 24}px monospace`;
         ctx.fillStyle = ft.color;
         ctx.globalAlpha = Math.max(0, ft.lifetime);
         ctx.fillText(ft.text, ft.x, ft.y);
     }
     ctx.globalAlpha = 1;
+}
+
+function clearTutorialTimeouts() {
+    for (const id of tutorialTimeouts) {
+        clearTimeout(id);
+    }
+    tutorialTimeouts = [];
+}
+
+function scheduleTutorialHints() {
+    clearTutorialTimeouts();
+    const baseY = canvas.height * 0.35;
+    const step = 2.6;
+    const items = [
+        { text: 'MOVE: LEFT / RIGHT ARROWS', color: '#0ff' },
+        { text: 'BEAM: SPACEBAR', color: '#ff0' },
+        { text: 'BOMB: B OR X', color: '#f80' },
+        { text: 'WARP JUKE: DOUBLE-TAP ARROWS OR SHIFT + ARROW', color: '#0f0' },
+        { text: 'HAVE FUN!', color: '#fff' }
+    ];
+
+    items.forEach((item, index) => {
+        const id = setTimeout(() => {
+            if (gameState !== 'PLAYING' || wave !== 1) return;
+            createFloatingText(
+                canvas.width / 2,
+                baseY + index * 28,
+                item.text,
+                item.color,
+                { lifetime: 2.5, vy: -10, fontSize: 22 }
+            );
+        }, index * step * 1000);
+        tutorialTimeouts.push(id);
+    });
 }
 
 // Helper function to convert hex color to rgba string
@@ -1831,8 +1874,8 @@ class UFO {
             }
         }
 
-        // Handle laser turret (T key) - only if player owns turret
-        const wantsTurret = keys['KeyT'] && playerInventory.hasTurret;
+        // Handle laser turret (T or Z key) - only if player owns turret
+        const wantsTurret = (keys['KeyT'] || keys['KeyZ']) && playerInventory.hasTurret;
         // Require minimum energy to fire; once depleted, need more energy to restart
         const minEnergyToStart = CONFIG.TURRET_ENERGY_COST * 0.5; // Need 0.5 seconds worth to start
         const canFireTurret = this.energy >= minEnergyToStart && !this.turretOutOfEnergy;
@@ -2574,7 +2617,7 @@ class Tank {
         // Abduction state
         this.beingAbducted = false;
         this.abductionProgress = 0;
-        this.abductionTime = 1.5; // Tanks are quick to abduct
+        this.abductionTime = 2.5; // Tanks take longer to abduct than humans
         this.groundY = this.y;
 
         this.alive = true;
@@ -2599,7 +2642,7 @@ class Tank {
         }
     }
 
-    destroy() {
+    destroy(pointsMultiplier = 1) {
         this.alive = false;
         this.respawnTimer = 3; // Respawn timer
 
@@ -2607,15 +2650,16 @@ class Tank {
         createExplosion(this.x + this.width / 2, this.y + this.height / 2, 'medium');
 
         // Award points
-        score += CONFIG.TANK_POINTS;
+        const pointsEarned = Math.floor(CONFIG.TANK_POINTS * pointsMultiplier);
+        score += pointsEarned;
         harvestCount.tank++;
         harvestBounce.tank = 1;
         waveStats.targetsBeamed.tank++;
         waveStats.tanksDestroyed++;
-        waveStats.points += CONFIG.TANK_POINTS;
+        waveStats.points += pointsEarned;
 
         // Floating text
-        createFloatingText(this.x + this.width / 2, this.y, `+${CONFIG.TANK_POINTS}`, '#ff0');
+        createFloatingText(this.x + this.width / 2, this.y, `+${pointsEarned}`, '#ff0');
 
         // Sound
         SFX.explosion(false);
@@ -3255,7 +3299,7 @@ class Bomb {
 
             if (dist < CONFIG.BOMB_EXPLOSION_RADIUS) {
                 // Destroy the tank
-                tank.destroy();
+                tank.destroy(3);
                 createFloatingText(tank.x + tank.width / 2, tank.groundY - 30, 'DESTROYED!', '#ff4400');
             }
         }
@@ -3272,7 +3316,7 @@ class Bomb {
                 heavyTank.bombHits = (heavyTank.bombHits || 0) + 1;
                 if (heavyTank.bombHits >= 2) {
                     // Second hit - destroy it
-                    heavyTank.destroy();
+                    heavyTank.destroy(3);
                     createFloatingText(heavyTank.x + heavyTank.width / 2, heavyTank.groundY - 30, 'DESTROYED!', '#ff4400');
                 } else {
                     // First hit - damage visual, brief stun
@@ -3848,7 +3892,7 @@ class HeavyTank {
         // Abduction state
         this.beingAbducted = false;
         this.abductionProgress = 0;
-        this.abductionTime = 3.0; // Takes longer to abduct (heavier)
+        this.abductionTime = 3.5; // Takes longer to abduct (heavier)
         this.groundY = this.y;
 
         // More points for heavy tank
@@ -3880,7 +3924,7 @@ class HeavyTank {
         }
     }
 
-    destroy() {
+    destroy(pointsMultiplier = 1) {
         this.alive = false;
         this.respawnTimer = 5; // Respawn timer (longer than regular tank)
 
@@ -3888,15 +3932,16 @@ class HeavyTank {
         createExplosion(this.x + this.width / 2, this.y + this.height / 2, 'large');
 
         // Award points
-        score += this.points;
+        const pointsEarned = Math.floor(this.points * pointsMultiplier);
+        score += pointsEarned;
         harvestCount.tank++;
         harvestBounce.tank = 1;
         waveStats.targetsBeamed.tank++;
         waveStats.tanksDestroyed++;
-        waveStats.points += this.points;
+        waveStats.points += pointsEarned;
 
         // Floating text
-        createFloatingText(this.x + this.width / 2, this.y, `+${this.points}`, '#ff0');
+        createFloatingText(this.x + this.width / 2, this.y, `+${pointsEarned}`, '#ff0');
 
         // Sound
         SFX.explosion(true);
@@ -4673,17 +4718,22 @@ function formatRelativeDate(timestamp) {
     if (hours < 24) return `${hours}h ago`;
     if (days <= 2) return `${days}d ago`;
 
-    // Compact date for older entries
     const date = new Date(timestamp);
-    const month = date.getMonth() + 1;
     const day = date.getDate();
     const year = date.getFullYear();
-    const currentYear = new Date().getFullYear();
+    const month = date.toLocaleString('en-US', { month: 'long' });
 
-    if (year !== currentYear) {
-        return `${month}/${day}/${String(year).slice(-2)}`;
-    }
-    return `${month}/${day}`;
+    const suffix = (() => {
+        if (day >= 11 && day <= 13) return 'th';
+        switch (day % 10) {
+            case 1: return 'st';
+            case 2: return 'nd';
+            case 3: return 'rd';
+            default: return 'th';
+        }
+    })();
+
+    return `${month} ${day}${suffix}, ${year}`;
 }
 
 // API base URL - use full URL when proxied through studio.mfelix.org
@@ -4805,6 +4855,7 @@ function createCelebrationEffect() {
 // ============================================
 
 function startGame() {
+    clearTutorialTimeouts();
     gameState = 'PLAYING';
     gameStartTime = Date.now();
     // Track session after 30 seconds of play
@@ -4871,6 +4922,8 @@ function startGame() {
 
     // Spawn initial tanks
     spawnTanks();
+
+    scheduleTutorialHints();
 }
 
 // ============================================
@@ -5270,7 +5323,7 @@ function renderTurretIndicator(startX, startY) {
     const labelX = startX + panelPadding;
     ctx.fillText(labelText, labelX, startY + panelHeight / 2 + 4);
 
-    // Keyboard key badge for T (after label)
+    // Keyboard key badge for T/Z (after label)
     const keyX = labelX + labelWidth + labelGap;
     const keyY = startY + (panelHeight - keyHeight) / 2;
 
@@ -5290,7 +5343,7 @@ function renderTurretIndicator(startX, startY) {
     ctx.fillStyle = isActive ? '#ffaaaa' : '#fff';
     ctx.font = 'bold 11px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('T', keyX + keyWidth / 2, keyY + keyHeight / 2 + 3);
+    ctx.fillText('T/Z', keyX + keyWidth / 2, keyY + keyHeight / 2 + 3);
 
     // Draw turret icon (laser gun shape) - after the key
     const iconX = keyX + keyWidth + keyPadding + iconSize / 2;
@@ -7036,6 +7089,15 @@ function updateWaveTransition(dt) {
         lastTimerWarningSecond = -1; // Reset timer warning
         gameState = 'PLAYING';
 
+        if (turretHintPending) {
+            createFloatingText(canvas.width / 2, canvas.height * 0.35, 'LASER TURRET READY: PRESS T OR Z', '#ffaaaa', {
+                lifetime: 2.8,
+                vy: -10,
+                fontSize: 22
+            });
+            turretHintPending = false;
+        }
+
         // Spawn tanks for new wave
         spawnTanks();
 
@@ -7222,15 +7284,10 @@ function renderShop() {
     }
 
     // ========== HEADER: Title and Points ==========
-    ctx.fillStyle = '#0ff';
-    ctx.font = 'bold 32px monospace';
-    ctx.textAlign = 'left';
-    ctx.fillText('UFO SHOP', gridStartX, headerY);
-
     ctx.fillStyle = '#ff0';
     ctx.font = 'bold 24px monospace';
-    ctx.textAlign = 'right';
-    ctx.fillText(`${ufoBucks} UFO BUCKS`, gridStartX + gridWidth, headerY);
+    ctx.textAlign = 'left';
+    ctx.fillText(`${ufoBucks} UFO BUCKS`, gridStartX, headerY);
 
     // Calculate cart total
     const cartTotal = shopCart.reduce((sum, itemId) => {
@@ -7907,6 +7964,7 @@ function applyShopItemEffect(item) {
             break;
         case 'turret':
             playerInventory.hasTurret = true;
+            turretHintPending = true;
             break;
         case 'turretDamage':
             playerInventory.turretDamageBonus += item.value;
