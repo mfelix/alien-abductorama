@@ -88,6 +88,8 @@ const CONFIG = {
     TURRET_ENERGY_COST: 15,         // Energy per second to fire
     TURRET_BEAM_WIDTH: 4,           // Visual beam width
     TURRET_RANGE: 600,              // Max range of turret
+    TURRET_START_COUNT: 2,          // Starting turret charges per game
+    TURRET_MAX_COUNT: 5,            // Maximum turret charges player can hold
 
     // Tank Health
     TANK_HEALTH: 50,                // Regular tank health
@@ -215,6 +217,15 @@ const CONFIG = {
             color: '#ff8800',
             effect: 'bombs',
             value: 2
+        },
+        {
+            id: 'laser_turret',
+            name: 'LASER TURRET',
+            description: '+1 turret charge (hold T)',
+            cost: 200,
+            color: '#f44',
+            effect: 'turrets',
+            value: 1
         }
     ]
 };
@@ -960,7 +971,8 @@ let playerInventory = {
     maxEnergyBonus: 0,
     speedBonus: 0,
     energyCells: 0,  // Revive charges - prevents game over
-    bombs: 0         // Bomb count
+    bombs: 0,        // Bomb count
+    turrets: 0       // Laser turret charges
 };
 
 // Active bombs in the world
@@ -1564,12 +1576,15 @@ class UFO {
             }
         }
 
-        // Handle laser turret (T key)
+        // Handle laser turret (T key) - requires turret charges
         const wantsTurret = keys['KeyT'];
         const canFireTurret = this.energy >= CONFIG.TURRET_ENERGY_COST * dt;
+        const hasTurretCharge = playerInventory.turrets > 0;
 
-        if (wantsTurret && canFireTurret) {
+        if (wantsTurret && canFireTurret && (this.turretActive || hasTurretCharge)) {
             if (!this.turretActive) {
+                // Consume a turret charge on activation
+                playerInventory.turrets--;
                 SFX.turretStart && SFX.turretStart();
             }
             this.turretActive = true;
@@ -4171,7 +4186,8 @@ function startGame() {
         maxEnergyBonus: 0,
         speedBonus: 0,
         energyCells: 0,
-        bombs: CONFIG.BOMB_START_COUNT
+        bombs: CONFIG.BOMB_START_COUNT,
+        turrets: CONFIG.TURRET_START_COUNT
     };
 
     // Clear active bombs
@@ -4319,11 +4335,11 @@ function renderUI() {
     // ========== BOMB COUNT (below energy cells) ==========
     renderBombCount(shieldX, shieldY + shieldBarHeight + 60);
 
-    // ========== WARP COOLDOWN (below bomb count) ==========
-    renderWarpCooldown(shieldX, shieldY + shieldBarHeight + 110);
+    // ========== TURRET COUNT (below bomb count) ==========
+    renderTurretCount(shieldX, shieldY + shieldBarHeight + 110);
 
-    // ========== TURRET INDICATOR (next to warp cooldown) ==========
-    renderTurretIndicator(shieldX + 80, shieldY + shieldBarHeight + 110);
+    // ========== WARP COOLDOWN (below turret count) ==========
+    renderWarpCooldown(shieldX, shieldY + shieldBarHeight + 160);
 
     // ========== TOP CENTER: HARVEST COUNTER ==========
     renderHarvestCounter();
@@ -4427,6 +4443,61 @@ function renderBombCount(startX, startY) {
     ctx.fillText('BOMB [X]', startX + panelWidth + 5, startY + panelHeight / 2 + 4);
 }
 
+function renderTurretCount(startX, startY) {
+    const turretCount = playerInventory.turrets;
+    if (turretCount <= 0) return; // Don't show if no turrets
+
+    const turretSize = 16;
+    const spacing = 5;
+    const panelPadding = 8;
+    const panelWidth = (turretSize + spacing) * turretCount + panelPadding * 2 - spacing;
+    const panelHeight = turretSize + panelPadding * 2;
+    const isActive = ufo && ufo.turretActive;
+
+    // Panel background
+    ctx.fillStyle = isActive ? 'rgba(255, 50, 50, 0.5)' : 'rgba(0, 0, 0, 0.4)';
+    ctx.beginPath();
+    ctx.roundRect(startX, startY, panelWidth, panelHeight, 6);
+    ctx.fill();
+
+    // Active pulse border
+    if (isActive) {
+        const pulse = Math.sin(Date.now() / 100) * 0.3 + 0.7;
+        ctx.strokeStyle = `rgba(255, 150, 150, ${pulse})`;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
+
+    // Draw turret icons (laser beam style)
+    for (let i = 0; i < turretCount; i++) {
+        const x = startX + panelPadding + i * (turretSize + spacing) + turretSize / 2;
+        const y = startY + panelPadding + turretSize / 2;
+
+        // Turret base
+        ctx.fillStyle = '#666';
+        ctx.beginPath();
+        ctx.arc(x, y + 3, turretSize / 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Turret barrel
+        ctx.fillStyle = '#888';
+        ctx.fillRect(x - 2, y - turretSize / 2, 4, turretSize / 2 + 3);
+
+        // Laser glow
+        const glowIntensity = Math.sin(Date.now() / 150 + i) * 0.3 + 0.7;
+        ctx.fillStyle = `rgba(255, 100, 100, ${glowIntensity})`;
+        ctx.beginPath();
+        ctx.arc(x, y - turretSize / 2 + 2, 3, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // Label and key hint
+    ctx.fillStyle = '#f44';
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('TURRET [T]', startX + panelWidth + 5, startY + panelHeight / 2 + 4);
+}
+
 function renderWarpCooldown(startX, startY) {
     if (!ufo) return;
 
@@ -4463,34 +4534,6 @@ function renderWarpCooldown(startX, startY) {
     ctx.font = 'bold 10px monospace';
     ctx.textAlign = 'center';
     ctx.fillText('WARP', startX + panelWidth / 2, startY + panelHeight / 2 + 4);
-}
-
-function renderTurretIndicator(startX, startY) {
-    if (!ufo) return;
-
-    const panelWidth = 70;
-    const panelHeight = 24;
-    const isActive = ufo.turretActive && ufo.turretTarget;
-
-    // Panel background
-    ctx.fillStyle = isActive ? 'rgba(255, 100, 100, 0.5)' : 'rgba(0, 0, 0, 0.4)';
-    ctx.beginPath();
-    ctx.roundRect(startX, startY, panelWidth, panelHeight, 4);
-    ctx.fill();
-
-    // Active indicator with pulse
-    if (isActive) {
-        const pulse = Math.sin(Date.now() / 100) * 0.3 + 0.7;
-        ctx.strokeStyle = `rgba(255, 150, 150, ${pulse})`;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-    }
-
-    // Label
-    ctx.fillStyle = isActive ? '#fff' : '#888';
-    ctx.font = 'bold 10px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('TURRET [T]', startX + panelWidth / 2, startY + panelHeight / 2 + 4);
 }
 
 function renderHarvestCounter() {
@@ -5777,6 +5820,9 @@ function purchaseShopItem() {
             break;
         case 'bombs':
             playerInventory.bombs = Math.min(CONFIG.BOMB_MAX_COUNT, playerInventory.bombs + item.value);
+            break;
+        case 'turrets':
+            playerInventory.turrets = Math.min(CONFIG.TURRET_MAX_COUNT, playerInventory.turrets + item.value);
             break;
     }
 
