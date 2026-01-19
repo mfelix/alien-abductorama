@@ -892,6 +892,106 @@ const SFX = {
 
         osc.start();
         osc.stop(audioCtx.currentTime + 0.2);
+    },
+
+    // Shop music state
+    shopMusicNodes: null,
+    shopMusicInterval: null,
+
+    startShopMusic: () => {
+        if (!audioCtx || SFX.shopMusicNodes) return;
+
+        // Cheesy elevator muzak - arpeggio pattern
+        const masterGain = audioCtx.createGain();
+        masterGain.gain.setValueAtTime(0, audioCtx.currentTime);
+        masterGain.gain.linearRampToValueAtTime(0.08, audioCtx.currentTime + 0.5);
+        masterGain.connect(audioCtx.destination);
+
+        // Pad drone for warmth
+        const pad = audioCtx.createOscillator();
+        const padGain = audioCtx.createGain();
+        const padFilter = audioCtx.createBiquadFilter();
+        pad.type = 'sine';
+        pad.frequency.setValueAtTime(130.81, audioCtx.currentTime); // C3
+        padFilter.type = 'lowpass';
+        padFilter.frequency.setValueAtTime(400, audioCtx.currentTime);
+        padGain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        pad.connect(padFilter);
+        padFilter.connect(padGain);
+        padGain.connect(masterGain);
+        pad.start();
+
+        // Second pad for richness (fifth above)
+        const pad2 = audioCtx.createOscillator();
+        const pad2Gain = audioCtx.createGain();
+        pad2.type = 'sine';
+        pad2.frequency.setValueAtTime(196.0, audioCtx.currentTime); // G3
+        pad2Gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+        pad2.connect(pad2Gain);
+        pad2Gain.connect(masterGain);
+        pad2.start();
+
+        // Store nodes for cleanup
+        SFX.shopMusicNodes = { masterGain, pad, padGain, padFilter, pad2, pad2Gain, arpeggioOscs: [] };
+
+        // Cheesy arpeggio pattern - plays notes in sequence
+        const notes = [
+            261.63, 329.63, 392.00, 523.25,  // C4, E4, G4, C5
+            392.00, 329.63, 261.63, 196.00,  // G4, E4, C4, G3
+            293.66, 369.99, 440.00, 587.33,  // D4, F#4, A4, D5
+            440.00, 369.99, 293.66, 220.00   // A4, F#4, D4, A3
+        ];
+        let noteIndex = 0;
+
+        const playNote = () => {
+            if (!audioCtx || !SFX.shopMusicNodes) return;
+
+            const osc = audioCtx.createOscillator();
+            const noteGain = audioCtx.createGain();
+
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(notes[noteIndex], audioCtx.currentTime);
+
+            noteGain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+            noteGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.18);
+
+            osc.connect(noteGain);
+            noteGain.connect(SFX.shopMusicNodes.masterGain);
+
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.2);
+
+            noteIndex = (noteIndex + 1) % notes.length;
+        };
+
+        // Start arpeggio
+        playNote();
+        SFX.shopMusicInterval = setInterval(playNote, 200);
+    },
+
+    stopShopMusic: () => {
+        if (SFX.shopMusicInterval) {
+            clearInterval(SFX.shopMusicInterval);
+            SFX.shopMusicInterval = null;
+        }
+
+        if (SFX.shopMusicNodes && audioCtx) {
+            const { masterGain, pad, pad2 } = SFX.shopMusicNodes;
+
+            // Fade out
+            masterGain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+
+            // Stop oscillators after fade
+            setTimeout(() => {
+                try {
+                    pad.stop();
+                    pad2.stop();
+                } catch (e) {
+                    // Already stopped
+                }
+                SFX.shopMusicNodes = null;
+            }, 350);
+        }
     }
 };
 
@@ -1170,6 +1270,7 @@ window.addEventListener('keydown', (e) => {
         } else if (e.code === 'Enter') {
             // Checkout and start wave
             checkoutCart();
+            SFX.stopShopMusic && SFX.stopShopMusic();
             waveTransitionTimer = CONFIG.WAVE_TRANSITION_DURATION;
             gameState = 'WAVE_TRANSITION';
         }
@@ -1329,6 +1430,7 @@ canvas.addEventListener('click', (e) => {
         if (mouseX >= b.x && mouseX <= b.x + b.width &&
             mouseY >= b.y && mouseY <= b.y + b.height) {
             checkoutCart(); // Auto-checkout when done
+            SFX.stopShopMusic && SFX.stopShopMusic();
             waveTransitionTimer = CONFIG.WAVE_TRANSITION_DURATION;
             gameState = 'WAVE_TRANSITION';
             return;
@@ -6750,6 +6852,7 @@ function enterShopFromSummary() {
     selectedShopItem = 0;
     shopCart = [];
     gameState = 'SHOP';
+    SFX.startShopMusic && SFX.startShopMusic();
 }
 
 function updateWaveSummary(dt) {
@@ -7179,6 +7282,7 @@ function updateShop(dt) {
 
     if (shopTimer <= 0) {
         // Shop time is up, start wave transition
+        SFX.stopShopMusic && SFX.stopShopMusic();
         waveTransitionTimer = CONFIG.WAVE_TRANSITION_DURATION;
         gameState = 'WAVE_TRANSITION';
     }
