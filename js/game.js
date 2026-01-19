@@ -185,7 +185,7 @@ const CONFIG = {
             id: 'shield_single',
             name: 'SHIELD CELL',
             description: '+1 shield charge',
-            cost: 60,
+            cost: 50,
             color: '#0af',
             effect: 'shield',
             value: 1
@@ -221,7 +221,7 @@ const CONFIG = {
             id: 'bomb_single',
             name: 'BOMB AMMO',
             description: '+1 max bomb',
-            cost: 120,
+            cost: 100,
             color: '#ff8800',
             effect: 'bombCapacity',
             value: 1
