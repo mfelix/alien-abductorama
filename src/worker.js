@@ -8,6 +8,18 @@ const MAX_ENTRIES = 10;
 const ACTIVITY_KEY = 'activity_stats';
 const MAX_RECENT_GAMES = 100; // Keep last 100 timestamps for rolling window
 
+// Feedback constants
+const FEEDBACK_SUGGESTIONS_KEY = 'feedback_suggestions';
+const FEEDBACK_AGGREGATES_KEY = 'feedback_aggregates';
+const MAX_SUGGESTIONS = 500; // Keep last 500 suggestions
+const MAX_SUGGESTION_LENGTH = 300;
+
+// Basic profanity filter (expandable)
+const PROFANITY_LIST = [
+	'fuck', 'shit', 'ass', 'bitch', 'damn', 'cunt', 'dick', 'cock',
+	'pussy', 'nigger', 'faggot', 'retard', 'slut', 'whore'
+];
+
 // Anti-cheat constants
 const MAX_SCORE_PER_SECOND = 500; // Reasonable max with combos
 const MIN_GAME_LENGTH_SECONDS = 10;
@@ -68,6 +80,25 @@ export default {
 			return new Response('Method Not Allowed', { status: 405 });
 		}
 
+		if (url.pathname === '/api/feedback') {
+			if (request.method === 'GET') {
+				return handleGetFeedback(request, env, url);
+			}
+			if (request.method === 'POST') {
+				return handlePostFeedback(request, env);
+			}
+			return new Response('Method Not Allowed', { status: 405 });
+		}
+
+		// Match /api/feedback/{id}/vote
+		const voteMatch = url.pathname.match(/^\/api\/feedback\/([^/]+)\/vote$/);
+		if (voteMatch) {
+			if (request.method === 'POST') {
+				return handlePostVote(request, env, voteMatch[1]);
+			}
+			return new Response('Method Not Allowed', { status: 405 });
+		}
+
 		// Static assets are handled automatically by the assets configuration
 		return new Response('Not Found', { status: 404 });
 	},
@@ -108,6 +139,33 @@ async function updateLastPlayedAt(env, timestamp) {
 function calculateGamesThisWeek(recentGames) {
 	const oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
 	return recentGames.filter(ts => ts > oneWeekAgo).length;
+}
+
+// Feedback helpers
+function containsProfanity(text) {
+	const lower = text.toLowerCase();
+	return PROFANITY_LIST.some(word => {
+		// Match whole words or word boundaries
+		const regex = new RegExp(`\\b${word}\\b|${word}`, 'i');
+		return regex.test(lower);
+	});
+}
+
+async function getFeedbackAggregates(env) {
+	const aggregates = await env.ALIEN_ABDUCTORAMA_HIGH_SCORES.get(FEEDBACK_AGGREGATES_KEY, { type: 'json' });
+	return aggregates || {
+		totalResponses: 0,
+		ratings: {
+			enjoyment: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+			difficulty: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+			returnIntent: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }
+		}
+	};
+}
+
+async function getFeedbackSuggestions(env) {
+	const suggestions = await env.ALIEN_ABDUCTORAMA_HIGH_SCORES.get(FEEDBACK_SUGGESTIONS_KEY, { type: 'json' });
+	return suggestions || [];
 }
 
 async function handleGetScores(request, env) {
@@ -270,6 +328,202 @@ async function handlePostSession(request, env) {
 		return new Response(JSON.stringify({ error: 'Failed to update session' }), {
 			status: 500,
 			headers: { 'Content-Type': 'application/json', ...corsHeaders },
+		});
+	}
+}
+
+async function handleGetFeedback(request, env, url) {
+	const corsHeaders = getCorsHeaders(request);
+	try {
+		const sort = url.searchParams.get('sort') || 'recent';
+		const limit = Math.min(parseInt(url.searchParams.get('limit')) || 50, 100);
+		const offset = parseInt(url.searchParams.get('offset')) || 0;
+
+		const [aggregates, allSuggestions] = await Promise.all([
+			getFeedbackAggregates(env),
+			getFeedbackSuggestions(env)
+		]);
+
+		// Sort suggestions
+		let sorted = [...allSuggestions];
+		if (sort === 'top') {
+			sorted.sort((a, b) => b.upvotes - a.upvotes);
+		} else {
+			sorted.sort((a, b) => b.timestamp - a.timestamp);
+		}
+
+		// Paginate
+		const suggestions = sorted.slice(offset, offset + limit);
+
+		// Calculate average ratings
+		const avgRatings = {};
+		for (const [key, counts] of Object.entries(aggregates.ratings)) {
+			let sum = 0, total = 0;
+			for (const [rating, count] of Object.entries(counts)) {
+				sum += parseInt(rating) * count;
+				total += count;
+			}
+			avgRatings[key] = total > 0 ? (sum / total).toFixed(1) : '0.0';
+		}
+
+		return new Response(JSON.stringify({
+			suggestions,
+			stats: {
+				totalResponses: aggregates.totalResponses,
+				averageRatings: avgRatings,
+				totalSuggestions: allSuggestions.length
+			},
+			pagination: {
+				offset,
+				limit,
+				total: allSuggestions.length
+			}
+		}), {
+			headers: { 'Content-Type': 'application/json', ...corsHeaders }
+		});
+	} catch (error) {
+		return new Response(JSON.stringify({ error: 'Failed to fetch feedback' }), {
+			status: 500,
+			headers: { 'Content-Type': 'application/json', ...corsHeaders }
+		});
+	}
+}
+
+async function handlePostFeedback(request, env) {
+	const corsHeaders = getCorsHeaders(request);
+	try {
+		const body = await request.json();
+		const { enjoymentRating, difficultyRating, returnIntentRating, suggestion } = body;
+
+		// Validate ratings (1-5)
+		for (const [name, rating] of [
+			['enjoymentRating', enjoymentRating],
+			['difficultyRating', difficultyRating],
+			['returnIntentRating', returnIntentRating]
+		]) {
+			if (typeof rating !== 'number' || rating < 1 || rating > 5 || !Number.isInteger(rating)) {
+				return new Response(JSON.stringify({ error: `Invalid ${name}: must be integer 1-5` }), {
+					status: 400,
+					headers: { 'Content-Type': 'application/json', ...corsHeaders }
+				});
+			}
+		}
+
+		// Validate suggestion if provided
+		let cleanSuggestion = null;
+		if (suggestion && typeof suggestion === 'string') {
+			const trimmed = suggestion.trim();
+			if (trimmed.length > 0) {
+				if (trimmed.length > MAX_SUGGESTION_LENGTH) {
+					return new Response(JSON.stringify({ error: `Suggestion too long: max ${MAX_SUGGESTION_LENGTH} characters` }), {
+						status: 400,
+						headers: { 'Content-Type': 'application/json', ...corsHeaders }
+					});
+				}
+				if (containsProfanity(trimmed)) {
+					return new Response(JSON.stringify({ error: 'Suggestion contains inappropriate language' }), {
+						status: 400,
+						headers: { 'Content-Type': 'application/json', ...corsHeaders }
+					});
+				}
+				cleanSuggestion = trimmed;
+			}
+		}
+
+		const countryCode = request.headers.get('CF-IPCountry') || 'XX';
+		const timestamp = Date.now();
+
+		// Update aggregates
+		const aggregates = await getFeedbackAggregates(env);
+		aggregates.totalResponses += 1;
+		aggregates.ratings.enjoyment[enjoymentRating] += 1;
+		aggregates.ratings.difficulty[difficultyRating] += 1;
+		aggregates.ratings.returnIntent[returnIntentRating] += 1;
+		await env.ALIEN_ABDUCTORAMA_HIGH_SCORES.put(FEEDBACK_AGGREGATES_KEY, JSON.stringify(aggregates));
+
+		// Add suggestion if provided
+		let suggestionId = null;
+		if (cleanSuggestion) {
+			suggestionId = crypto.randomUUID();
+			const suggestions = await getFeedbackSuggestions(env);
+			suggestions.push({
+				id: suggestionId,
+				text: cleanSuggestion,
+				countryCode,
+				timestamp,
+				upvotes: 0,
+				voterIds: []
+			});
+
+			// Keep only the most recent suggestions
+			const trimmed = suggestions.slice(-MAX_SUGGESTIONS);
+			await env.ALIEN_ABDUCTORAMA_HIGH_SCORES.put(FEEDBACK_SUGGESTIONS_KEY, JSON.stringify(trimmed));
+		}
+
+		return new Response(JSON.stringify({
+			success: true,
+			suggestionId
+		}), {
+			headers: { 'Content-Type': 'application/json', ...corsHeaders }
+		});
+	} catch (error) {
+		return new Response(JSON.stringify({ error: 'Failed to submit feedback' }), {
+			status: 500,
+			headers: { 'Content-Type': 'application/json', ...corsHeaders }
+		});
+	}
+}
+
+async function handlePostVote(request, env, suggestionId) {
+	const corsHeaders = getCorsHeaders(request);
+	try {
+		const body = await request.json();
+		const { voterId } = body;
+
+		if (!voterId || typeof voterId !== 'string') {
+			return new Response(JSON.stringify({ error: 'Invalid voterId' }), {
+				status: 400,
+				headers: { 'Content-Type': 'application/json', ...corsHeaders }
+			});
+		}
+
+		const suggestions = await getFeedbackSuggestions(env);
+		const suggestion = suggestions.find(s => s.id === suggestionId);
+
+		if (!suggestion) {
+			return new Response(JSON.stringify({ error: 'Suggestion not found' }), {
+				status: 404,
+				headers: { 'Content-Type': 'application/json', ...corsHeaders }
+			});
+		}
+
+		// Check if already voted
+		if (suggestion.voterIds.includes(voterId)) {
+			return new Response(JSON.stringify({
+				success: false,
+				error: 'Already voted',
+				upvotes: suggestion.upvotes
+			}), {
+				headers: { 'Content-Type': 'application/json', ...corsHeaders }
+			});
+		}
+
+		// Add vote
+		suggestion.voterIds.push(voterId);
+		suggestion.upvotes += 1;
+
+		await env.ALIEN_ABDUCTORAMA_HIGH_SCORES.put(FEEDBACK_SUGGESTIONS_KEY, JSON.stringify(suggestions));
+
+		return new Response(JSON.stringify({
+			success: true,
+			upvotes: suggestion.upvotes
+		}), {
+			headers: { 'Content-Type': 'application/json', ...corsHeaders }
+		});
+	} catch (error) {
+		return new Response(JSON.stringify({ error: 'Failed to submit vote' }), {
+			status: 500,
+			headers: { 'Content-Type': 'application/json', ...corsHeaders }
 		});
 	}
 }

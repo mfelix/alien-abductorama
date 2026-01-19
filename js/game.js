@@ -1085,6 +1085,32 @@ let nameEntryPosition = 0;
 let nameEntryComplete = false;
 let newHighScoreRank = null;
 
+// Feedback state
+let feedbackRatings = { enjoyment: 0, difficulty: 0, returnIntent: 0 };
+let feedbackSuggestion = '';
+let feedbackCursorPosition = 0;
+let feedbackCursorVisible = true;
+let feedbackCursorBlinkTimer = 0;
+let feedbackSelectedRow = 0; // 0-2 for ratings, 3 for text, 4 for buttons
+let feedbackSelectedButton = 0; // 0 = Submit, 1 = Skip
+let feedbackSubmitting = false;
+let feedbackError = null;
+let feedbackButtonBounds = { submit: null, skip: null };
+let feedbackStarBounds = []; // Array of { row, star, x, y, width, height }
+
+// Title screen tabs
+let titleTab = 'leaderboard'; // 'leaderboard', 'changelog', 'feedback'
+let titleTabBounds = []; // Array of { tab, x, y, width, height }
+
+// Feedback browse state (for title screen feedback tab)
+let feedbackData = null;
+let feedbackLoading = false;
+let feedbackFetchError = null;
+let feedbackSort = 'recent'; // 'recent' or 'top'
+let feedbackScrollOffset = 0;
+let feedbackSuggestionBounds = []; // For upvote click detection
+let feedbackSortBounds = { recent: null, top: null };
+
 // Harvest counter - tracks how many of each target type has been abducted
 const TARGET_TYPES = ['human', 'cow', 'sheep', 'cat', 'dog', 'tank'];
 let harvestCount = {
@@ -1221,13 +1247,96 @@ window.addEventListener('keydown', (e) => {
             submitScore(name).then(rank => {
                 newHighScoreRank = rank;
                 nameEntryUfo.initialized = false;  // Reset for next time
-                gameState = 'TITLE';
-                fetchLeaderboard(); // Refresh leaderboard after submission
+                resetFeedbackState();
+                gameState = 'FEEDBACK';
             });
         } else if (/^[A-Za-z]$/.test(e.key)) {
             // Direct letter input
             nameEntryChars[nameEntryPosition] = e.key.toUpperCase();
             nameEntryPosition = Math.min(2, nameEntryPosition + 1);
+        }
+        return;
+    }
+
+    // Handle feedback input
+    if (gameState === 'FEEDBACK') {
+        if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Escape', 'Tab'].includes(e.key)) {
+            e.preventDefault();
+        }
+
+        if (feedbackSubmitting) return;
+
+        const ratingKeys = ['enjoyment', 'difficulty', 'returnIntent'];
+
+        if (e.key === 'ArrowUp') {
+            feedbackSelectedRow = Math.max(0, feedbackSelectedRow - 1);
+        } else if (e.key === 'ArrowDown') {
+            feedbackSelectedRow = Math.min(4, feedbackSelectedRow + 1);
+        } else if (e.key === 'ArrowLeft') {
+            if (feedbackSelectedRow < 3) {
+                // Rating row - decrease star
+                const key = ratingKeys[feedbackSelectedRow];
+                feedbackRatings[key] = Math.max(0, feedbackRatings[key] - 1);
+            } else if (feedbackSelectedRow === 3) {
+                // Text field - move cursor left
+                feedbackCursorPosition = Math.max(0, feedbackCursorPosition - 1);
+            } else {
+                // Button row
+                feedbackSelectedButton = 0;
+            }
+        } else if (e.key === 'ArrowRight') {
+            if (feedbackSelectedRow < 3) {
+                // Rating row - increase star
+                const key = ratingKeys[feedbackSelectedRow];
+                feedbackRatings[key] = Math.min(5, feedbackRatings[key] + 1);
+            } else if (feedbackSelectedRow === 3) {
+                // Text field - move cursor right
+                feedbackCursorPosition = Math.min(feedbackSuggestion.length, feedbackCursorPosition + 1);
+            } else {
+                // Button row
+                feedbackSelectedButton = 1;
+            }
+        } else if (e.key === 'Enter') {
+            if (feedbackSelectedRow === 4) {
+                if (feedbackSelectedButton === 0) {
+                    submitFeedback();
+                } else {
+                    skipFeedback();
+                }
+            } else if (feedbackSelectedRow < 3) {
+                // Move to next row on Enter
+                feedbackSelectedRow++;
+            } else {
+                // From text field, move to buttons
+                feedbackSelectedRow = 4;
+            }
+        } else if (e.key === 'Escape') {
+            skipFeedback();
+        } else if (e.key === 'Tab') {
+            // Tab cycles through rows
+            feedbackSelectedRow = (feedbackSelectedRow + 1) % 5;
+        } else if (feedbackSelectedRow === 3) {
+            // Text input for suggestion field
+            if (e.key === 'Backspace') {
+                if (feedbackCursorPosition > 0) {
+                    feedbackSuggestion = feedbackSuggestion.slice(0, feedbackCursorPosition - 1) +
+                                         feedbackSuggestion.slice(feedbackCursorPosition);
+                    feedbackCursorPosition--;
+                }
+            } else if (e.key === 'Delete') {
+                feedbackSuggestion = feedbackSuggestion.slice(0, feedbackCursorPosition) +
+                                     feedbackSuggestion.slice(feedbackCursorPosition + 1);
+            } else if (e.key.length === 1 && feedbackSuggestion.length < 300) {
+                // Insert character at cursor
+                feedbackSuggestion = feedbackSuggestion.slice(0, feedbackCursorPosition) +
+                                     e.key +
+                                     feedbackSuggestion.slice(feedbackCursorPosition);
+                feedbackCursorPosition++;
+            }
+        } else if (feedbackSelectedRow < 3 && /^[1-5]$/.test(e.key)) {
+            // Number keys 1-5 set rating directly
+            const key = ratingKeys[feedbackSelectedRow];
+            feedbackRatings[key] = parseInt(e.key);
         }
         return;
     }
@@ -1324,6 +1433,18 @@ window.addEventListener('keydown', (e) => {
             startGame();
         }
 
+        // Tab key cycles through title screen tabs
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            const tabs = ['leaderboard', 'changelog', 'feedback'];
+            const currentIndex = tabs.indexOf(titleTab);
+            titleTab = tabs[(currentIndex + 1) % tabs.length];
+            feedbackScrollOffset = 0;
+            if (titleTab === 'feedback' && !feedbackData && !feedbackLoading) {
+                fetchFeedback();
+            }
+        }
+
         // Easter egg: Triple-T for free turret
         if (e.code === 'KeyT' && !e.repeat && !titleTurretUnlocked) {
             const now = Date.now();
@@ -1341,7 +1462,8 @@ window.addEventListener('keydown', (e) => {
             }
         }
     } else if (gameState === 'GAME_OVER' && e.code === 'Enter') {
-        startGame();
+        resetFeedbackState();
+        gameState = 'FEEDBACK';
     }
 });
 
@@ -1349,31 +1471,133 @@ window.addEventListener('keyup', (e) => {
     keys[e.code] = false;
 });
 
-// Changelog panel scroll support
+// Changelog and feedback panel scroll support
 canvas.addEventListener('wheel', (e) => {
-    if (gameState !== 'TITLE' || !changelogPanelBounds) return;
+    if (gameState !== 'TITLE') return;
 
-    // Check if mouse is over the changelog panel
     const rect = canvas.getBoundingClientRect();
     const mouseX = (e.clientX - rect.left) * (canvas.width / rect.width);
     const mouseY = (e.clientY - rect.top) * (canvas.height / rect.height);
 
-    const b = changelogPanelBounds;
-    if (mouseX >= b.x && mouseX <= b.x + b.width &&
-        mouseY >= b.y && mouseY <= b.y + b.height) {
+    // Feedback tab scrolling
+    if (titleTab === 'feedback' && feedbackData) {
+        const suggestions = feedbackData.suggestions || [];
+        const maxScroll = Math.max(0, (suggestions.length - 5) * 36);
+        feedbackScrollOffset = Math.max(0, Math.min(maxScroll, feedbackScrollOffset + e.deltaY));
         e.preventDefault();
-        changelogScrollOffset += e.deltaY * 0.5;
-        // Clamp will happen in render function when we know content height
+        return;
+    }
+
+    // Changelog panel scrolling
+    if (titleTab === 'changelog' && changelogPanelBounds) {
+        const b = changelogPanelBounds;
+        if (mouseX >= b.x && mouseX <= b.x + b.width &&
+            mouseY >= b.y && mouseY <= b.y + b.height) {
+            e.preventDefault();
+            changelogScrollOffset += e.deltaY * 0.5;
+            // Clamp will happen in render function when we know content height
+        }
     }
 }, { passive: false });
 
-// Shop mouse click support
+// Mouse click support for Shop, Feedback, and Title screens
 canvas.addEventListener('click', (e) => {
-    if (gameState !== 'SHOP') return;
-
     const rect = canvas.getBoundingClientRect();
     const mouseX = (e.clientX - rect.left) * (canvas.width / rect.width);
     const mouseY = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+    // Handle feedback clicks
+    if (gameState === 'FEEDBACK' && !feedbackSubmitting) {
+        // Check star clicks
+        for (const bound of feedbackStarBounds) {
+            if (mouseX >= bound.x && mouseX <= bound.x + bound.width &&
+                mouseY >= bound.y && mouseY <= bound.y + bound.height) {
+                const keys = ['enjoyment', 'difficulty', 'returnIntent'];
+                feedbackRatings[keys[bound.row]] = bound.star;
+                feedbackSelectedRow = bound.row;
+                return;
+            }
+        }
+
+        // Check button clicks
+        if (feedbackButtonBounds.submit) {
+            const b = feedbackButtonBounds.submit;
+            if (mouseX >= b.x && mouseX <= b.x + b.width &&
+                mouseY >= b.y && mouseY <= b.y + b.height) {
+                submitFeedback();
+                return;
+            }
+        }
+        if (feedbackButtonBounds.skip) {
+            const b = feedbackButtonBounds.skip;
+            if (mouseX >= b.x && mouseX <= b.x + b.width &&
+                mouseY >= b.y && mouseY <= b.y + b.height) {
+                skipFeedback();
+                return;
+            }
+        }
+        return;
+    }
+
+    // Title screen tab clicks
+    if (gameState === 'TITLE') {
+        // Check tab clicks
+        for (const bound of titleTabBounds) {
+            if (mouseX >= bound.x && mouseX <= bound.x + bound.width &&
+                mouseY >= bound.y && mouseY <= bound.y + bound.height) {
+                if (titleTab !== bound.tab) {
+                    titleTab = bound.tab;
+                    feedbackScrollOffset = 0;
+                    if (bound.tab === 'feedback' && !feedbackData && !feedbackLoading) {
+                        fetchFeedback();
+                    }
+                }
+                return;
+            }
+        }
+
+        // Feedback tab interactions
+        if (titleTab === 'feedback' && feedbackData) {
+            // Sort button clicks
+            if (feedbackSortBounds.recent) {
+                const b = feedbackSortBounds.recent;
+                if (mouseX >= b.x && mouseX <= b.x + b.width &&
+                    mouseY >= b.y && mouseY <= b.y + b.height) {
+                    if (feedbackSort !== 'recent') {
+                        feedbackSort = 'recent';
+                        fetchFeedback();
+                    }
+                    return;
+                }
+            }
+            if (feedbackSortBounds.top) {
+                const b = feedbackSortBounds.top;
+                if (mouseX >= b.x && mouseX <= b.x + b.width &&
+                    mouseY >= b.y && mouseY <= b.y + b.height) {
+                    if (feedbackSort !== 'top') {
+                        feedbackSort = 'top';
+                        fetchFeedback();
+                    }
+                    return;
+                }
+            }
+
+            // Upvote clicks
+            for (const bound of feedbackSuggestionBounds) {
+                if (mouseX >= bound.x && mouseX <= bound.x + bound.width &&
+                    mouseY >= bound.y && mouseY <= bound.y + bound.height) {
+                    if (!bound.hasVoted) {
+                        upvoteSuggestion(bound.id);
+                    }
+                    return;
+                }
+            }
+        }
+        return;
+    }
+
+    // Handle shop clicks
+    if (gameState !== 'SHOP') return;
 
     // Check if clicked on a shop item (adds to cart)
     for (let i = 0; i < shopItemBounds.length; i++) {
@@ -4799,6 +5023,15 @@ function countryCodeToFlag(countryCode) {
     return String.fromCodePoint(...codePoints);
 }
 
+function getOrCreateVoterId() {
+    let voterId = localStorage.getItem('alienAbductoramaVoterId');
+    if (!voterId) {
+        voterId = crypto.randomUUID();
+        localStorage.setItem('alienAbductoramaVoterId', voterId);
+    }
+    return voterId;
+}
+
 function formatRelativeDate(timestamp) {
     if (!timestamp) return '';
 
@@ -4902,6 +5135,112 @@ function scoreQualifiesForLeaderboard() {
     if (finalScore !== last.score) return finalScore > last.score;
     if (finalWave !== last.wave) return finalWave > last.wave;
     return true; // Same score/wave qualifies; sort will keep earlier timestamp first
+}
+
+// ============================================
+// FEEDBACK FUNCTIONS
+// ============================================
+
+function resetFeedbackState() {
+    feedbackRatings = { enjoyment: 0, difficulty: 0, returnIntent: 0 };
+    feedbackSuggestion = '';
+    feedbackCursorPosition = 0;
+    feedbackSelectedRow = 0;
+    feedbackSelectedButton = 0;
+    feedbackSubmitting = false;
+    feedbackError = null;
+    feedbackButtonBounds = { submit: null, skip: null };
+    feedbackStarBounds = [];
+}
+
+async function submitFeedback() {
+    if (feedbackSubmitting) return;
+
+    // Validate all ratings are filled
+    if (feedbackRatings.enjoyment === 0 || feedbackRatings.difficulty === 0 || feedbackRatings.returnIntent === 0) {
+        feedbackError = 'Please rate all three questions';
+        return;
+    }
+
+    feedbackSubmitting = true;
+    feedbackError = null;
+
+    try {
+        const response = await fetch(`${API_BASE}/api/feedback`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                enjoymentRating: feedbackRatings.enjoyment,
+                difficultyRating: feedbackRatings.difficulty,
+                returnIntentRating: feedbackRatings.returnIntent,
+                suggestion: feedbackSuggestion || null
+            })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            feedbackError = data.error || 'Failed to submit feedback';
+            feedbackSubmitting = false;
+            return;
+        }
+
+        // Success - go to title
+        resetFeedbackState();
+        gameState = 'TITLE';
+        fetchLeaderboard();
+        fetchFeedback(); // Refresh feedback data
+    } catch (error) {
+        feedbackError = 'Network error - please try again';
+        feedbackSubmitting = false;
+    }
+}
+
+function skipFeedback() {
+    resetFeedbackState();
+    gameState = 'TITLE';
+    fetchLeaderboard();
+}
+
+async function fetchFeedback() {
+    feedbackLoading = true;
+    feedbackFetchError = null;
+    try {
+        const response = await fetch(`${API_BASE}/api/feedback?sort=${feedbackSort}&limit=50`);
+        const data = await response.json();
+        feedbackData = data;
+    } catch (error) {
+        console.error('Failed to fetch feedback:', error);
+        feedbackFetchError = 'Failed to load - click to retry';
+        feedbackData = null;
+    }
+    feedbackLoading = false;
+}
+
+async function upvoteSuggestion(suggestionId) {
+    const voterId = getOrCreateVoterId();
+
+    try {
+        const response = await fetch(`${API_BASE}/api/feedback/${suggestionId}/vote`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ voterId })
+        });
+
+        const data = await response.json();
+
+        if (data.success && feedbackData) {
+            // Update local state
+            const suggestion = feedbackData.suggestions.find(s => s.id === suggestionId);
+            if (suggestion) {
+                suggestion.upvotes = data.upvotes;
+                suggestion.voterIds = suggestion.voterIds || [];
+                suggestion.voterIds.push(voterId);
+            }
+        }
+    } catch (error) {
+        console.error('Failed to upvote:', error);
+    }
 }
 
 function createCelebrationEffect() {
@@ -6471,75 +6810,21 @@ function renderTitleScreen() {
     ctx.textAlign = 'center';
     ctx.fillStyle = '#fff';
 
-    // Leaderboard
-    if (leaderboardLoading) {
-        ctx.fillStyle = '#888';
-        ctx.font = '18px monospace';
-        ctx.fillText('Loading scores...', canvas.width / 2, canvas.height / 2 + 10);
-    } else if (leaderboard.length > 0) {
-        // Activity stats (above TOP 10 header)
-        if (activityStats) {
-            ctx.fillStyle = '#888';
-            ctx.font = '14px monospace';
-            const lastPlayed = activityStats.lastGamePlayed
-                ? `Last played: ${formatRelativeDate(activityStats.lastGamePlayed)}`
-                : '';
-            const gamesWeek = `${activityStats.gamesThisWeek} ${activityStats.gamesThisWeek === 1 ? 'game' : 'games'} played this week`;
-            const statsText = lastPlayed ? `${lastPlayed}  •  ${gamesWeek}` : gamesWeek;
-            ctx.fillText(statsText, canvas.width / 2, canvas.height / 2 - 70);
-        }
+    // Render tabs
+    renderTitleTabs();
 
-        ctx.fillStyle = '#0ff';
-        ctx.font = 'bold 24px monospace';
-        ctx.fillText('LEADERBOARD', canvas.width / 2, canvas.height / 2 - 30);
-
-        ctx.font = '18px monospace';
-        const startY = canvas.height / 2 + 10;
-        const lineHeight = 26;
-
-        for (let i = 0; i < leaderboard.length; i++) {
-            const entry = leaderboard[i];
-            const y = startY + i * lineHeight;
-            const flag = countryCodeToFlag(entry.countryCode);
-            const isHighlighted = entry.id === highlightedEntryId;
-
-            // Apply glow effect for highlighted entry
-            if (isHighlighted) {
-                ctx.shadowColor = '#0ff';
-                ctx.shadowBlur = 10;
-            }
-
-            // Rank - highlighted entries use cyan, top 3 use yellow, others white
-            ctx.fillStyle = isHighlighted ? '#0ff' : (i < 3 ? '#ff0' : '#fff');
-            ctx.textAlign = 'right';
-            ctx.fillText(`${i + 1}.`, canvas.width / 2 - 220, y);
-
-            // Flag and Name
-            ctx.textAlign = 'left';
-            ctx.fillText(`${flag} ${entry.name}`, canvas.width / 2 - 200, y);
-
-            // Score
-            ctx.textAlign = 'right';
-            ctx.fillText(entry.score.toLocaleString(), canvas.width / 2 - 20, y);
-
-            // Wave - highlighted entries keep the glow with slightly brighter color
-            ctx.fillStyle = isHighlighted ? '#0aa' : '#888';
-            ctx.fillText(`Wave ${entry.wave}`, canvas.width / 2 + 90, y);
-
-            // Date
-            ctx.fillStyle = isHighlighted ? '#088' : '#666';
-            ctx.fillText(formatRelativeDate(entry.timestamp), canvas.width / 2 + 220, y);
-
-            // Reset shadow for next entry
-            if (isHighlighted) {
-                ctx.shadowBlur = 0;
-            }
-        }
+    // Render content based on active tab
+    switch (titleTab) {
+        case 'leaderboard':
+            renderLeaderboardContent();
+            break;
+        case 'changelog':
+            renderChangelogPanel();
+            break;
+        case 'feedback':
+            renderFeedbackTabContent();
+            break;
     }
-    ctx.textAlign = 'center';
-
-    // Changelog panel (right side)
-    renderChangelogPanel();
 
     // Easter egg: Turret unlock visual feedback
     if (titleTurretUnlocked) {
@@ -6601,6 +6886,298 @@ function renderTitleScreen() {
     ctx.fillText('Built by Ruby, Odessa, & Papa!!! We hope you love it and have fun!', canvas.width / 2, canvas.height - 30);
 }
 
+function renderTitleTabs() {
+    titleTabBounds = [];
+
+    const tabs = [
+        { id: 'leaderboard', label: 'Leaderboard' },
+        { id: 'changelog', label: 'Changelog' },
+        { id: 'feedback', label: 'Feedback' }
+    ];
+
+    const tabWidth = 140;
+    const tabHeight = 32;
+    const tabGap = 10;
+    const totalWidth = tabs.length * tabWidth + (tabs.length - 1) * tabGap;
+    const startX = canvas.width / 2 - totalWidth / 2;
+    const tabY = canvas.height / 2 - 110;
+
+    for (let i = 0; i < tabs.length; i++) {
+        const tab = tabs[i];
+        const x = startX + i * (tabWidth + tabGap);
+        const isActive = titleTab === tab.id;
+
+        // Store bounds
+        titleTabBounds.push({
+            tab: tab.id,
+            x, y: tabY,
+            width: tabWidth,
+            height: tabHeight
+        });
+
+        // Draw tab background
+        ctx.fillStyle = isActive ? '#0aa' : '#333';
+        ctx.beginPath();
+        ctx.roundRect(x, tabY, tabWidth, tabHeight, 6);
+        ctx.fill();
+
+        if (isActive) {
+            ctx.strokeStyle = '#0ff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        // Draw tab label
+        ctx.font = isActive ? 'bold 14px monospace' : '14px monospace';
+        ctx.fillStyle = isActive ? '#fff' : '#888';
+        ctx.textAlign = 'center';
+        ctx.fillText(tab.label, x + tabWidth / 2, tabY + 22);
+    }
+}
+
+function renderLeaderboardContent() {
+    if (leaderboardLoading) {
+        ctx.fillStyle = '#888';
+        ctx.font = '18px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('Loading scores...', canvas.width / 2, canvas.height / 2 + 10);
+        return;
+    }
+
+    if (leaderboard.length === 0) {
+        ctx.fillStyle = '#888';
+        ctx.font = '18px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('No scores yet - be the first!', canvas.width / 2, canvas.height / 2 + 10);
+        return;
+    }
+
+    // Activity stats (above header)
+    if (activityStats) {
+        ctx.fillStyle = '#888';
+        ctx.font = '14px monospace';
+        ctx.textAlign = 'center';
+        const lastPlayed = activityStats.lastGamePlayed
+            ? `Last played: ${formatRelativeDate(activityStats.lastGamePlayed)}`
+            : '';
+        const gamesWeek = `${activityStats.gamesThisWeek} ${activityStats.gamesThisWeek === 1 ? 'game' : 'games'} played this week`;
+        const statsText = lastPlayed ? `${lastPlayed}  •  ${gamesWeek}` : gamesWeek;
+        ctx.fillText(statsText, canvas.width / 2, canvas.height / 2 - 70);
+    }
+
+    ctx.fillStyle = '#0ff';
+    ctx.font = 'bold 20px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('TOP 10', canvas.width / 2, canvas.height / 2 - 40);
+
+    ctx.font = '18px monospace';
+    const startY = canvas.height / 2;
+    const lineHeight = 26;
+
+    for (let i = 0; i < leaderboard.length; i++) {
+        const entry = leaderboard[i];
+        const y = startY + i * lineHeight;
+        const flag = countryCodeToFlag(entry.countryCode);
+        const isHighlighted = entry.id === highlightedEntryId;
+
+        if (isHighlighted) {
+            ctx.shadowColor = '#0ff';
+            ctx.shadowBlur = 10;
+        }
+
+        ctx.fillStyle = isHighlighted ? '#0ff' : (i < 3 ? '#ff0' : '#fff');
+        ctx.textAlign = 'right';
+        ctx.fillText(`${i + 1}.`, canvas.width / 2 - 220, y);
+
+        ctx.textAlign = 'left';
+        ctx.fillText(`${flag} ${entry.name}`, canvas.width / 2 - 200, y);
+
+        ctx.textAlign = 'right';
+        ctx.fillText(entry.score.toLocaleString(), canvas.width / 2 - 20, y);
+
+        ctx.fillStyle = isHighlighted ? '#0aa' : '#888';
+        ctx.fillText(`Wave ${entry.wave}`, canvas.width / 2 + 90, y);
+
+        ctx.fillStyle = isHighlighted ? '#088' : '#666';
+        ctx.fillText(formatRelativeDate(entry.timestamp), canvas.width / 2 + 220, y);
+
+        if (isHighlighted) {
+            ctx.shadowBlur = 0;
+        }
+    }
+    ctx.textAlign = 'center';
+}
+
+function renderFeedbackTabContent() {
+    feedbackSuggestionBounds = [];
+
+    const centerX = canvas.width / 2;
+    let y = canvas.height / 2 - 60;
+
+    if (feedbackLoading) {
+        ctx.fillStyle = '#888';
+        ctx.font = '18px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('Loading feedback...', centerX, y + 50);
+        return;
+    }
+
+    if (feedbackFetchError) {
+        ctx.fillStyle = '#f55';
+        ctx.font = '16px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(feedbackFetchError, centerX, y + 50);
+        return;
+    }
+
+    if (!feedbackData) {
+        ctx.fillStyle = '#888';
+        ctx.font = '18px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('No feedback yet', centerX, y + 50);
+        return;
+    }
+
+    // Stats summary
+    const stats = feedbackData.stats;
+    ctx.font = '14px monospace';
+    ctx.fillStyle = '#888';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${stats.totalResponses} responses • ${stats.totalSuggestions} suggestions`, centerX, y);
+
+    y += 30;
+
+    // Average ratings
+    ctx.font = '16px monospace';
+    ctx.fillStyle = '#fff';
+
+    const ratingLabels = [
+        { key: 'enjoyment', label: 'Enjoyment' },
+        { key: 'difficulty', label: 'Difficulty' },
+        { key: 'returnIntent', label: 'Play Again' }
+    ];
+
+    const ratingStartX = centerX - 200;
+    for (let i = 0; i < ratingLabels.length; i++) {
+        const r = ratingLabels[i];
+        const x = ratingStartX + i * 140;
+        const avg = parseFloat(stats.averageRatings[r.key]) || 0;
+
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#aaa';
+        ctx.fillText(r.label, x, y);
+
+        // Star display
+        ctx.fillStyle = '#ff0';
+        ctx.font = '20px monospace';
+        const fullStars = Math.floor(avg);
+        let starText = '★'.repeat(fullStars) + '☆'.repeat(5 - fullStars);
+        ctx.fillText(starText, x, y + 25);
+
+        ctx.font = '12px monospace';
+        ctx.fillStyle = '#666';
+        ctx.fillText(`(${avg.toFixed(1)})`, x, y + 42);
+    }
+
+    y += 70;
+
+    // Sort buttons
+    const sortY = y;
+    ctx.font = '14px monospace';
+
+    const recentX = centerX - 60;
+    const topX = centerX + 40;
+
+    feedbackSortBounds.recent = { x: recentX - 40, y: sortY - 15, width: 80, height: 24 };
+    feedbackSortBounds.top = { x: topX - 30, y: sortY - 15, width: 60, height: 24 };
+
+    ctx.fillStyle = feedbackSort === 'recent' ? '#0ff' : '#666';
+    ctx.textAlign = 'center';
+    ctx.fillText('Recent', recentX, sortY);
+
+    ctx.fillStyle = feedbackSort === 'top' ? '#0ff' : '#666';
+    ctx.fillText('Top', topX, sortY);
+
+    y += 25;
+
+    // Suggestions list
+    const suggestions = feedbackData.suggestions || [];
+    const listHeight = 180;
+    const itemHeight = 36;
+    const maxVisible = Math.floor(listHeight / itemHeight);
+
+    if (suggestions.length === 0) {
+        ctx.fillStyle = '#666';
+        ctx.font = '14px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('No suggestions yet - be the first!', centerX, y + 40);
+        return;
+    }
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(centerX - 280, y, 560, listHeight);
+    ctx.clip();
+
+    const voterId = getOrCreateVoterId();
+
+    for (let i = 0; i < Math.min(suggestions.length, maxVisible + 1); i++) {
+        const idx = i + Math.floor(feedbackScrollOffset / itemHeight);
+        if (idx >= suggestions.length) break;
+
+        const s = suggestions[idx];
+        const itemY = y + i * itemHeight - (feedbackScrollOffset % itemHeight);
+
+        if (itemY < y - itemHeight || itemY > y + listHeight) continue;
+
+        // Flag
+        const flag = countryCodeToFlag(s.countryCode);
+        ctx.font = '16px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#fff';
+        ctx.fillText(flag, centerX - 270, itemY + 20);
+
+        // Text (truncated)
+        ctx.font = '14px monospace';
+        ctx.fillStyle = '#ccc';
+        const maxTextWidth = 400;
+        let text = s.text;
+        while (ctx.measureText(text).width > maxTextWidth && text.length > 0) {
+            text = text.slice(0, -1);
+        }
+        if (text !== s.text) text += '...';
+        ctx.fillText(text, centerX - 240, itemY + 20);
+
+        // Upvote button
+        const hasVoted = s.voterIds && s.voterIds.includes(voterId);
+        const upvoteX = centerX + 200;
+
+        feedbackSuggestionBounds.push({
+            id: s.id,
+            x: upvoteX,
+            y: itemY,
+            width: 60,
+            height: itemHeight,
+            hasVoted
+        });
+
+        ctx.font = '14px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = hasVoted ? '#0a0' : '#888';
+        ctx.fillText(`▲ ${s.upvotes}`, upvoteX + 30, itemY + 22);
+    }
+
+    ctx.restore();
+
+    // Scroll hint if more items
+    if (suggestions.length > maxVisible) {
+        ctx.font = '12px monospace';
+        ctx.fillStyle = '#666';
+        ctx.textAlign = 'center';
+        ctx.fillText('Scroll for more', centerX, y + listHeight + 15);
+    }
+}
+
 function renderRainbowBouncyText(text, centerX, baselineY, fontSize) {
     const phase = (Date.now() / 1000) * 3;
     ctx.save();
@@ -6659,8 +7236,235 @@ function renderGameOverScreen() {
     if (Math.floor(Date.now() / 500) % 2 === 0) {
         ctx.fillStyle = '#fff';
         ctx.font = 'bold 24px monospace';
-        ctx.fillText('Press ENTER to Play Again', canvas.width / 2, canvas.height / 2 + 120);
+        ctx.fillText('Press ENTER to continue', canvas.width / 2, canvas.height / 2 + 120);
     }
+}
+
+// ============================================
+// FEEDBACK SCREEN
+// ============================================
+
+function updateFeedback(dt) {
+    // Blink cursor
+    feedbackCursorBlinkTimer += dt;
+    if (feedbackCursorBlinkTimer >= 0.5) {
+        feedbackCursorBlinkTimer = 0;
+        feedbackCursorVisible = !feedbackCursorVisible;
+    }
+}
+
+function renderFeedbackScreen() {
+    renderBackground();
+
+    // Clear bounds for this frame
+    feedbackStarBounds = [];
+
+    const centerX = canvas.width / 2;
+    let y = 120;
+
+    // Title
+    ctx.font = 'bold 36px monospace';
+    ctx.fillStyle = '#0ff';
+    ctx.textAlign = 'center';
+    ctx.fillText('HOW WAS YOUR GAME?', centerX, y);
+
+    y += 20;
+
+    // Subtitle
+    ctx.font = '16px monospace';
+    ctx.fillStyle = '#888';
+    ctx.fillText('Your feedback helps us improve!', centerX, y + 30);
+
+    y += 80;
+
+    // Rating questions
+    const questions = [
+        { key: 'enjoyment', label: 'How much did you enjoy playing?' },
+        { key: 'difficulty', label: 'How was the difficulty?' },
+        { key: 'returnIntent', label: 'How likely are you to play again?' }
+    ];
+
+    const starSize = 32;
+    const starGap = 8;
+    const totalStarWidth = 5 * starSize + 4 * starGap;
+
+    for (let i = 0; i < questions.length; i++) {
+        const q = questions[i];
+        const isSelected = feedbackSelectedRow === i;
+
+        // Question label
+        ctx.font = isSelected ? 'bold 18px monospace' : '18px monospace';
+        ctx.fillStyle = isSelected ? '#0ff' : '#fff';
+        ctx.textAlign = 'center';
+        ctx.fillText(q.label, centerX, y);
+
+        y += 35;
+
+        // Stars
+        const startX = centerX - totalStarWidth / 2;
+        for (let s = 1; s <= 5; s++) {
+            const starX = startX + (s - 1) * (starSize + starGap);
+            const filled = s <= feedbackRatings[q.key];
+
+            // Store bounds for click detection
+            feedbackStarBounds.push({
+                row: i,
+                star: s,
+                x: starX,
+                y: y - starSize / 2,
+                width: starSize,
+                height: starSize
+            });
+
+            // Draw star
+            ctx.font = `${starSize}px monospace`;
+            ctx.textAlign = 'left';
+            if (filled) {
+                ctx.fillStyle = '#ff0';
+                ctx.shadowColor = '#ff0';
+                ctx.shadowBlur = isSelected ? 10 : 5;
+            } else {
+                ctx.fillStyle = isSelected ? '#666' : '#444';
+                ctx.shadowBlur = 0;
+            }
+            ctx.fillText('★', starX, y + starSize / 4);
+            ctx.shadowBlur = 0;
+        }
+
+        y += 50;
+    }
+
+    // Suggestion text field
+    y += 10;
+    const isTextSelected = feedbackSelectedRow === 3;
+
+    ctx.font = isTextSelected ? 'bold 16px monospace' : '16px monospace';
+    ctx.fillStyle = isTextSelected ? '#0ff' : '#aaa';
+    ctx.textAlign = 'center';
+    ctx.fillText('Any suggestions? (optional)', centerX, y);
+
+    y += 25;
+
+    // Text input box
+    const boxWidth = 500;
+    const boxHeight = 60;
+    const boxX = centerX - boxWidth / 2;
+
+    ctx.strokeStyle = isTextSelected ? '#0ff' : '#444';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(boxX, y, boxWidth, boxHeight, 8);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.fill();
+
+    // Text content with cursor
+    ctx.font = '14px monospace';
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'left';
+
+    const textPadding = 10;
+
+    // Simple text wrapping
+    let displayText = feedbackSuggestion || (isTextSelected ? '' : 'Click or type to add a suggestion...');
+    if (!feedbackSuggestion && !isTextSelected) {
+        ctx.fillStyle = '#666';
+    }
+
+    // Draw text (simple single-line for now, truncated)
+    const visibleText = displayText.slice(0, 55);
+    ctx.fillText(visibleText, boxX + textPadding, y + 25);
+
+    if (feedbackSuggestion.length > 55) {
+        const line2 = feedbackSuggestion.slice(55, 110);
+        ctx.fillText(line2, boxX + textPadding, y + 42);
+    }
+
+    // Cursor
+    if (isTextSelected && feedbackCursorVisible) {
+        const cursorLine = feedbackCursorPosition > 55 ? 1 : 0;
+        const cursorPosInLine = cursorLine === 0 ? feedbackCursorPosition : feedbackCursorPosition - 55;
+        const cursorX = boxX + textPadding + cursorPosInLine * 8.4;
+        const cursorY = y + 12 + cursorLine * 17;
+
+        ctx.strokeStyle = '#0ff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(cursorX, cursorY);
+        ctx.lineTo(cursorX, cursorY + 16);
+        ctx.stroke();
+    }
+
+    // Character count
+    ctx.fillStyle = feedbackSuggestion.length > 280 ? '#f55' : '#666';
+    ctx.textAlign = 'right';
+    ctx.fillText(`${feedbackSuggestion.length}/300`, boxX + boxWidth - 5, y + boxHeight + 18);
+
+    y += boxHeight + 50;
+
+    // Buttons
+    const buttonWidth = 140;
+    const buttonHeight = 45;
+    const buttonGap = 30;
+    const buttonsY = y;
+    const isButtonsSelected = feedbackSelectedRow === 4;
+
+    // Submit button
+    const submitX = centerX - buttonWidth - buttonGap / 2;
+    const submitSelected = isButtonsSelected && feedbackSelectedButton === 0;
+
+    ctx.fillStyle = submitSelected ? '#0a0' : '#080';
+    if (feedbackSubmitting) ctx.fillStyle = '#444';
+    ctx.beginPath();
+    ctx.roundRect(submitX, buttonsY, buttonWidth, buttonHeight, 8);
+    ctx.fill();
+
+    if (submitSelected) {
+        ctx.strokeStyle = '#0f0';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
+
+    feedbackButtonBounds.submit = { x: submitX, y: buttonsY, width: buttonWidth, height: buttonHeight };
+
+    ctx.font = 'bold 18px monospace';
+    ctx.fillStyle = feedbackSubmitting ? '#666' : '#fff';
+    ctx.textAlign = 'center';
+    ctx.fillText(feedbackSubmitting ? 'Sending...' : 'Submit', submitX + buttonWidth / 2, buttonsY + 30);
+
+    // Skip button
+    const skipX = centerX + buttonGap / 2;
+    const skipSelected = isButtonsSelected && feedbackSelectedButton === 1;
+
+    ctx.fillStyle = skipSelected ? '#555' : '#333';
+    ctx.beginPath();
+    ctx.roundRect(skipX, buttonsY, buttonWidth, buttonHeight, 8);
+    ctx.fill();
+
+    if (skipSelected) {
+        ctx.strokeStyle = '#888';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
+
+    feedbackButtonBounds.skip = { x: skipX, y: buttonsY, width: buttonWidth, height: buttonHeight };
+
+    ctx.fillStyle = '#aaa';
+    ctx.fillText('Skip', skipX + buttonWidth / 2, buttonsY + 30);
+
+    // Error message
+    if (feedbackError) {
+        ctx.font = '16px monospace';
+        ctx.fillStyle = '#f55';
+        ctx.textAlign = 'center';
+        ctx.fillText(feedbackError, centerX, buttonsY + buttonHeight + 35);
+    }
+
+    // Instructions
+    ctx.font = '14px monospace';
+    ctx.fillStyle = '#666';
+    ctx.textAlign = 'center';
+    ctx.fillText('Arrow keys to navigate • Enter to select • Esc to skip', centerX, canvas.height - 40);
 }
 
 // ============================================
@@ -8137,6 +8941,11 @@ function gameLoop(timestamp) {
         case 'SHOP':
             updateShop(dt);
             renderShop();
+            break;
+
+        case 'FEEDBACK':
+            updateFeedback(dt);
+            renderFeedbackScreen();
             break;
     }
 
