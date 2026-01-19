@@ -173,13 +173,13 @@ const CONFIG = {
             value: 25
         },
         {
-            id: 'shield_charge',
-            name: 'SHIELD CHARGE',
-            description: '+3 shield charges',
-            cost: 150,
-            color: '#0af',
-            effect: 'shield',
-            value: 3
+            id: 'speed_cell',
+            name: 'SPEED CELL',
+            description: '+20% UFO speed',
+            cost: 200,
+            color: '#ff0',
+            effect: 'speed',
+            value: 0.20
         },
         {
             id: 'shield_single',
@@ -193,29 +193,20 @@ const CONFIG = {
         {
             id: 'max_energy',
             name: 'ENERGY CELL',
-            description: '+20 max energy',
+            description: '+20% max energy',
             cost: 200,
             color: '#f0f',
             effect: 'maxEnergy',
-            value: 20
+            value: 0.20
         },
         {
             id: 'energy_recharge',
-            name: 'ENERGY COIL',
-            description: '+15% recharge rate',
-            cost: 140,
+            name: 'RECHARGE CELL',
+            description: '+20% recharge rate',
+            cost: 200,
             color: '#66ffff',
             effect: 'energyRecharge',
-            value: 0.15
-        },
-        {
-            id: 'speed_boost',
-            name: 'THRUSTER',
-            description: '+15% UFO speed',
-            cost: 250,
-            color: '#ff0',
-            effect: 'speed',
-            value: 0.15
+            value: 0.20
         },
         {
             id: 'revive_cell',
@@ -1929,7 +1920,7 @@ class UFO {
         this.x = canvas.width / 2;
         this.y = canvas.height * CONFIG.UFO_Y_POSITION;
         this.health = CONFIG.UFO_START_HEALTH;
-        this.maxEnergy = CONFIG.ENERGY_MAX + playerInventory.maxEnergyBonus;
+        this.maxEnergy = CONFIG.ENERGY_MAX * (1 + playerInventory.maxEnergyBonus);
         this.energy = this.maxEnergy;
         this.beamActive = false;
         this.beamTarget = null;
@@ -7397,7 +7388,7 @@ function renderShop() {
     // Define shop grid items (9 slots, some may be empty/locked)
     const gridItems = [
         'repair', 'shield_single', 'revive_cell',
-        'shield_charge', 'max_energy', 'energy_recharge',
+        'speed_cell', 'max_energy', 'energy_recharge',
         'bomb_single', 'laser_turret', 'turret_damage'
     ];
 
@@ -7754,7 +7745,6 @@ function renderShopIcon(itemId, x, y, size, color) {
             ctx.fill();
             break;
 
-        case 'shield_charge':
         case 'shield_single':
             // Shield icon
             ctx.fillStyle = color;
@@ -7809,8 +7799,8 @@ function renderShopIcon(itemId, x, y, size, color) {
             ctx.fill();
             break;
 
-        case 'speed_boost':
-            // Rocket/thruster icon
+        case 'speed_cell':
+            // Speed arrow icon
             ctx.fillStyle = color;
             ctx.beginPath();
             ctx.moveTo(0, -20 * s);
@@ -8037,7 +8027,7 @@ function applyShopItemEffect(item) {
         case 'maxEnergy':
             playerInventory.maxEnergyBonus += item.value;
             if (ufo) {
-                ufo.maxEnergy = CONFIG.ENERGY_MAX + playerInventory.maxEnergyBonus;
+                ufo.maxEnergy = CONFIG.ENERGY_MAX * (1 + playerInventory.maxEnergyBonus);
             }
             break;
         case 'energyRecharge':
