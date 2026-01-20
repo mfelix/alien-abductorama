@@ -1061,6 +1061,7 @@ let leaderboardPanelBounds = null; // { x, y, width, height } for hit testing
 let submissionError = null;
 let pendingScoreSubmission = null;
 let highlightedEntryId = null; // Track player's newly submitted score for highlighting
+let hasScrolledToHighlight = false; // Track if we've auto-scrolled to highlighted entry
 
 // Captured at game over to avoid mutation before submission
 let finalScore = 0;
@@ -5213,6 +5214,7 @@ async function submitScore(name) {
             // Store entry ID for highlighting on leaderboard
             if (result.rank && result.leaderboard && result.leaderboard[result.rank - 1]) {
                 highlightedEntryId = result.leaderboard[result.rank - 1].id;
+                hasScrolledToHighlight = false; // Reset so we auto-scroll when viewing leaderboard
             }
             return result.rank;
         }
@@ -7593,6 +7595,17 @@ function renderLeaderboardContent() {
     const scrollableContentHeight = panelHeight - headerHeight - panelPadding * 2;
     const maxScroll = Math.max(0, totalRowsHeight - scrollableContentHeight);
 
+    // Auto-scroll to highlighted entry if we haven't already
+    if (highlightedEntryId && !hasScrolledToHighlight) {
+        const highlightIndex = leaderboard.findIndex(entry => entry.id === highlightedEntryId);
+        if (highlightIndex !== -1) {
+            // Scroll so highlighted entry is centered in the visible area
+            const targetScrollY = highlightIndex * rowHeight - scrollableContentHeight / 2 + rowHeight / 2;
+            leaderboardScrollOffset = Math.max(0, Math.min(targetScrollY, maxScroll));
+            hasScrolledToHighlight = true;
+        }
+    }
+
     // Clamp scroll offset
     leaderboardScrollOffset = Math.max(0, Math.min(leaderboardScrollOffset, maxScroll));
 
@@ -7614,7 +7627,7 @@ function renderLeaderboardContent() {
     ctx.fillStyle = '#0ff';
     ctx.font = 'bold 18px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('GLOBAL ABDUCTOR LEADERBOARD', canvas.width / 2, panelY + panelPadding + 14);
+    ctx.fillText('TOP 100 GLOBAL ABDUCTORS', canvas.width / 2, panelY + panelPadding + 14);
 
     // Divider below header
     const dividerY = panelY + panelPadding + headerHeight - 8;
@@ -7661,8 +7674,6 @@ function renderLeaderboardContent() {
         if (isHighlighted) {
             ctx.fillStyle = 'rgba(0, 200, 200, 0.15)';
             ctx.fillRect(panelX + 1, rowY, panelWidth - 2, rowHeight);
-            ctx.shadowColor = '#0ff';
-            ctx.shadowBlur = 6;
         } else if (isTop3) {
             ctx.fillStyle = 'rgba(255, 255, 0, 0.06)';
             ctx.fillRect(panelX + 1, rowY, panelWidth - 2, rowHeight);
@@ -7691,10 +7702,6 @@ function renderLeaderboardContent() {
         // Date
         ctx.fillStyle = isHighlighted ? '#088' : '#666';
         ctx.fillText(formatRelativeDate(entry.timestamp), panelX + panelWidth - panelPadding, textY);
-
-        if (isHighlighted) {
-            ctx.shadowBlur = 0;
-        }
     }
 
     ctx.restore();
