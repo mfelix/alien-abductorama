@@ -1046,10 +1046,10 @@ let score = 0;
 let highScore = parseInt(localStorage.getItem('alienAbductoramaHighScore')) || 0;
 let combo = 0;
 let ufoBucks = 0;
+let firstPointTracked = false; // Track if we've recorded last played time for this session
 
 // Game session tracking for leaderboard
 let gameStartTime = 0;
-let sessionTrackingTimer = null;
 let leaderboard = [];
 let leaderboardLoading = false;
 let activityStats = null;
@@ -1895,6 +1895,12 @@ class Target {
                     waveStats.maxComboHit = true;
                 }
                 combo++;
+
+                // Track last played time on first point scored
+                if (!firstPointTracked) {
+                    firstPointTracked = true;
+                    trackSession();
+                }
 
                 // Heal UFO
                 ufo.health = Math.min(CONFIG.UFO_START_HEALTH, ufo.health + CONFIG.HEAL_PER_ABDUCTION);
@@ -5046,12 +5052,6 @@ function triggerGameOver() {
     hasPlayedThisSession = true;
     titleFeedbackSubmitted = false; // Reset so they can submit new feedback
 
-    // Clear session tracking timer (no need to track if game already ended)
-    if (sessionTrackingTimer) {
-        clearTimeout(sessionTrackingTimer);
-        sessionTrackingTimer = null;
-    }
-
     // Capture final game state FIRST, before any resets can occur
     finalScore = score;
     finalWave = wave;
@@ -5586,9 +5586,7 @@ function startGame() {
     clearTutorialTimeouts();
     gameState = 'PLAYING';
     gameStartTime = Date.now();
-    // Track session after 30 seconds of play
-    if (sessionTrackingTimer) clearTimeout(sessionTrackingTimer);
-    sessionTrackingTimer = setTimeout(trackSession, 30000);
+    firstPointTracked = false; // Reset for new game session
     ufo = new UFO();
     targets = [];
     tanks = [];
