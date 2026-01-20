@@ -478,6 +478,21 @@ const SFX = {
         });
     },
 
+    feedbackSuccess: () => {
+        if (!audioCtx) return;
+        // Cheerful arcade "thank you" jingle - quick ascending with sparkle
+        const notes = [523, 659, 784, 880, 1047]; // C5, E5, G5, A5, C6
+        notes.forEach((freq, i) => {
+            setTimeout(() => {
+                playTone(freq, 0.15, 'sine', 0.18);
+                // Add a subtle sparkle harmony
+                if (i >= 2) {
+                    playTone(freq * 1.5, 0.1, 'triangle', 0.08);
+                }
+            }, i * 60);
+        });
+    },
+
     energyLow: () => {
         if (!audioCtx) return;
         playTone(200, 0.1, 'square', 0.15);
@@ -892,38 +907,14 @@ const SFX = {
     startShopMusic: () => {
         if (!audioCtx || SFX.shopMusicNodes) return;
 
-        // Cheesy elevator muzak - arpeggio pattern
+        // Cheesy elevator muzak - arpeggio pattern only (no drone)
         const masterGain = audioCtx.createGain();
         masterGain.gain.setValueAtTime(0, audioCtx.currentTime);
-        masterGain.gain.linearRampToValueAtTime(0.08, audioCtx.currentTime + 0.5);
+        masterGain.gain.linearRampToValueAtTime(0.12, audioCtx.currentTime + 0.5);
         masterGain.connect(audioCtx.destination);
 
-        // Pad drone for warmth
-        const pad = audioCtx.createOscillator();
-        const padGain = audioCtx.createGain();
-        const padFilter = audioCtx.createBiquadFilter();
-        pad.type = 'sine';
-        pad.frequency.setValueAtTime(130.81, audioCtx.currentTime); // C3
-        padFilter.type = 'lowpass';
-        padFilter.frequency.setValueAtTime(400, audioCtx.currentTime);
-        padGain.gain.setValueAtTime(0.3, audioCtx.currentTime);
-        pad.connect(padFilter);
-        padFilter.connect(padGain);
-        padGain.connect(masterGain);
-        pad.start();
-
-        // Second pad for richness (fifth above)
-        const pad2 = audioCtx.createOscillator();
-        const pad2Gain = audioCtx.createGain();
-        pad2.type = 'sine';
-        pad2.frequency.setValueAtTime(196.0, audioCtx.currentTime); // G3
-        pad2Gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
-        pad2.connect(pad2Gain);
-        pad2Gain.connect(masterGain);
-        pad2.start();
-
         // Store nodes for cleanup
-        SFX.shopMusicNodes = { masterGain, pad, padGain, padFilter, pad2, pad2Gain, arpeggioOscs: [] };
+        SFX.shopMusicNodes = { masterGain, arpeggioOscs: [] };
 
         // Cheesy arpeggio pattern - plays notes in sequence
         const notes = [
@@ -967,19 +958,13 @@ const SFX = {
         }
 
         if (SFX.shopMusicNodes && audioCtx) {
-            const { masterGain, pad, pad2 } = SFX.shopMusicNodes;
+            const { masterGain } = SFX.shopMusicNodes;
 
             // Fade out
             masterGain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
 
-            // Stop oscillators after fade
+            // Clean up after fade
             setTimeout(() => {
-                try {
-                    pad.stop();
-                    pad2.stop();
-                } catch (e) {
-                    // Already stopped
-                }
                 SFX.shopMusicNodes = null;
             }, 350);
         }
@@ -1070,6 +1055,8 @@ let leaderboardLoading = false;
 let activityStats = null;
 let changelogScrollOffset = 0;
 let changelogPanelBounds = null; // { x, y, width, height } for hit testing
+let leaderboardScrollOffset = 0;
+let leaderboardPanelBounds = null; // { x, y, width, height } for hit testing
 let submissionError = null;
 let pendingScoreSubmission = null;
 let highlightedEntryId = null; // Track player's newly submitted score for highlighting
@@ -1095,8 +1082,26 @@ let feedbackSelectedRow = 0; // 0-2 for ratings, 3 for text, 4 for buttons
 let feedbackSelectedButton = 0; // 0 = Submit, 1 = Skip
 let feedbackSubmitting = false;
 let feedbackError = null;
-let feedbackButtonBounds = { submit: null, skip: null };
+let feedbackButtonBounds = { submit: null, skip: null, playAgain: null };
+let feedbackTextBoxBounds = null; // { x, y, width, height }
 let feedbackStarBounds = []; // Array of { row, star, x, y, width, height }
+
+// Feedback screen - suggestions browsing (right column)
+let feedbackScreenSuggestions = null; // Suggestions loaded for the feedback screen
+let feedbackScreenLoading = false;
+let feedbackScreenScrollOffset = 0;
+let feedbackScreenSuggestionBounds = []; // For upvote click detection on feedback screen
+let feedbackScreenSortBounds = { recent: null, top: null };
+let feedbackScreenSort = 'top'; // Default to 'top' so users see popular suggestions first
+let feedbackUfoOffset = 0; // For UFO floating animation
+
+// Separate submission states for ratings and suggestions
+let ratingsSubmitted = false;
+let ratingsSubmitting = false;
+let suggestionSubmitting = false;
+let suggestionSubmitted = false;
+let suggestionError = null;
+let feedbackSuggestionSubmitBounds = null; // Submit button for suggestions
 
 // Title screen tabs
 let titleTab = 'leaderboard'; // 'leaderboard', 'changelog', 'feedback'
@@ -1461,9 +1466,6 @@ window.addEventListener('keydown', (e) => {
                 SFX.turretStart && SFX.turretStart();
             }
         }
-    } else if (gameState === 'GAME_OVER' && e.code === 'Enter') {
-        resetFeedbackState();
-        gameState = 'FEEDBACK';
     }
 });
 
@@ -1473,6 +1475,17 @@ window.addEventListener('keyup', (e) => {
 
 // Changelog and feedback panel scroll support
 canvas.addEventListener('wheel', (e) => {
+    // Feedback screen (post-game) suggestions scrolling
+    if (gameState === 'FEEDBACK' && feedbackScreenSuggestions) {
+        const suggestions = feedbackScreenSuggestions.suggestions || [];
+        const effectiveItemHeight = 50; // 44px item + 6px gap
+        const visibleItems = 4;
+        const maxScroll = Math.max(0, (suggestions.length - visibleItems) * effectiveItemHeight);
+        feedbackScreenScrollOffset = Math.max(0, Math.min(maxScroll, feedbackScreenScrollOffset + e.deltaY));
+        e.preventDefault();
+        return;
+    }
+
     if (gameState !== 'TITLE') return;
 
     const rect = canvas.getBoundingClientRect();
@@ -1498,6 +1511,17 @@ canvas.addEventListener('wheel', (e) => {
             // Clamp will happen in render function when we know content height
         }
     }
+
+    // Leaderboard panel scrolling
+    if (titleTab === 'leaderboard' && leaderboardPanelBounds) {
+        const b = leaderboardPanelBounds;
+        if (mouseX >= b.x && mouseX <= b.x + b.width &&
+            mouseY >= b.y && mouseY <= b.y + b.height) {
+            e.preventDefault();
+            leaderboardScrollOffset += e.deltaY * 0.5;
+            // Clamp will happen in render function when we know content height
+        }
+    }
 }, { passive: false });
 
 // Mouse click support for Shop, Feedback, and Title screens
@@ -1507,27 +1531,41 @@ canvas.addEventListener('click', (e) => {
     const mouseY = (e.clientY - rect.top) * (canvas.height / rect.height);
 
     // Handle feedback clicks
-    if (gameState === 'FEEDBACK' && !feedbackSubmitting) {
+    if (gameState === 'FEEDBACK') {
         // Check star clicks
-        for (const bound of feedbackStarBounds) {
-            if (mouseX >= bound.x && mouseX <= bound.x + bound.width &&
-                mouseY >= bound.y && mouseY <= bound.y + bound.height) {
-                const keys = ['enjoyment', 'difficulty', 'returnIntent'];
-                feedbackRatings[keys[bound.row]] = bound.star;
-                feedbackSelectedRow = bound.row;
-                return;
+        if (!ratingsSubmitted && !ratingsSubmitting) {
+            for (const bound of feedbackStarBounds) {
+                if (mouseX >= bound.x && mouseX <= bound.x + bound.width &&
+                    mouseY >= bound.y && mouseY <= bound.y + bound.height) {
+                    const keys = ['enjoyment', 'difficulty', 'returnIntent'];
+                    feedbackRatings[keys[bound.row]] = bound.star;
+                    feedbackSelectedRow = bound.row;
+                    return;
+                }
             }
         }
 
-        // Check button clicks
+        // Check Send Feedback button clicks
         if (feedbackButtonBounds.submit) {
             const b = feedbackButtonBounds.submit;
             if (mouseX >= b.x && mouseX <= b.x + b.width &&
                 mouseY >= b.y && mouseY <= b.y + b.height) {
-                submitFeedback();
+                submitRatingsOnly();
                 return;
             }
         }
+
+        // Check Play Again button clicks
+        if (feedbackButtonBounds.playAgain) {
+            const b = feedbackButtonBounds.playAgain;
+            if (mouseX >= b.x && mouseX <= b.x + b.width &&
+                mouseY >= b.y && mouseY <= b.y + b.height) {
+                playAgainFromFeedback();
+                return;
+            }
+        }
+
+        // Check Main Menu button clicks
         if (feedbackButtonBounds.skip) {
             const b = feedbackButtonBounds.skip;
             if (mouseX >= b.x && mouseX <= b.x + b.width &&
@@ -1536,6 +1574,7 @@ canvas.addEventListener('click', (e) => {
                 return;
             }
         }
+
         return;
     }
 
@@ -5003,7 +5042,9 @@ function triggerGameOver() {
             gameState = 'NAME_ENTRY';
             createCelebrationEffect();
         } else {
-            gameState = 'GAME_OVER';
+            // Go directly to feedback screen
+            resetFeedbackState();
+            gameState = 'FEEDBACK';
         }
     }, 1200);
 }
@@ -5149,8 +5190,23 @@ function resetFeedbackState() {
     feedbackSelectedButton = 0;
     feedbackSubmitting = false;
     feedbackError = null;
-    feedbackButtonBounds = { submit: null, skip: null };
+    feedbackButtonBounds = { submit: null, skip: null, playAgain: null };
+    feedbackTextBoxBounds = null;
     feedbackStarBounds = [];
+    // Reset feedback screen suggestions state
+    feedbackScreenSuggestions = null;
+    feedbackScreenLoading = false;
+    feedbackScreenScrollOffset = 0;
+    feedbackScreenSuggestionBounds = [];
+    feedbackScreenSort = 'top';
+    feedbackUfoOffset = 0;
+    // Reset separate submission states
+    ratingsSubmitted = false;
+    ratingsSubmitting = false;
+    suggestionSubmitting = false;
+    suggestionSubmitted = false;
+    suggestionError = null;
+    feedbackSuggestionSubmitBounds = null;
 }
 
 async function submitFeedback() {
@@ -5202,6 +5258,84 @@ function skipFeedback() {
     fetchLeaderboard();
 }
 
+function playAgainFromFeedback() {
+    resetFeedbackState();
+    startGame();
+}
+
+// Auto-submit ratings when all three are filled
+async function submitRatingsOnly() {
+    if (ratingsSubmitting || ratingsSubmitted) return;
+
+    // Check if all ratings are filled
+    if (feedbackRatings.enjoyment === 0 || feedbackRatings.difficulty === 0 || feedbackRatings.returnIntent === 0) {
+        return; // Not all filled yet
+    }
+
+    ratingsSubmitting = true;
+
+    try {
+        const response = await fetch(`${API_BASE}/api/feedback`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                enjoymentRating: feedbackRatings.enjoyment,
+                difficultyRating: feedbackRatings.difficulty,
+                returnIntentRating: feedbackRatings.returnIntent,
+                suggestion: null // Ratings only, no suggestion
+            })
+        });
+
+        if (response.ok) {
+            ratingsSubmitted = true;
+            SFX.feedbackSuccess();
+        }
+    } catch (error) {
+        console.error('Failed to submit ratings:', error);
+    }
+    ratingsSubmitting = false;
+}
+
+// Submit a feature suggestion separately
+async function submitSuggestionOnly() {
+    if (suggestionSubmitting || suggestionSubmitted) return;
+    if (!feedbackSuggestion.trim()) {
+        suggestionError = 'Please enter a suggestion';
+        return;
+    }
+
+    suggestionSubmitting = true;
+    suggestionError = null;
+
+    try {
+        const response = await fetch(`${API_BASE}/api/feedback`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                enjoymentRating: feedbackRatings.enjoyment || null,
+                difficultyRating: feedbackRatings.difficulty || null,
+                returnIntentRating: feedbackRatings.returnIntent || null,
+                suggestion: feedbackSuggestion.trim()
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            suggestionSubmitted = true;
+            feedbackSuggestion = '';
+            feedbackCursorPosition = 0;
+            // Refresh the suggestions list to show the new one
+            fetchFeedbackScreenSuggestions();
+        } else {
+            suggestionError = data.error || 'Failed to submit suggestion';
+        }
+    } catch (error) {
+        suggestionError = 'Network error - please try again';
+    }
+    suggestionSubmitting = false;
+}
+
 async function fetchFeedback() {
     feedbackLoading = true;
     feedbackFetchError = null;
@@ -5217,6 +5351,20 @@ async function fetchFeedback() {
     feedbackLoading = false;
 }
 
+// Fetch suggestions for the feedback submission screen (right column)
+async function fetchFeedbackScreenSuggestions() {
+    feedbackScreenLoading = true;
+    try {
+        const response = await fetch(`${API_BASE}/api/feedback?sort=${feedbackScreenSort}&limit=50`);
+        const data = await response.json();
+        feedbackScreenSuggestions = data;
+    } catch (error) {
+        console.error('Failed to fetch suggestions for feedback screen:', error);
+        feedbackScreenSuggestions = null;
+    }
+    feedbackScreenLoading = false;
+}
+
 async function upvoteSuggestion(suggestionId) {
     const voterId = getOrCreateVoterId();
 
@@ -5229,13 +5377,24 @@ async function upvoteSuggestion(suggestionId) {
 
         const data = await response.json();
 
-        if (data.success && feedbackData) {
-            // Update local state
-            const suggestion = feedbackData.suggestions.find(s => s.id === suggestionId);
-            if (suggestion) {
-                suggestion.upvotes = data.upvotes;
-                suggestion.voterIds = suggestion.voterIds || [];
-                suggestion.voterIds.push(voterId);
+        if (data.success) {
+            // Update title screen feedback tab state
+            if (feedbackData) {
+                const suggestion = feedbackData.suggestions.find(s => s.id === suggestionId);
+                if (suggestion) {
+                    suggestion.upvotes = data.upvotes;
+                    suggestion.voterIds = suggestion.voterIds || [];
+                    suggestion.voterIds.push(voterId);
+                }
+            }
+            // Update feedback screen state (right column)
+            if (feedbackScreenSuggestions) {
+                const suggestion = feedbackScreenSuggestions.suggestions.find(s => s.id === suggestionId);
+                if (suggestion) {
+                    suggestion.upvotes = data.upvotes;
+                    suggestion.voterIds = suggestion.voterIds || [];
+                    suggestion.voterIds.push(voterId);
+                }
             }
         }
     } catch (error) {
@@ -6039,7 +6198,7 @@ function updateTitleUfo() {
 
     // Initialize position if needed
     if (titleUfo.baseY === 0) {
-        titleUfo.baseY = canvas.height / 6;
+        titleUfo.baseY = canvas.height * 0.08;  // Move UFO higher (was /6 = 16.7%, now 8%)
         titleUfo.x = canvas.width / 2;  // Start centered so humans have time to walk before abduction
         titleUfo.y = titleUfo.baseY;
     }
@@ -6107,6 +6266,11 @@ function updateTitleHumans() {
             const targetX = titleUfo.x - human.width / 2;
             const riseSpeed = 120; // pixels per second equivalent
 
+            // Store starting Y position when first abducted
+            if (human.startY === undefined) {
+                human.startY = human.y;
+            }
+
             // Move upward
             human.y -= riseSpeed / 60; // Assuming ~60fps
 
@@ -6115,6 +6279,11 @@ function updateTitleHumans() {
             if (Math.abs(dx) > 1) {
                 human.x += Math.sign(dx) * 2;
             }
+
+            // Calculate abduction progress (0 to 1) based on vertical position
+            const totalDistance = human.startY - targetY;
+            const traveled = human.startY - human.y;
+            human.abductionProgress = Math.min(1, traveled / totalDistance);
 
             // Remove when reached UFO
             if (human.y <= targetY) {
@@ -6153,7 +6322,23 @@ function renderTitleHumans() {
         const img = images.human;
         if (img && img.complete) {
             ctx.save();
-            if (human.direction < 0 && !human.beingAbducted) {
+
+            if (human.beingAbducted) {
+                // Apply spin and shrink effect (same as game mode)
+                const progress = human.abductionProgress || 0;
+                const eased = progress * progress;
+                const spinSpeed = 0.1 + eased * 0.5;
+                const angle = (Date.now() / 1000) * spinSpeed * Math.PI * 2;
+                const scale = 1 - eased * 0.35;
+                const centerX = human.x + human.width / 2;
+                const centerY = human.y + human.height / 2;
+
+                ctx.translate(centerX, centerY);
+                ctx.rotate(angle);
+                ctx.scale(scale, scale);
+                ctx.translate(-centerX, -centerY);
+                ctx.drawImage(img, human.x, human.y, human.width, human.height);
+            } else if (human.direction < 0) {
                 ctx.translate(human.x + human.width, human.y);
                 ctx.scale(-1, 1);
                 ctx.drawImage(img, 0, 0, human.width, human.height);
@@ -6591,30 +6776,42 @@ function getDayLabel(timestamp) {
     if (diffDays === 0) return 'Today';
     if (diffDays === 1) return 'Yesterday';
 
-    // Format as "Jan 15" or "Jan 15, 2025" if different year
+    // Format as "Jan 15, 2025" (always show year)
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const monthName = months[date.getMonth()];
     const day = date.getDate();
 
-    if (date.getFullYear() !== now.getFullYear()) {
-        return `${monthName} ${day}, ${date.getFullYear()}`;
-    }
-    return `${monthName} ${day}`;
+    return `${monthName} ${day}, ${date.getFullYear()}`;
 }
 
 function renderChangelogPanel() {
-    const entries = getChangelogSorted();
-    if (entries.length === 0) return;
+    // Content starts below tabs (tabs at canvas.height * 0.20 + 80, height 32)
+    const contentStartY = canvas.height * 0.20 + 130;
 
-    // Panel dimensions and position (right side)
-    const panelWidth = 320;
+    const entries = getChangelogSorted();
+    if (entries.length === 0) {
+        ctx.fillStyle = '#888';
+        ctx.font = '18px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('No changelog entries yet', canvas.width / 2, contentStartY + 50);
+        return;
+    }
+
+    // Panel dimensions and position (centered, same width as leaderboard)
+    const panelWidth = 500;
     const panelPadding = 16;
-    const titleBarHeight = 36;
-    const maxContentHeight = 400; // Fixed scrollable area height
-    const messageFont = '13px monospace';
-    const lineHeight = 17;
-    const entryPadding = 10;
-    const dayHeaderHeight = 28;
+    const messageFont = '14px monospace';
+    const lineHeight = 18;
+    const entryVerticalPadding = 8; // Padding added to each entry's height
+    const dayHeaderHeight = 42; // Space for date label + padding above and below
+
+    // Calculate panel position and max height to avoid overlapping green ground area
+    const panelX = canvas.width / 2 - panelWidth / 2;
+    const panelY = contentStartY;
+    const groundHeight = 60;
+    const bottomPadding = 20; // Gap between panel bottom and green ground area
+    const maxPanelBottom = canvas.height - groundHeight - bottomPadding;
+    const maxContentHeight = maxPanelBottom - panelY - panelPadding;
 
     // Group entries by day
     const contentWidth = panelWidth - (panelPadding * 2);
@@ -6624,7 +6821,7 @@ function renderChangelogPanel() {
     for (const entry of entries) {
         const dayLabel = getDayLabel(entry.timestamp);
         const lines = wrapTextToLines(`★ ${entry.message}`, contentWidth, messageFont);
-        const entryHeight = (lines.length * lineHeight) + entryPadding;
+        const entryHeight = (lines.length * lineHeight) + entryVerticalPadding;
 
         if (dayLabel !== currentDayLabel) {
             dayGroups.push({
@@ -6644,9 +6841,7 @@ function renderChangelogPanel() {
 
     // Calculate total content height
     const totalContentHeight = dayGroups.reduce((sum, item) => sum + item.height, 0);
-    const panelHeight = titleBarHeight + Math.min(maxContentHeight, totalContentHeight) + panelPadding;
-    const panelX = canvas.width - panelWidth - 25;
-    const panelY = canvas.height / 2 - panelHeight / 2 + 20;
+    const panelHeight = Math.min(maxContentHeight, totalContentHeight) + panelPadding;
 
     // Store panel bounds for mouse wheel hit testing
     changelogPanelBounds = { x: panelX, y: panelY, width: panelWidth, height: panelHeight };
@@ -6657,52 +6852,51 @@ function renderChangelogPanel() {
 
     // Panel background
     ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
-    ctx.fillRect(panelX, panelY, panelWidth, panelHeight);
+    ctx.beginPath();
+    ctx.roundRect(panelX, panelY, panelWidth, panelHeight, 8);
+    ctx.fill();
 
     // Panel border
     ctx.strokeStyle = 'rgba(0, 200, 200, 0.5)';
     ctx.lineWidth = 1;
-    ctx.strokeRect(panelX, panelY, panelWidth, panelHeight);
-
-    // Title bar background
-    ctx.fillStyle = 'rgba(0, 60, 60, 0.9)';
-    ctx.fillRect(panelX, panelY, panelWidth, titleBarHeight);
-
-    // Title bar bottom border
-    ctx.strokeStyle = 'rgba(0, 200, 200, 0.4)';
-    ctx.beginPath();
-    ctx.moveTo(panelX, panelY + titleBarHeight);
-    ctx.lineTo(panelX + panelWidth, panelY + titleBarHeight);
     ctx.stroke();
 
-    // Title text
-    ctx.fillStyle = '#0dd';
-    ctx.font = 'bold 14px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('RECENT UPDATES', panelX + panelWidth / 2, panelY + 24);
-
     // Set up clipping region for scrollable content
-    const contentTop = panelY + titleBarHeight;
-    const contentBottom = panelY + panelHeight - panelPadding;
+    const contentTop = panelY;
+    const contentBottom = panelY + panelHeight;
     ctx.save();
     ctx.beginPath();
     ctx.rect(panelX, contentTop, panelWidth, contentBottom - contentTop);
     ctx.clip();
 
     // Render grouped entries with scroll offset
-    let currentY = contentTop + 8 - changelogScrollOffset;
+    const initialTopPadding = 8; // Padding above first date header
+    let currentY = contentTop + initialTopPadding - changelogScrollOffset;
     let entryIndex = 0;
 
+    let isFirstHeader = true;
     for (const item of dayGroups) {
         if (item.type === 'header') {
             // Day header
             if (currentY + item.height > contentTop - 20 && currentY < contentBottom + 20) {
+                // Draw horizontal divider line above day section (edge to edge)
+                if (!isFirstHeader) {
+                    ctx.strokeStyle = 'rgba(0, 200, 200, 0.3)';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(panelX, currentY);
+                    ctx.lineTo(panelX + panelWidth, currentY);
+                    ctx.stroke();
+                }
+
+                // Day label - positioned consistently within the header height
                 ctx.fillStyle = '#0aa';
-                ctx.font = 'bold 12px monospace';
+                ctx.font = 'bold 14px monospace';
                 ctx.textAlign = 'left';
-                ctx.fillText(`── ${item.label} ──`, panelX + panelPadding, currentY + 18);
+                ctx.fillText(item.label, panelX + panelPadding, currentY + 22);
             }
             currentY += item.height;
+            isFirstHeader = false;
         } else {
             // Entry
             const entry = item.entry;
@@ -6765,7 +6959,7 @@ function renderTitleScreen() {
     titleAnimPhase += 0.05;
 
     const titleText = 'ALIEN ABDUCTO-RAMA';
-    const titleY = canvas.height / 3;
+    const titleY = canvas.height * 0.20;  // Move title higher (was /3 = 33%, now 20%)
     const titleX = canvas.width / 2;
 
     ctx.font = 'bold 80px monospace';
@@ -6809,6 +7003,20 @@ function renderTitleScreen() {
     ctx.shadowBlur = 0;
     ctx.textAlign = 'center';
     ctx.fillStyle = '#fff';
+
+    // Activity stats (below title, visible on all tabs)
+    const activityStatsY = titleY + 55;
+    if (activityStats) {
+        ctx.fillStyle = '#888';
+        ctx.font = '14px monospace';
+        ctx.textAlign = 'center';
+        const lastPlayed = activityStats.lastGamePlayed
+            ? `Last played: ${formatRelativeDate(activityStats.lastGamePlayed)}`
+            : '';
+        const gamesWeek = `${activityStats.gamesThisWeek} ${activityStats.gamesThisWeek === 1 ? 'game' : 'games'} played this week`;
+        const statsText = lastPlayed ? `${lastPlayed}  •  ${gamesWeek}` : gamesWeek;
+        ctx.fillText(statsText, canvas.width / 2, activityStatsY);
+    }
 
     // Render tabs
     renderTitleTabs();
@@ -6868,22 +7076,74 @@ function renderTitleScreen() {
         ctx.restore();
     }
 
-    // Flashing "Press any key" text
-    if (Math.floor(Date.now() / 500) % 2 === 0) {
-        ctx.fillStyle = '#fff';
-        ctx.font = 'bold 32px monospace';
-        ctx.fillText('Press SPACE to start', canvas.width / 2, canvas.height - 150);
-    }
+    // Press SPACE to start (at bottom) - with flashing effect
+    const flashAlpha = 0.5 + Math.sin(Date.now() / 300) * 0.5; // Flash between 0 and 1
+    ctx.save();
+    ctx.globalAlpha = flashAlpha;
 
-    // Instructions
-    ctx.font = '18px monospace';
-    ctx.fillStyle = '#aaa';
-    ctx.fillText('Arrow Keys: Move UFO    |    SPACE: Activate Beam', canvas.width / 2, canvas.height - 100);
+    const fontSize = 20;
+    ctx.font = `bold ${fontSize}px monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
 
-    // Dedication message on the ground
-    ctx.font = '14px monospace';
+    const centerX = canvas.width / 2;
+    const groundHeight = 60;
+    const centerY = canvas.height - groundHeight / 2; // Center vertically in the green ground area
+
+    // Measure text parts
+    const pressText = 'Press ';
+    const spaceText = 'SPACE';
+    const toStartText = ' to start';
+
+    ctx.font = `bold ${fontSize}px monospace`;
+    const pressWidth = ctx.measureText(pressText).width;
+    const spaceWidth = ctx.measureText(spaceText).width;
+    const toStartWidth = ctx.measureText(toStartText).width;
+    const promptWidth = pressWidth + spaceWidth + toStartWidth;
+
+    // Calculate starting X position
+    const startX = centerX - promptWidth / 2;
+
+    // Draw "Press "
     ctx.fillStyle = '#fff';
-    ctx.fillText('Built by Ruby, Odessa, & Papa!!! We hope you love it and have fun!', canvas.width / 2, canvas.height - 30);
+    ctx.textAlign = 'left';
+    ctx.fillText(pressText, startX, centerY);
+
+    // Draw rounded rectangle around SPACE (like a spacebar key)
+    const keyPadding = 8;
+    const keyHeight = fontSize + keyPadding * 2;
+    const keyWidth = spaceWidth + keyPadding * 2;
+    const keyX = startX + pressWidth - keyPadding;
+    const keyY = centerY - keyHeight / 2;
+    const keyRadius = 6;
+
+    // Key background
+    ctx.fillStyle = '#333';
+    ctx.beginPath();
+    ctx.roundRect(keyX, keyY, keyWidth, keyHeight, keyRadius);
+    ctx.fill();
+
+    // Key border
+    ctx.strokeStyle = '#888';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Key highlight (top edge for 3D effect)
+    ctx.strokeStyle = '#aaa';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(keyX + keyRadius, keyY + 1);
+    ctx.lineTo(keyX + keyWidth - keyRadius, keyY + 1);
+    ctx.stroke();
+
+    // Draw "SPACE" text
+    ctx.fillStyle = '#fff';
+    ctx.fillText(spaceText, startX + pressWidth, centerY);
+
+    // Draw " to start"
+    ctx.fillText(toStartText, startX + pressWidth + spaceWidth, centerY);
+
+    ctx.restore();
 }
 
 function renderTitleTabs() {
@@ -6900,7 +7160,8 @@ function renderTitleTabs() {
     const tabGap = 10;
     const totalWidth = tabs.length * tabWidth + (tabs.length - 1) * tabGap;
     const startX = canvas.width / 2 - totalWidth / 2;
-    const tabY = canvas.height / 2 - 110;
+    // Position tabs below title (20%) and activity stats, with spacing
+    const tabY = canvas.height * 0.20 + 80;
 
     for (let i = 0; i < tabs.length; i++) {
         const tab = tabs[i];
@@ -6936,89 +7197,209 @@ function renderTitleTabs() {
 }
 
 function renderLeaderboardContent() {
+    // Content starts below tabs (tabs at canvas.height * 0.20 + 80, height 32)
+    const contentStartY = canvas.height * 0.20 + 130;
+
+    // Panel dimensions (same as changelog)
+    const panelWidth = 500;
+    const panelPadding = 16;
+    const panelX = canvas.width / 2 - panelWidth / 2;
+    const panelY = contentStartY;
+    const rowHeight = 32;
+    const headerHeight = 40;
+
+    // Calculate max panel height to avoid overlapping "Press SPACE to start" green area
+    const groundHeight = 60;
+    const bottomPadding = 20;
+    const maxPanelHeight = (canvas.height - groundHeight) - panelY - bottomPadding;
+
     if (leaderboardLoading) {
+        // Draw panel background even when loading
+        const loadingPanelHeight = Math.min(100, maxPanelHeight);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+        ctx.beginPath();
+        ctx.roundRect(panelX, panelY, panelWidth, loadingPanelHeight, 8);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0, 200, 200, 0.5)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
         ctx.fillStyle = '#888';
         ctx.font = '18px monospace';
         ctx.textAlign = 'center';
-        ctx.fillText('Loading scores...', canvas.width / 2, canvas.height / 2 + 10);
+        ctx.fillText('Loading scores...', canvas.width / 2, panelY + 55);
         return;
     }
 
     if (leaderboard.length === 0) {
+        // Draw panel background even when empty
+        const emptyPanelHeight = Math.min(100, maxPanelHeight);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+        ctx.beginPath();
+        ctx.roundRect(panelX, panelY, panelWidth, emptyPanelHeight, 8);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0, 200, 200, 0.5)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
         ctx.fillStyle = '#888';
         ctx.font = '18px monospace';
         ctx.textAlign = 'center';
-        ctx.fillText('No scores yet - be the first!', canvas.width / 2, canvas.height / 2 + 10);
+        ctx.fillText('No scores yet - be the first!', canvas.width / 2, panelY + 55);
         return;
     }
 
-    // Activity stats (above header)
-    if (activityStats) {
-        ctx.fillStyle = '#888';
-        ctx.font = '14px monospace';
-        ctx.textAlign = 'center';
-        const lastPlayed = activityStats.lastGamePlayed
-            ? `Last played: ${formatRelativeDate(activityStats.lastGamePlayed)}`
-            : '';
-        const gamesWeek = `${activityStats.gamesThisWeek} ${activityStats.gamesThisWeek === 1 ? 'game' : 'games'} played this week`;
-        const statsText = lastPlayed ? `${lastPlayed}  •  ${gamesWeek}` : gamesWeek;
-        ctx.fillText(statsText, canvas.width / 2, canvas.height / 2 - 70);
-    }
+    // Calculate total content height (all rows)
+    const totalRowsHeight = leaderboard.length * rowHeight;
+    const totalContentHeight = headerHeight + totalRowsHeight + panelPadding;
 
+    // Determine actual panel height (capped at max)
+    const panelHeight = Math.min(totalContentHeight + panelPadding, maxPanelHeight);
+
+    // Calculate scrollable area
+    const scrollableContentHeight = panelHeight - headerHeight - panelPadding * 2;
+    const maxScroll = Math.max(0, totalRowsHeight - scrollableContentHeight);
+
+    // Clamp scroll offset
+    leaderboardScrollOffset = Math.max(0, Math.min(leaderboardScrollOffset, maxScroll));
+
+    // Store panel bounds for mouse wheel hit testing
+    leaderboardPanelBounds = { x: panelX, y: panelY, width: panelWidth, height: panelHeight };
+
+    // Draw main panel background
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+    ctx.beginPath();
+    ctx.roundRect(panelX, panelY, panelWidth, panelHeight, 8);
+    ctx.fill();
+
+    // Panel border
+    ctx.strokeStyle = 'rgba(0, 200, 200, 0.5)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Header
     ctx.fillStyle = '#0ff';
-    ctx.font = 'bold 20px monospace';
+    ctx.font = 'bold 18px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('TOP 10', canvas.width / 2, canvas.height / 2 - 40);
+    ctx.fillText('GLOBAL ABDUCTOR LEADERBOARD', canvas.width / 2, panelY + panelPadding + 14);
 
-    ctx.font = '18px monospace';
-    const startY = canvas.height / 2;
-    const lineHeight = 26;
+    // Divider below header
+    const dividerY = panelY + panelPadding + headerHeight - 8;
+    ctx.strokeStyle = 'rgba(0, 200, 200, 0.3)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(panelX, dividerY);
+    ctx.lineTo(panelX + panelWidth, dividerY);
+    ctx.stroke();
+
+    // Entry rows - with clipping for scrolling (start right at the divider)
+    const rowStartY = dividerY;
+    const clipBottom = panelY + panelHeight - panelPadding;
+
+    // Set up clipping region for scrollable content
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(panelX, rowStartY, panelWidth, clipBottom - rowStartY);
+    ctx.clip();
+
+    ctx.font = '14px monospace';
 
     for (let i = 0; i < leaderboard.length; i++) {
         const entry = leaderboard[i];
-        const y = startY + i * lineHeight;
+        const rowY = rowStartY + i * rowHeight - leaderboardScrollOffset;
         const flag = countryCodeToFlag(entry.countryCode);
         const isHighlighted = entry.id === highlightedEntryId;
+        const isTop3 = i < 3;
 
-        if (isHighlighted) {
-            ctx.shadowColor = '#0ff';
-            ctx.shadowBlur = 10;
+        // Skip rows that are completely outside visible area
+        if (rowY + rowHeight < rowStartY || rowY > clipBottom) continue;
+
+        // Draw divider line above this row (except first row)
+        if (i > 0 || leaderboardScrollOffset > 0) {
+            ctx.strokeStyle = 'rgba(0, 200, 200, 0.3)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(panelX, rowY);
+            ctx.lineTo(panelX + panelWidth, rowY);
+            ctx.stroke();
         }
 
-        ctx.fillStyle = isHighlighted ? '#0ff' : (i < 3 ? '#ff0' : '#fff');
-        ctx.textAlign = 'right';
-        ctx.fillText(`${i + 1}.`, canvas.width / 2 - 220, y);
+        // Highlight background for top 3 or current player
+        if (isHighlighted) {
+            ctx.fillStyle = 'rgba(0, 200, 200, 0.15)';
+            ctx.fillRect(panelX + 1, rowY, panelWidth - 2, rowHeight);
+            ctx.shadowColor = '#0ff';
+            ctx.shadowBlur = 6;
+        } else if (isTop3) {
+            ctx.fillStyle = 'rgba(255, 255, 0, 0.06)';
+            ctx.fillRect(panelX + 1, rowY, panelWidth - 2, rowHeight);
+        }
 
+        // Text baseline centered in row
+        const textY = rowY + rowHeight / 2 + 4;
+
+        // Rank
+        ctx.fillStyle = isHighlighted ? '#0ff' : (isTop3 ? '#ff0' : '#fff');
+        ctx.textAlign = 'right';
+        ctx.fillText(`${i + 1}.`, panelX + panelPadding + 24, textY);
+
+        // Flag and name
         ctx.textAlign = 'left';
-        ctx.fillText(`${flag} ${entry.name}`, canvas.width / 2 - 200, y);
+        ctx.fillText(`${flag} ${entry.name}`, panelX + panelPadding + 32, textY);
 
+        // Score
         ctx.textAlign = 'right';
-        ctx.fillText(entry.score.toLocaleString(), canvas.width / 2 - 20, y);
+        ctx.fillText(entry.score.toLocaleString(), panelX + panelWidth - 190, textY);
 
+        // Wave
         ctx.fillStyle = isHighlighted ? '#0aa' : '#888';
-        ctx.fillText(`Wave ${entry.wave}`, canvas.width / 2 + 90, y);
+        ctx.fillText(`W${entry.wave}`, panelX + panelWidth - 110, textY);
 
+        // Date
         ctx.fillStyle = isHighlighted ? '#088' : '#666';
-        ctx.fillText(formatRelativeDate(entry.timestamp), canvas.width / 2 + 220, y);
+        ctx.fillText(formatRelativeDate(entry.timestamp), panelX + panelWidth - panelPadding, textY);
 
         if (isHighlighted) {
             ctx.shadowBlur = 0;
         }
     }
+
+    ctx.restore();
+
+    // Scroll indicator (if scrollable)
+    if (maxScroll > 0) {
+        const scrollbarHeight = Math.max(30, (scrollableContentHeight / totalRowsHeight) * scrollableContentHeight);
+        const scrollbarY = rowStartY + (leaderboardScrollOffset / maxScroll) * (scrollableContentHeight - scrollbarHeight);
+
+        ctx.fillStyle = 'rgba(0, 200, 200, 0.3)';
+        ctx.fillRect(panelX + panelWidth - 6, scrollbarY, 4, scrollbarHeight);
+    }
+
     ctx.textAlign = 'center';
 }
 
 function renderFeedbackTabContent() {
     feedbackSuggestionBounds = [];
 
+    // Content starts below tabs (tabs at canvas.height * 0.20 + 80, height 32)
+    const contentStartY = canvas.height * 0.20 + 130;
+
     const centerX = canvas.width / 2;
-    let y = canvas.height / 2 - 60;
+    const panelWidth = 500;
+    const panelX = centerX - panelWidth / 2;
+    const panelPadding = 16;
+
+    // Calculate panel position and max height (same as changelog/leaderboard)
+    const panelStartY = contentStartY;
+    const groundHeight = 60;
+    const bottomPadding = 20;
+    const maxPanelHeight = (canvas.height - groundHeight) - panelStartY - bottomPadding;
 
     if (feedbackLoading) {
         ctx.fillStyle = '#888';
         ctx.font = '18px monospace';
         ctx.textAlign = 'center';
-        ctx.fillText('Loading feedback...', centerX, y + 50);
+        ctx.fillText('Loading feedback...', centerX, panelStartY + 50);
         return;
     }
 
@@ -7026,7 +7407,7 @@ function renderFeedbackTabContent() {
         ctx.fillStyle = '#f55';
         ctx.font = '16px monospace';
         ctx.textAlign = 'center';
-        ctx.fillText(feedbackFetchError, centerX, y + 50);
+        ctx.fillText(feedbackFetchError, centerX, panelStartY + 50);
         return;
     }
 
@@ -7034,148 +7415,270 @@ function renderFeedbackTabContent() {
         ctx.fillStyle = '#888';
         ctx.font = '18px monospace';
         ctx.textAlign = 'center';
-        ctx.fillText('No feedback yet', centerX, y + 50);
+        ctx.fillText('No feedback yet', centerX, panelStartY + 50);
         return;
     }
 
-    // Stats summary
     const stats = feedbackData.stats;
+    const suggestions = feedbackData.suggestions || [];
+
+    // Calculate panel height based on content
+    const ratingsHeight = 80;
+    const sortHeight = 45;
+    const suggestionItemHeight = 36;
+    const suggestionsListHeight = Math.min(150, suggestions.length * suggestionItemHeight);
+    const ctaHeight = 36; // "Play the game to submit feedback" section
+    const contentHeight = ratingsHeight + sortHeight + suggestionsListHeight + ctaHeight + 40;
+    const panelHeight = Math.min(maxPanelHeight, contentHeight + panelPadding * 2);
+
+    // Panel background
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+    ctx.beginPath();
+    ctx.roundRect(panelX, panelStartY, panelWidth, panelHeight, 8);
+    ctx.fill();
+
+    // Panel border
+    ctx.strokeStyle = 'rgba(0, 200, 200, 0.5)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    let y = panelStartY + panelPadding;
+
+    // Stats summary
     ctx.font = '14px monospace';
     ctx.fillStyle = '#888';
     ctx.textAlign = 'center';
-    ctx.fillText(`${stats.totalResponses} responses • ${stats.totalSuggestions} suggestions`, centerX, y);
+    ctx.fillText(`${stats.totalResponses} responses • ${stats.totalSuggestions} suggestions`, centerX, y + 12);
 
-    y += 30;
+    y += 28;
 
-    // Average ratings
-    ctx.font = '16px monospace';
-    ctx.fillStyle = '#fff';
+    // Horizontal divider under stats header (edge to edge)
+    ctx.strokeStyle = 'rgba(0, 200, 200, 0.3)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(panelX, y);
+    ctx.lineTo(panelX + panelWidth, y);
+    ctx.stroke();
 
+    y += 8;
+
+    // Average ratings in 3 columns with dividers
     const ratingLabels = [
-        { key: 'enjoyment', label: 'Enjoyment' },
+        { key: 'enjoyment', label: 'Fun' },
         { key: 'difficulty', label: 'Difficulty' },
-        { key: 'returnIntent', label: 'Play Again' }
+        { key: 'returnIntent', label: 'Replayability' }
     ];
 
-    const ratingStartX = centerX - 200;
+    const columnWidth = panelWidth / 3;
+    const ratingsStartX = panelX;
+    const ratingsRowHeight = 68;
+
+    // Track where the ratings section starts (after the top divider)
+    const ratingsSectionTop = y - 8; // Go back to the divider line above
+    const ratingsSectionBottom = y + ratingsRowHeight;
+
     for (let i = 0; i < ratingLabels.length; i++) {
         const r = ratingLabels[i];
-        const x = ratingStartX + i * 140;
+        const colX = ratingsStartX + i * columnWidth + columnWidth / 2;
         const avg = parseFloat(stats.averageRatings[r.key]) || 0;
+
+        // Draw column divider (from top divider to bottom divider)
+        if (i > 0) {
+            ctx.strokeStyle = 'rgba(0, 200, 200, 0.3)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(ratingsStartX + i * columnWidth, ratingsSectionTop);
+            ctx.lineTo(ratingsStartX + i * columnWidth, ratingsSectionBottom);
+            ctx.stroke();
+        }
 
         ctx.textAlign = 'center';
         ctx.fillStyle = '#aaa';
-        ctx.fillText(r.label, x, y);
+        ctx.font = '14px monospace';
+        ctx.fillText(r.label, colX, y + 14);
 
         // Star display
         ctx.fillStyle = '#ff0';
-        ctx.font = '20px monospace';
+        ctx.font = '22px monospace';
         const fullStars = Math.floor(avg);
         let starText = '★'.repeat(fullStars) + '☆'.repeat(5 - fullStars);
-        ctx.fillText(starText, x, y + 25);
+        ctx.fillText(starText, colX, y + 38);
 
         ctx.font = '12px monospace';
         ctx.fillStyle = '#666';
-        ctx.fillText(`(${avg.toFixed(1)})`, x, y + 42);
+        ctx.fillText(avg.toFixed(1), colX, y + 56);
     }
 
-    y += 70;
+    y += ratingsRowHeight;
 
-    // Sort buttons
-    const sortY = y;
-    ctx.font = '14px monospace';
+    // Horizontal divider before sort buttons (edge to edge)
+    ctx.strokeStyle = 'rgba(0, 200, 200, 0.3)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(panelX, y);
+    ctx.lineTo(panelX + panelWidth, y);
+    ctx.stroke();
 
-    const recentX = centerX - 60;
-    const topX = centerX + 40;
+    y += 12;
 
-    feedbackSortBounds.recent = { x: recentX - 40, y: sortY - 15, width: 80, height: 24 };
-    feedbackSortBounds.top = { x: topX - 30, y: sortY - 15, width: 60, height: 24 };
+    // Sort toggle buttons (tab-style)
+    const sortTabWidth = 80;
+    const sortTabHeight = 28;
+    const sortTabGap = 8;
+    const sortTotalWidth = sortTabWidth * 2 + sortTabGap;
+    const sortStartX = centerX - sortTotalWidth / 2;
 
-    ctx.fillStyle = feedbackSort === 'recent' ? '#0ff' : '#666';
+    const recentX = sortStartX;
+    const topX = sortStartX + sortTabWidth + sortTabGap;
+
+    feedbackSortBounds.recent = { x: recentX, y: y, width: sortTabWidth, height: sortTabHeight };
+    feedbackSortBounds.top = { x: topX, y: y, width: sortTabWidth, height: sortTabHeight };
+
+    // Recent button
+    ctx.fillStyle = feedbackSort === 'recent' ? '#0aa' : '#333';
+    ctx.beginPath();
+    ctx.roundRect(recentX, y, sortTabWidth, sortTabHeight, 6);
+    ctx.fill();
+    if (feedbackSort === 'recent') {
+        ctx.strokeStyle = '#0ff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
+    ctx.font = feedbackSort === 'recent' ? 'bold 14px monospace' : '14px monospace';
+    ctx.fillStyle = feedbackSort === 'recent' ? '#fff' : '#888';
     ctx.textAlign = 'center';
-    ctx.fillText('Recent', recentX, sortY);
+    ctx.fillText('Recent', recentX + sortTabWidth / 2, y + 19);
 
-    ctx.fillStyle = feedbackSort === 'top' ? '#0ff' : '#666';
-    ctx.fillText('Top', topX, sortY);
+    // Top button
+    ctx.fillStyle = feedbackSort === 'top' ? '#0aa' : '#333';
+    ctx.beginPath();
+    ctx.roundRect(topX, y, sortTabWidth, sortTabHeight, 6);
+    ctx.fill();
+    if (feedbackSort === 'top') {
+        ctx.strokeStyle = '#0ff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
+    ctx.font = feedbackSort === 'top' ? 'bold 14px monospace' : '14px monospace';
+    ctx.fillStyle = feedbackSort === 'top' ? '#fff' : '#888';
+    ctx.textAlign = 'center';
+    ctx.fillText('Top', topX + sortTabWidth / 2, y + 19);
 
-    y += 25;
+    y += sortTabHeight + 12;
+
+    // Horizontal divider before suggestions (edge to edge)
+    ctx.strokeStyle = 'rgba(0, 200, 200, 0.3)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(panelX, y);
+    ctx.lineTo(panelX + panelWidth, y);
+    ctx.stroke();
+
+    y += 2;
 
     // Suggestions list
-    const suggestions = feedbackData.suggestions || [];
-    const listHeight = 180;
-    const itemHeight = 36;
-    const maxVisible = Math.floor(listHeight / itemHeight);
+    const listHeight = Math.min(suggestionsListHeight, panelStartY + panelHeight - y - panelPadding);
+    const maxVisible = Math.floor(listHeight / suggestionItemHeight);
 
     if (suggestions.length === 0) {
         ctx.fillStyle = '#666';
         ctx.font = '14px monospace';
         ctx.textAlign = 'center';
-        ctx.fillText('No suggestions yet - be the first!', centerX, y + 40);
+        ctx.fillText('No suggestions yet - be the first!', centerX, y + 30);
         return;
     }
 
     ctx.save();
     ctx.beginPath();
-    ctx.rect(centerX - 280, y, 560, listHeight);
+    ctx.rect(panelX, y, panelWidth, listHeight);
     ctx.clip();
 
     const voterId = getOrCreateVoterId();
+    const listStartX = panelX + 10; // Small padding for text
+    const listWidth = panelWidth - 20;
 
     for (let i = 0; i < Math.min(suggestions.length, maxVisible + 1); i++) {
-        const idx = i + Math.floor(feedbackScrollOffset / itemHeight);
+        const idx = i + Math.floor(feedbackScrollOffset / suggestionItemHeight);
         if (idx >= suggestions.length) break;
 
         const s = suggestions[idx];
-        const itemY = y + i * itemHeight - (feedbackScrollOffset % itemHeight);
+        const itemY = y + i * suggestionItemHeight - (feedbackScrollOffset % suggestionItemHeight);
 
-        if (itemY < y - itemHeight || itemY > y + listHeight) continue;
+        if (itemY < y - suggestionItemHeight || itemY > y + listHeight) continue;
+
+        // Draw divider between items (edge to edge)
+        if (i > 0 || feedbackScrollOffset > 0) {
+            ctx.strokeStyle = 'rgba(0, 200, 200, 0.2)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(panelX, itemY);
+            ctx.lineTo(panelX + panelWidth, itemY);
+            ctx.stroke();
+        }
 
         // Flag
         const flag = countryCodeToFlag(s.countryCode);
         ctx.font = '16px monospace';
         ctx.textAlign = 'left';
         ctx.fillStyle = '#fff';
-        ctx.fillText(flag, centerX - 270, itemY + 20);
+        ctx.fillText(flag, listStartX + 5, itemY + 22);
 
         // Text (truncated)
         ctx.font = '14px monospace';
         ctx.fillStyle = '#ccc';
-        const maxTextWidth = 400;
+        const maxTextWidth = listWidth - 90;
         let text = s.text;
         while (ctx.measureText(text).width > maxTextWidth && text.length > 0) {
             text = text.slice(0, -1);
         }
         if (text !== s.text) text += '...';
-        ctx.fillText(text, centerX - 240, itemY + 20);
+        ctx.fillText(text, listStartX + 35, itemY + 22);
 
         // Upvote button
         const hasVoted = s.voterIds && s.voterIds.includes(voterId);
-        const upvoteX = centerX + 200;
+        const upvoteX = panelX + panelWidth - 60;
 
         feedbackSuggestionBounds.push({
             id: s.id,
             x: upvoteX,
             y: itemY,
-            width: 60,
-            height: itemHeight,
+            width: 50,
+            height: suggestionItemHeight,
             hasVoted
         });
 
         ctx.font = '14px monospace';
         ctx.textAlign = 'center';
         ctx.fillStyle = hasVoted ? '#0a0' : '#888';
-        ctx.fillText(`▲ ${s.upvotes}`, upvoteX + 30, itemY + 22);
+        ctx.fillText(`▲ ${s.upvotes}`, upvoteX + 25, itemY + 22);
     }
 
     ctx.restore();
 
     // Scroll hint if more items
     if (suggestions.length > maxVisible) {
-        ctx.font = '12px monospace';
-        ctx.fillStyle = '#666';
+        ctx.font = '11px monospace';
+        ctx.fillStyle = '#555';
         ctx.textAlign = 'center';
-        ctx.fillText('Scroll for more', centerX, y + listHeight + 15);
+        ctx.fillText('↕ scroll for more', centerX, y + listHeight + 12);
     }
+
+    // "Play the game to submit feedback" section at the bottom
+    const ctaY = panelStartY + panelHeight - 36;
+
+    // Divider above the CTA
+    ctx.strokeStyle = 'rgba(0, 200, 200, 0.3)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(panelX, ctaY);
+    ctx.lineTo(panelX + panelWidth, ctaY);
+    ctx.stroke();
+
+    // CTA text
+    ctx.font = '13px monospace';
+    ctx.fillStyle = '#888';
+    ctx.textAlign = 'center';
+    ctx.fillText('👽 You gotta play the game to submit feedback!!!', centerX, ctaY + 22);
 }
 
 function renderRainbowBouncyText(text, centerX, baselineY, fontSize) {
@@ -7259,54 +7762,82 @@ function renderFeedbackScreen() {
     // Clear bounds for this frame
     feedbackStarBounds = [];
 
+    // Update UFO floating animation
+    feedbackUfoOffset = Math.sin(Date.now() / 500) * 6;
+
     const centerX = canvas.width / 2;
-    let y = 120;
 
-    // Title
-    ctx.font = 'bold 36px monospace';
-    ctx.fillStyle = '#0ff';
-    ctx.textAlign = 'center';
-    ctx.fillText('HOW WAS YOUR GAME?', centerX, y);
+    // ============================================
+    // UFO at top center with floating animation
+    // ============================================
+    const ufoWidth = 120;
+    const ufoHeight = 60;
+    const ufoX = centerX - ufoWidth / 2;
+    const ufoBaseY = 35;
+    const ufoY = ufoBaseY + feedbackUfoOffset;
 
-    y += 20;
+    if (images.ufo && images.ufo.complete) {
+        ctx.drawImage(images.ufo, ufoX, ufoY, ufoWidth, ufoHeight);
+    }
 
-    // Subtitle
-    ctx.font = '16px monospace';
+    // ============================================
+    // Title below UFO
+    // ============================================
+    const headerY = ufoBaseY + ufoHeight + 35;
+
+    renderRainbowBouncyText('HOW WAS YOUR GAME?', centerX, headerY, 30);
+
+    ctx.font = '14px monospace';
     ctx.fillStyle = '#888';
-    ctx.fillText('Your feedback helps us improve!', centerX, y + 30);
+    ctx.textAlign = 'center';
+    ctx.fillText('Your feedback helps us improve!', centerX, headerY + 50);
 
-    y += 80;
+    // ============================================
+    // Three columns for the three rating questions
+    // ============================================
+    const contentStartY = headerY + 130;
+    const columnWidth = 200;
+    const columnGap = 40;
+    const totalColumnsWidth = columnWidth * 3 + columnGap * 2;
+    const columnsStartX = centerX - totalColumnsWidth / 2;
 
-    // Rating questions
     const questions = [
-        { key: 'enjoyment', label: 'How much did you enjoy playing?' },
-        { key: 'difficulty', label: 'How was the difficulty?' },
-        { key: 'returnIntent', label: 'How likely are you to play again?' }
+        { key: 'enjoyment', label: 'How fun was it?', icon: '🎮' },
+        { key: 'difficulty', label: 'Difficulty?', icon: '💪' },
+        { key: 'returnIntent', label: 'Play again?', icon: '🔄' }
     ];
 
     const starSize = 32;
-    const starGap = 8;
-    const totalStarWidth = 5 * starSize + 4 * starGap;
+    const starGap = 4;
 
     for (let i = 0; i < questions.length; i++) {
         const q = questions[i];
+        const colX = columnsStartX + i * (columnWidth + columnGap);
+        const colCenterX = colX + columnWidth / 2;
         const isSelected = feedbackSelectedRow === i;
+        let y = contentStartY;
+
+        // Icon
+        ctx.font = '36px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(q.icon, colCenterX, y);
+        y += 45;
 
         // Question label
-        ctx.font = isSelected ? 'bold 18px monospace' : '18px monospace';
+        ctx.font = isSelected ? 'bold 16px monospace' : '16px monospace';
         ctx.fillStyle = isSelected ? '#0ff' : '#fff';
         ctx.textAlign = 'center';
-        ctx.fillText(q.label, centerX, y);
-
+        ctx.fillText(q.label, colCenterX, y);
         y += 35;
 
-        // Stars
-        const startX = centerX - totalStarWidth / 2;
+        // Stars (vertical stack for compact display)
+        const totalStarWidth = 5 * starSize + 4 * starGap;
+        const starsStartX = colCenterX - totalStarWidth / 2;
+
         for (let s = 1; s <= 5; s++) {
-            const starX = startX + (s - 1) * (starSize + starGap);
+            const starX = starsStartX + (s - 1) * (starSize + starGap);
             const filled = s <= feedbackRatings[q.key];
 
-            // Store bounds for click detection
             feedbackStarBounds.push({
                 row: i,
                 star: s,
@@ -7316,13 +7847,12 @@ function renderFeedbackScreen() {
                 height: starSize
             });
 
-            // Draw star
             ctx.font = `${starSize}px monospace`;
             ctx.textAlign = 'left';
             if (filled) {
                 ctx.fillStyle = '#ff0';
                 ctx.shadowColor = '#ff0';
-                ctx.shadowBlur = isSelected ? 10 : 5;
+                ctx.shadowBlur = isSelected ? 12 : 6;
             } else {
                 ctx.fillStyle = isSelected ? '#666' : '#444';
                 ctx.shadowBlur = 0;
@@ -7330,141 +7860,108 @@ function renderFeedbackScreen() {
             ctx.fillText('★', starX, y + starSize / 4);
             ctx.shadowBlur = 0;
         }
-
-        y += 50;
     }
 
-    // Suggestion text field
-    y += 10;
-    const isTextSelected = feedbackSelectedRow === 3;
+    // ============================================
+    // Status message and buttons below columns
+    // ============================================
+    let buttonsY = contentStartY + 180;
 
-    ctx.font = isTextSelected ? 'bold 16px monospace' : '16px monospace';
-    ctx.fillStyle = isTextSelected ? '#0ff' : '#aaa';
-    ctx.textAlign = 'center';
-    ctx.fillText('Any suggestions? (optional)', centerX, y);
+    // Status message
+    if (ratingsSubmitted) {
+        ctx.font = 'bold 22px monospace';
+        ctx.fillStyle = '#0f0';
+        ctx.textAlign = 'center';
+        ctx.shadowColor = '#0f0';
+        ctx.shadowBlur = 15;
+        ctx.fillText('Thanks so much for your feedback!', centerX, buttonsY);
+        ctx.shadowBlur = 0;
+        buttonsY += 50;
+    } else if (ratingsSubmitting) {
+        ctx.font = '16px monospace';
+        ctx.fillStyle = '#888';
+        ctx.textAlign = 'center';
+        ctx.fillText('Submitting...', centerX, buttonsY);
+        buttonsY += 50;
+    } else {
+        const allRated = feedbackRatings.enjoyment > 0 && feedbackRatings.difficulty > 0 && feedbackRatings.returnIntent > 0;
+        ctx.font = '14px monospace';
+        ctx.textAlign = 'center';
+        if (allRated) {
+            ctx.fillStyle = '#0ff';
+            ctx.fillText('Ready to send! Click Send Feedback below.', centerX, buttonsY);
+        } else {
+            ctx.fillStyle = '#666';
+            ctx.fillText('Rate all three to send feedback', centerX, buttonsY);
+        }
+        buttonsY += 50;
+    }
 
-    y += 25;
+    // Buttons - three buttons in a row
+    const buttonWidth = 160;
+    const buttonHeight = 48;
+    const buttonGap = 20;
+    const totalButtonsWidth = buttonWidth * 3 + buttonGap * 2;
+    const buttonsStartX = centerX - totalButtonsWidth / 2;
 
-    // Text input box
-    const boxWidth = 500;
-    const boxHeight = 60;
-    const boxX = centerX - boxWidth / 2;
+    const allRated = feedbackRatings.enjoyment > 0 && feedbackRatings.difficulty > 0 && feedbackRatings.returnIntent > 0;
+    const canSend = allRated && !ratingsSubmitting && !ratingsSubmitted;
 
-    ctx.strokeStyle = isTextSelected ? '#0ff' : '#444';
-    ctx.lineWidth = 2;
+    // Send Feedback button (left)
+    const sendBtnX = buttonsStartX;
+
+    ctx.fillStyle = canSend ? '#0aa' : '#444';
     ctx.beginPath();
-    ctx.roundRect(boxX, y, boxWidth, boxHeight, 8);
-    ctx.stroke();
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.roundRect(sendBtnX, buttonsY, buttonWidth, buttonHeight, 8);
     ctx.fill();
-
-    // Text content with cursor
-    ctx.font = '14px monospace';
-    ctx.fillStyle = '#fff';
-    ctx.textAlign = 'left';
-
-    const textPadding = 10;
-
-    // Simple text wrapping
-    let displayText = feedbackSuggestion || (isTextSelected ? '' : 'Click or type to add a suggestion...');
-    if (!feedbackSuggestion && !isTextSelected) {
-        ctx.fillStyle = '#666';
-    }
-
-    // Draw text (simple single-line for now, truncated)
-    const visibleText = displayText.slice(0, 55);
-    ctx.fillText(visibleText, boxX + textPadding, y + 25);
-
-    if (feedbackSuggestion.length > 55) {
-        const line2 = feedbackSuggestion.slice(55, 110);
-        ctx.fillText(line2, boxX + textPadding, y + 42);
-    }
-
-    // Cursor
-    if (isTextSelected && feedbackCursorVisible) {
-        const cursorLine = feedbackCursorPosition > 55 ? 1 : 0;
-        const cursorPosInLine = cursorLine === 0 ? feedbackCursorPosition : feedbackCursorPosition - 55;
-        const cursorX = boxX + textPadding + cursorPosInLine * 8.4;
-        const cursorY = y + 12 + cursorLine * 17;
-
+    if (canSend) {
         ctx.strokeStyle = '#0ff';
         ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(cursorX, cursorY);
-        ctx.lineTo(cursorX, cursorY + 16);
         ctx.stroke();
     }
 
-    // Character count
-    ctx.fillStyle = feedbackSuggestion.length > 280 ? '#f55' : '#666';
-    ctx.textAlign = 'right';
-    ctx.fillText(`${feedbackSuggestion.length}/300`, boxX + boxWidth - 5, y + boxHeight + 18);
+    feedbackButtonBounds.submit = { x: sendBtnX, y: buttonsY, width: buttonWidth, height: buttonHeight };
 
-    y += boxHeight + 50;
-
-    // Buttons
-    const buttonWidth = 140;
-    const buttonHeight = 45;
-    const buttonGap = 30;
-    const buttonsY = y;
-    const isButtonsSelected = feedbackSelectedRow === 4;
-
-    // Submit button
-    const submitX = centerX - buttonWidth - buttonGap / 2;
-    const submitSelected = isButtonsSelected && feedbackSelectedButton === 0;
-
-    ctx.fillStyle = submitSelected ? '#0a0' : '#080';
-    if (feedbackSubmitting) ctx.fillStyle = '#444';
-    ctx.beginPath();
-    ctx.roundRect(submitX, buttonsY, buttonWidth, buttonHeight, 8);
-    ctx.fill();
-
-    if (submitSelected) {
-        ctx.strokeStyle = '#0f0';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-    }
-
-    feedbackButtonBounds.submit = { x: submitX, y: buttonsY, width: buttonWidth, height: buttonHeight };
-
-    ctx.font = 'bold 18px monospace';
-    ctx.fillStyle = feedbackSubmitting ? '#666' : '#fff';
+    ctx.font = 'bold 14px monospace';
+    ctx.fillStyle = canSend ? '#fff' : '#666';
     ctx.textAlign = 'center';
-    ctx.fillText(feedbackSubmitting ? 'Sending...' : 'Submit', submitX + buttonWidth / 2, buttonsY + 30);
+    ctx.fillText('Send Feedback', sendBtnX + buttonWidth / 2, buttonsY + 30);
 
-    // Skip button
-    const skipX = centerX + buttonGap / 2;
-    const skipSelected = isButtonsSelected && feedbackSelectedButton === 1;
+    // Play Again button (center) - prominent green
+    const playBtnX = buttonsStartX + buttonWidth + buttonGap;
 
-    ctx.fillStyle = skipSelected ? '#555' : '#333';
+    ctx.fillStyle = '#080';
     ctx.beginPath();
-    ctx.roundRect(skipX, buttonsY, buttonWidth, buttonHeight, 8);
+    ctx.roundRect(playBtnX, buttonsY, buttonWidth, buttonHeight, 8);
     ctx.fill();
+    ctx.strokeStyle = '#0f0';
+    ctx.lineWidth = 2;
+    ctx.stroke();
 
-    if (skipSelected) {
-        ctx.strokeStyle = '#888';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-    }
+    feedbackButtonBounds.playAgain = { x: playBtnX, y: buttonsY, width: buttonWidth, height: buttonHeight };
 
-    feedbackButtonBounds.skip = { x: skipX, y: buttonsY, width: buttonWidth, height: buttonHeight };
+    ctx.font = 'bold 14px monospace';
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.fillText('Play Again', playBtnX + buttonWidth / 2, buttonsY + 30);
 
+    // Main Menu button (right) - subtle
+    const menuBtnX = buttonsStartX + (buttonWidth + buttonGap) * 2;
+
+    ctx.fillStyle = '#333';
+    ctx.beginPath();
+    ctx.roundRect(menuBtnX, buttonsY, buttonWidth, buttonHeight, 8);
+    ctx.fill();
+    ctx.strokeStyle = '#666';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    feedbackButtonBounds.skip = { x: menuBtnX, y: buttonsY, width: buttonWidth, height: buttonHeight };
+
+    ctx.font = 'bold 14px monospace';
     ctx.fillStyle = '#aaa';
-    ctx.fillText('Skip', skipX + buttonWidth / 2, buttonsY + 30);
-
-    // Error message
-    if (feedbackError) {
-        ctx.font = '16px monospace';
-        ctx.fillStyle = '#f55';
-        ctx.textAlign = 'center';
-        ctx.fillText(feedbackError, centerX, buttonsY + buttonHeight + 35);
-    }
-
-    // Instructions
-    ctx.font = '14px monospace';
-    ctx.fillStyle = '#666';
     ctx.textAlign = 'center';
-    ctx.fillText('Arrow keys to navigate • Enter to select • Esc to skip', centerX, canvas.height - 40);
+    ctx.fillText('Main Menu', menuBtnX + buttonWidth / 2, buttonsY + 30);
 }
 
 // ============================================
@@ -8916,10 +9413,6 @@ function gameLoop(timestamp) {
         case 'PLAYING':
             update(dt);
             render();
-            break;
-
-        case 'GAME_OVER':
-            renderGameOverScreen();
             break;
 
         case 'NAME_ENTRY':
