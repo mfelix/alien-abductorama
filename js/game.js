@@ -6860,10 +6860,10 @@ function renderNameEntryScreen() {
         // Highlight current position
         if (i === nameEntryPosition) {
             ctx.fillStyle = '#0ff';
-            // Draw selection arrows
+            // Draw selection arrows (vertically centered around letter)
             ctx.font = 'bold 24px monospace';
-            ctx.fillText('▲', x, y - 40);
-            ctx.fillText('▼', x, y + 35);
+            ctx.fillText('▲', x, y - 50);
+            ctx.fillText('▼', x, y + 28);
         } else {
             ctx.fillStyle = '#fff';
         }
@@ -6958,47 +6958,52 @@ function renderNameEntryScreen() {
     }
 
     // Calculate total width for centering
+    const keyGap = 8; // Padding around keyboard keys
+    const sectionGap = 24; // Gap between instruction sections
+
     const upDownWidth = ctx.measureText('↑↓').width + keyPadding * 2;
-    const changeLetterText = ' Change Letter    ';
+    const changeLetterText = 'Change Letter';
     const changeLetterWidth = ctx.measureText(changeLetterText).width;
     const leftRightWidth = ctx.measureText('←→').width + keyPadding * 2;
-    const moveText = ' Move    ';
+    const moveText = 'Move';
     const moveWidth = ctx.measureText(moveText).width;
     const enterWidth = ctx.measureText('ENTER').width + keyPadding * 2;
-    const submitText = ' Submit';
+    const submitText = 'Submit';
     const submitWidth = ctx.measureText(submitText).width;
 
-    const instructTotalWidth = upDownWidth + changeLetterWidth + leftRightWidth + moveWidth + enterWidth + submitWidth;
+    const instructTotalWidth = upDownWidth + keyGap + changeLetterWidth + sectionGap +
+                               leftRightWidth + keyGap + moveWidth + sectionGap +
+                               enterWidth + keyGap + submitWidth;
     let instructX = canvas.width / 2 - instructTotalWidth / 2;
 
     // Draw ↑↓ key
     instructX += upDownWidth / 2;
     drawKey('↑↓', instructX, instructY);
-    instructX += upDownWidth / 2;
+    instructX += upDownWidth / 2 + keyGap;
 
-    // Draw " Change Letter    "
+    // Draw "Change Letter"
     ctx.fillStyle = '#aaa';
     ctx.textAlign = 'left';
     ctx.fillText(changeLetterText, instructX, instructY);
-    instructX += changeLetterWidth;
+    instructX += changeLetterWidth + sectionGap;
 
     // Draw ←→ key
     instructX += leftRightWidth / 2;
     drawKey('←→', instructX, instructY);
-    instructX += leftRightWidth / 2;
+    instructX += leftRightWidth / 2 + keyGap;
 
-    // Draw " Move    "
+    // Draw "Move"
     ctx.fillStyle = '#aaa';
     ctx.textAlign = 'left';
     ctx.fillText(moveText, instructX, instructY);
-    instructX += moveWidth;
+    instructX += moveWidth + sectionGap;
 
     // Draw ENTER key
     instructX += enterWidth / 2;
     drawKey('ENTER', instructX, instructY);
-    instructX += enterWidth / 2;
+    instructX += enterWidth / 2 + keyGap;
 
-    // Draw " Submit"
+    // Draw "Submit"
     ctx.fillStyle = '#aaa';
     ctx.textAlign = 'left';
     ctx.fillText(submitText, instructX, instructY);
