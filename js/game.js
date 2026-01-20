@@ -6969,39 +6969,39 @@ function renderNameEntryScreen() {
     const submitWidth = ctx.measureText(submitText).width;
 
     const instructTotalWidth = upDownWidth + changeLetterWidth + leftRightWidth + moveWidth + enterWidth + submitWidth;
-    let currentX = canvas.width / 2 - instructTotalWidth / 2;
+    let instructX = canvas.width / 2 - instructTotalWidth / 2;
 
     // Draw ↑↓ key
-    currentX += upDownWidth / 2;
-    drawKey('↑↓', currentX, instructY);
-    currentX += upDownWidth / 2;
+    instructX += upDownWidth / 2;
+    drawKey('↑↓', instructX, instructY);
+    instructX += upDownWidth / 2;
 
     // Draw " Change Letter    "
     ctx.fillStyle = '#aaa';
     ctx.textAlign = 'left';
-    ctx.fillText(changeLetterText, currentX, instructY);
-    currentX += changeLetterWidth;
+    ctx.fillText(changeLetterText, instructX, instructY);
+    instructX += changeLetterWidth;
 
     // Draw ←→ key
-    currentX += leftRightWidth / 2;
-    drawKey('←→', currentX, instructY);
-    currentX += leftRightWidth / 2;
+    instructX += leftRightWidth / 2;
+    drawKey('←→', instructX, instructY);
+    instructX += leftRightWidth / 2;
 
     // Draw " Move    "
     ctx.fillStyle = '#aaa';
     ctx.textAlign = 'left';
-    ctx.fillText(moveText, currentX, instructY);
-    currentX += moveWidth;
+    ctx.fillText(moveText, instructX, instructY);
+    instructX += moveWidth;
 
     // Draw ENTER key
-    currentX += enterWidth / 2;
-    drawKey('ENTER', currentX, instructY);
-    currentX += enterWidth / 2;
+    instructX += enterWidth / 2;
+    drawKey('ENTER', instructX, instructY);
+    instructX += enterWidth / 2;
 
     // Draw " Submit"
     ctx.fillStyle = '#aaa';
     ctx.textAlign = 'left';
-    ctx.fillText(submitText, currentX, instructY);
+    ctx.fillText(submitText, instructX, instructY);
 
     ctx.textBaseline = 'alphabetic';
 }
