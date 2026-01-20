@@ -1067,6 +1067,7 @@ let hasScrolledToHighlight = false; // Track if we've auto-scrolled to highlight
 let finalScore = 0;
 let finalWave = 0;
 let finalGameLength = 0;
+let finalHealth = 0; // For HUD display after UFO is destroyed
 
 // Name entry state
 let nameEntryChars = ['A', 'A', 'A'];
@@ -5056,6 +5057,7 @@ function triggerGameOver() {
     finalScore = score;
     finalWave = wave;
     finalGameLength = (Date.now() - gameStartTime) / 1000;
+    finalHealth = ufo.health;
 
     // Store UFO position before hiding it
     const ufoX = ufo.x;
@@ -5808,7 +5810,7 @@ function renderUI() {
     ctx.fill();
 
     // Shield bar fill with gradient
-    const healthPercent = ufo ? ufo.health / CONFIG.UFO_START_HEALTH : 1;
+    const healthPercent = ufo ? ufo.health / CONFIG.UFO_START_HEALTH : finalHealth / CONFIG.UFO_START_HEALTH;
     const shieldGradient = ctx.createLinearGradient(shieldX, 0, shieldX + shieldBarWidth * healthPercent, 0);
     if (healthPercent > 0.5) {
         shieldGradient.addColorStop(0, '#0a4');
