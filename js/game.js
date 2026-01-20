@@ -6847,7 +6847,7 @@ function renderNameEntryScreen() {
 
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 32px monospace';
-    ctx.fillText('ENTER YOUR NAME', canvas.width / 2, canvas.height / 2 - 40);
+    ctx.fillText('ENTER YOUR NAME', canvas.width / 2, canvas.height / 2 - 70);
 
     // Draw the 3 letter slots
     const slotWidth = 60;
@@ -6862,8 +6862,8 @@ function renderNameEntryScreen() {
             ctx.fillStyle = '#0ff';
             // Draw selection arrows
             ctx.font = 'bold 24px monospace';
-            ctx.fillText('▲', x, y - 50);
-            ctx.fillText('▼', x, y + 60);
+            ctx.fillText('▲', x, y - 40);
+            ctx.fillText('▼', x, y + 35);
         } else {
             ctx.fillStyle = '#fff';
         }
@@ -6913,65 +6913,95 @@ function renderNameEntryScreen() {
         ctx.fillText(submissionError, canvas.width / 2, canvas.height - 140);
     }
 
-    // Instructions with styled ENTER key
+    // Instructions with styled keyboard keys
     const instructY = canvas.height - 100;
     const fontSize = 18;
-    ctx.font = `${fontSize}px monospace`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-
-    // Measure text parts
-    const part1 = '↑↓ Change Letter    ←→ Move    ';
-    const enterText = 'ENTER';
-    const part2 = ' Submit';
-
-    ctx.font = `${fontSize}px monospace`;
-    const part1Width = ctx.measureText(part1).width;
-    const enterWidth = ctx.measureText(enterText).width;
-    const part2Width = ctx.measureText(part2).width;
-    const totalInstructWidth = part1Width + enterWidth + part2Width;
-
-    const instructStartX = canvas.width / 2 - totalInstructWidth / 2;
-
-    // Draw first part
-    ctx.fillStyle = '#aaa';
-    ctx.textAlign = 'left';
-    ctx.fillText(part1, instructStartX, instructY);
-
-    // Draw rounded rectangle around ENTER (like a keyboard key)
     const keyPadding = 6;
     const keyHeight = fontSize + keyPadding * 2;
-    const keyWidth = enterWidth + keyPadding * 2;
-    const keyX = instructStartX + part1Width - keyPadding;
-    const keyY = instructY - keyHeight / 2;
     const keyRadius = 5;
 
-    // Key background
-    ctx.fillStyle = '#333';
-    ctx.beginPath();
-    ctx.roundRect(keyX, keyY, keyWidth, keyHeight, keyRadius);
-    ctx.fill();
+    ctx.font = `${fontSize}px monospace`;
+    ctx.textBaseline = 'middle';
 
-    // Key border
-    ctx.strokeStyle = '#888';
-    ctx.lineWidth = 2;
-    ctx.stroke();
+    // Helper function to draw a keyboard key
+    function drawKey(text, centerX, centerY) {
+        const textWidth = ctx.measureText(text).width;
+        const keyWidth = textWidth + keyPadding * 2;
+        const keyX = centerX - keyWidth / 2;
+        const keyY = centerY - keyHeight / 2;
 
-    // Key highlight (top edge for 3D effect)
-    ctx.strokeStyle = '#aaa';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(keyX + keyRadius, keyY + 1);
-    ctx.lineTo(keyX + keyWidth - keyRadius, keyY + 1);
-    ctx.stroke();
+        // Key background
+        ctx.fillStyle = '#333';
+        ctx.beginPath();
+        ctx.roundRect(keyX, keyY, keyWidth, keyHeight, keyRadius);
+        ctx.fill();
 
-    // Draw "ENTER" text
-    ctx.fillStyle = '#fff';
-    ctx.fillText(enterText, instructStartX + part1Width, instructY);
+        // Key border
+        ctx.strokeStyle = '#888';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Key highlight (top edge for 3D effect)
+        ctx.strokeStyle = '#aaa';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(keyX + keyRadius, keyY + 1);
+        ctx.lineTo(keyX + keyWidth - keyRadius, keyY + 1);
+        ctx.stroke();
+
+        // Key text
+        ctx.fillStyle = '#fff';
+        ctx.textAlign = 'center';
+        ctx.fillText(text, centerX, centerY);
+
+        return keyWidth;
+    }
+
+    // Calculate total width for centering
+    const upDownWidth = ctx.measureText('↑↓').width + keyPadding * 2;
+    const changeLetterText = ' Change Letter    ';
+    const changeLetterWidth = ctx.measureText(changeLetterText).width;
+    const leftRightWidth = ctx.measureText('←→').width + keyPadding * 2;
+    const moveText = ' Move    ';
+    const moveWidth = ctx.measureText(moveText).width;
+    const enterWidth = ctx.measureText('ENTER').width + keyPadding * 2;
+    const submitText = ' Submit';
+    const submitWidth = ctx.measureText(submitText).width;
+
+    const totalWidth = upDownWidth + changeLetterWidth + leftRightWidth + moveWidth + enterWidth + submitWidth;
+    let currentX = canvas.width / 2 - totalWidth / 2;
+
+    // Draw ↑↓ key
+    currentX += upDownWidth / 2;
+    drawKey('↑↓', currentX, instructY);
+    currentX += upDownWidth / 2;
+
+    // Draw " Change Letter    "
+    ctx.fillStyle = '#aaa';
+    ctx.textAlign = 'left';
+    ctx.fillText(changeLetterText, currentX, instructY);
+    currentX += changeLetterWidth;
+
+    // Draw ←→ key
+    currentX += leftRightWidth / 2;
+    drawKey('←→', currentX, instructY);
+    currentX += leftRightWidth / 2;
+
+    // Draw " Move    "
+    ctx.fillStyle = '#aaa';
+    ctx.textAlign = 'left';
+    ctx.fillText(moveText, currentX, instructY);
+    currentX += moveWidth;
+
+    // Draw ENTER key
+    currentX += enterWidth / 2;
+    drawKey('ENTER', currentX, instructY);
+    currentX += enterWidth / 2;
 
     // Draw " Submit"
     ctx.fillStyle = '#aaa';
-    ctx.fillText(part2, instructStartX + part1Width + enterWidth, instructY);
+    ctx.textAlign = 'left';
+    ctx.fillText(submitText, currentX, instructY);
 
     ctx.textBaseline = 'alphabetic';
 }
