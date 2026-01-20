@@ -1073,6 +1073,7 @@ let nameEntryChars = ['A', 'A', 'A'];
 let nameEntryPosition = 0;
 let nameEntryComplete = false;
 let newHighScoreRank = null;
+let nameEntrySubmitBounds = null; // { x, y, width, height } for submit button click
 
 // Feedback state
 let feedbackRatings = { enjoyment: 0, difficulty: 0, returnIntent: 0 };
@@ -1593,6 +1594,22 @@ canvas.addEventListener('click', (e) => {
         }
         // Click anywhere else on the modal does nothing (blocks interaction with background)
         return;
+    }
+
+    // Handle name entry submit button click
+    if (gameState === 'NAME_ENTRY' && nameEntrySubmitBounds) {
+        const b = nameEntrySubmitBounds;
+        if (mouseX >= b.x && mouseX <= b.x + b.width &&
+            mouseY >= b.y && mouseY <= b.y + b.height) {
+            const name = nameEntryChars.join('');
+            submitScore(name).then(rank => {
+                newHighScoreRank = rank;
+                nameEntryUfo.initialized = false;
+                resetFeedbackState();
+                gameState = 'FEEDBACK';
+            });
+            return;
+        }
     }
 
     // Handle feedback clicks
@@ -6855,6 +6872,40 @@ function renderNameEntryScreen() {
         ctx.fillText(nameEntryChars[i], x, y);
     }
 
+    // Big SUBMIT button below letter slots
+    const submitButtonY = canvas.height / 2 + 100;
+    const submitButtonWidth = 180;
+    const submitButtonHeight = 50;
+    const submitButtonX = canvas.width / 2 - submitButtonWidth / 2;
+
+    // Store bounds for click detection
+    nameEntrySubmitBounds = { x: submitButtonX, y: submitButtonY, width: submitButtonWidth, height: submitButtonHeight };
+
+    // Button background with gradient effect
+    ctx.fillStyle = '#0a0';
+    ctx.beginPath();
+    ctx.roundRect(submitButtonX, submitButtonY, submitButtonWidth, submitButtonHeight, 8);
+    ctx.fill();
+
+    // Button border
+    ctx.strokeStyle = '#0f0';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    // Button highlight (top edge for 3D effect)
+    ctx.strokeStyle = '#4f4';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(submitButtonX + 8, submitButtonY + 2);
+    ctx.lineTo(submitButtonX + submitButtonWidth - 8, submitButtonY + 2);
+    ctx.stroke();
+
+    // Button text
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 24px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('SUBMIT', canvas.width / 2, submitButtonY + 33);
+
     // Show submission error if any
     if (submissionError) {
         ctx.fillStyle = '#f55';
@@ -6862,9 +6913,67 @@ function renderNameEntryScreen() {
         ctx.fillText(submissionError, canvas.width / 2, canvas.height - 140);
     }
 
+    // Instructions with styled ENTER key
+    const instructY = canvas.height - 100;
+    const fontSize = 18;
+    ctx.font = `${fontSize}px monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // Measure text parts
+    const part1 = '↑↓ Change Letter    ←→ Move    ';
+    const enterText = 'ENTER';
+    const part2 = ' Submit';
+
+    ctx.font = `${fontSize}px monospace`;
+    const part1Width = ctx.measureText(part1).width;
+    const enterWidth = ctx.measureText(enterText).width;
+    const part2Width = ctx.measureText(part2).width;
+    const totalInstructWidth = part1Width + enterWidth + part2Width;
+
+    const instructStartX = canvas.width / 2 - totalInstructWidth / 2;
+
+    // Draw first part
     ctx.fillStyle = '#aaa';
-    ctx.font = '18px monospace';
-    ctx.fillText('↑↓ Change Letter    ←→ Move    ENTER Submit', canvas.width / 2, canvas.height - 100);
+    ctx.textAlign = 'left';
+    ctx.fillText(part1, instructStartX, instructY);
+
+    // Draw rounded rectangle around ENTER (like a keyboard key)
+    const keyPadding = 6;
+    const keyHeight = fontSize + keyPadding * 2;
+    const keyWidth = enterWidth + keyPadding * 2;
+    const keyX = instructStartX + part1Width - keyPadding;
+    const keyY = instructY - keyHeight / 2;
+    const keyRadius = 5;
+
+    // Key background
+    ctx.fillStyle = '#333';
+    ctx.beginPath();
+    ctx.roundRect(keyX, keyY, keyWidth, keyHeight, keyRadius);
+    ctx.fill();
+
+    // Key border
+    ctx.strokeStyle = '#888';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Key highlight (top edge for 3D effect)
+    ctx.strokeStyle = '#aaa';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(keyX + keyRadius, keyY + 1);
+    ctx.lineTo(keyX + keyWidth - keyRadius, keyY + 1);
+    ctx.stroke();
+
+    // Draw "ENTER" text
+    ctx.fillStyle = '#fff';
+    ctx.fillText(enterText, instructStartX + part1Width, instructY);
+
+    // Draw " Submit"
+    ctx.fillStyle = '#aaa';
+    ctx.fillText(part2, instructStartX + part1Width + enterWidth, instructY);
+
+    ctx.textBaseline = 'alphabetic';
 }
 
 function getChangelogSorted() {
