@@ -7682,11 +7682,11 @@ function renderLeaderboardContent() {
 
         // Score
         ctx.textAlign = 'right';
-        ctx.fillText(entry.score.toLocaleString(), panelX + panelWidth - 190, textY);
+        ctx.fillText(entry.score.toLocaleString(), panelX + panelWidth - 240, textY);
 
         // Wave
         ctx.fillStyle = isHighlighted ? '#0aa' : '#888';
-        ctx.fillText(`W${entry.wave}`, panelX + panelWidth - 110, textY);
+        ctx.fillText(`Wave ${entry.wave}`, panelX + panelWidth - 130, textY);
 
         // Date
         ctx.fillStyle = isHighlighted ? '#088' : '#666';
