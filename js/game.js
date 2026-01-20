@@ -5229,7 +5229,7 @@ async function submitScore(name) {
 
 function scoreQualifiesForLeaderboard() {
     if (finalScore <= 0) return false;
-    if (leaderboard.length < 10) return true;
+    if (leaderboard.length < 100) return true;
     // Match server-side tie-breaker logic
     const last = leaderboard[leaderboard.length - 1];
     if (finalScore !== last.score) return finalScore > last.score;
