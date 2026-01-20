@@ -6968,8 +6968,8 @@ function renderNameEntryScreen() {
     const submitText = ' Submit';
     const submitWidth = ctx.measureText(submitText).width;
 
-    const totalWidth = upDownWidth + changeLetterWidth + leftRightWidth + moveWidth + enterWidth + submitWidth;
-    let currentX = canvas.width / 2 - totalWidth / 2;
+    const instructTotalWidth = upDownWidth + changeLetterWidth + leftRightWidth + moveWidth + enterWidth + submitWidth;
+    let currentX = canvas.width / 2 - instructTotalWidth / 2;
 
     // Draw ↑↓ key
     currentX += upDownWidth / 2;
