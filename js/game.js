@@ -1120,6 +1120,8 @@ let feedbackScrollOffset = 0;
 let feedbackSuggestionBounds = []; // For upvote click detection
 let feedbackSortBounds = { recent: null, top: null };
 let feedbackMaxVisible = 5; // Updated during render - how many suggestions fit in the list
+let feedbackTotalContentHeight = 0; // Total height of all suggestion items (for scrolling)
+let feedbackListHeight = 0; // Visible list height (for scrolling)
 let hasPlayedThisSession = false; // Track if user has played a game this session
 let titleFeedbackSubmitBounds = null; // Bounds for the submit feedback button on title screen
 let titleFeedbackSubmitted = false; // Track if feedback was submitted from title screen
@@ -1537,8 +1539,7 @@ canvas.addEventListener('wheel', (e) => {
 
     // Feedback tab scrolling
     if (titleTab === 'feedback' && feedbackData) {
-        const suggestions = feedbackData.suggestions || [];
-        const maxScroll = Math.max(0, (suggestions.length - feedbackMaxVisible) * 36);
+        const maxScroll = Math.max(0, feedbackTotalContentHeight - feedbackListHeight);
         feedbackScrollOffset = Math.max(0, Math.min(maxScroll, feedbackScrollOffset + e.deltaY));
         e.preventDefault();
         return;
@@ -7990,7 +7991,8 @@ function renderFeedbackTabContent() {
     }
 
     // ========== PANEL 2: SUGGESTIONS ==========
-    const suggestionItemHeight = 36;
+    const suggestionLineHeight = 18;
+    const suggestionPadding = 10; // vertical padding per item
     const sortHeight = 45;
     const suggestionsPanelY = panelStartY + ratingsPanelHeight + panelGap;
     // Extend panel to fill available space (to just above green section)
@@ -8063,8 +8065,6 @@ function renderFeedbackTabContent() {
 
     // Suggestions list - use remaining panel space
     const listHeight = suggestionsPanelY + suggestionsPanelHeight - y - panelPadding;
-    const maxVisible = Math.floor(listHeight / suggestionItemHeight);
-    feedbackMaxVisible = maxVisible; // Update global for scroll handler
 
     if (suggestions.length === 0) {
         ctx.fillStyle = '#666';
@@ -8074,26 +8074,66 @@ function renderFeedbackTabContent() {
         return;
     }
 
+    const voterId = getOrCreateVoterId();
+    const listStartX = panelX + 10;
+    const listWidth = panelWidth - 20;
+    const maxTextWidth = listWidth - 90; // Leave room for flag and upvote button
+
+    // Helper to wrap text into lines
+    function wrapText(text, maxWidth) {
+        ctx.font = '14px monospace';
+        const words = text.split(' ');
+        const lines = [];
+        let currentLine = '';
+
+        for (const word of words) {
+            const testLine = currentLine ? currentLine + ' ' + word : word;
+            if (ctx.measureText(testLine).width <= maxWidth) {
+                currentLine = testLine;
+            } else {
+                if (currentLine) lines.push(currentLine);
+                currentLine = word;
+            }
+        }
+        if (currentLine) lines.push(currentLine);
+        return lines;
+    }
+
+    // Pre-calculate wrapped lines and heights for all suggestions
+    const suggestionLayouts = suggestions.map(s => {
+        const lines = wrapText(s.text, maxTextWidth);
+        const height = suggestionPadding * 2 + lines.length * suggestionLineHeight;
+        return { suggestion: s, lines, height };
+    });
+
+    // Calculate cumulative positions
+    let totalContentHeight = 0;
+    const itemPositions = [];
+    for (const layout of suggestionLayouts) {
+        itemPositions.push(totalContentHeight);
+        totalContentHeight += layout.height;
+    }
+
+    // Update globals for scroll handler
+    feedbackTotalContentHeight = totalContentHeight;
+    feedbackListHeight = listHeight;
+    feedbackMaxVisible = Math.floor(listHeight / (suggestionPadding * 2 + suggestionLineHeight));
+
     ctx.save();
     ctx.beginPath();
     ctx.rect(panelX, y, panelWidth, listHeight);
     ctx.clip();
 
-    const voterId = getOrCreateVoterId();
-    const listStartX = panelX + 10; // Small padding for text
-    const listWidth = panelWidth - 20;
+    // Render visible suggestions
+    for (let i = 0; i < suggestionLayouts.length; i++) {
+        const { suggestion: s, lines, height } = suggestionLayouts[i];
+        const itemY = y + itemPositions[i] - feedbackScrollOffset;
 
-    for (let i = 0; i < Math.min(suggestions.length, maxVisible + 1); i++) {
-        const idx = i + Math.floor(feedbackScrollOffset / suggestionItemHeight);
-        if (idx >= suggestions.length) break;
-
-        const s = suggestions[idx];
-        const itemY = y + i * suggestionItemHeight - (feedbackScrollOffset % suggestionItemHeight);
-
-        if (itemY < y - suggestionItemHeight || itemY > y + listHeight) continue;
+        // Skip if completely outside visible area
+        if (itemY + height < y || itemY > y + listHeight) continue;
 
         // Draw divider between items (edge to edge)
-        if (i > 0 || feedbackScrollOffset > 0) {
+        if (i > 0) {
             ctx.strokeStyle = 'rgba(0, 200, 200, 0.2)';
             ctx.lineWidth = 1;
             ctx.beginPath();
@@ -8107,42 +8147,39 @@ function renderFeedbackTabContent() {
         ctx.font = '16px monospace';
         ctx.textAlign = 'left';
         ctx.fillStyle = '#fff';
-        ctx.fillText(flag, listStartX + 5, itemY + 22);
+        ctx.fillText(flag, listStartX + 5, itemY + suggestionPadding + suggestionLineHeight - 2);
 
-        // Text (truncated)
+        // Wrapped text lines
         ctx.font = '14px monospace';
         ctx.fillStyle = '#ccc';
-        const maxTextWidth = listWidth - 90;
-        let text = s.text;
-        while (ctx.measureText(text).width > maxTextWidth && text.length > 0) {
-            text = text.slice(0, -1);
+        for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+            ctx.fillText(lines[lineIdx], listStartX + 35, itemY + suggestionPadding + (lineIdx + 1) * suggestionLineHeight - 2);
         }
-        if (text !== s.text) text += '...';
-        ctx.fillText(text, listStartX + 35, itemY + 22);
 
-        // Upvote button
+        // Upvote button (vertically centered in the item)
         const hasVoted = s.voterIds && s.voterIds.includes(voterId);
         const upvoteX = panelX + panelWidth - 60;
+        const upvoteTextY = itemY + height / 2 + 5;
 
         feedbackSuggestionBounds.push({
             id: s.id,
             x: upvoteX,
             y: itemY,
             width: 50,
-            height: suggestionItemHeight,
+            height: height,
             hasVoted
         });
 
         ctx.font = '14px monospace';
         ctx.textAlign = 'center';
         ctx.fillStyle = hasVoted ? '#0a0' : '#888';
-        ctx.fillText(`▲ ${s.upvotes}`, upvoteX + 25, itemY + 22);
+        ctx.fillText(`▲ ${s.upvotes}`, upvoteX + 25, upvoteTextY);
     }
 
     ctx.restore();
 
-    // Scroll hint if more items
-    if (suggestions.length > maxVisible) {
+    // Scroll hint if content exceeds visible area
+    if (totalContentHeight > listHeight) {
         ctx.font = '11px monospace';
         ctx.fillStyle = '#555';
         ctx.textAlign = 'center';
