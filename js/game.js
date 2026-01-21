@@ -1075,6 +1075,7 @@ let nameEntryPosition = 0;
 let nameEntryComplete = false;
 let newHighScoreRank = null;
 let nameEntrySubmitBounds = null; // { x, y, width, height } for submit button click
+let scoreSubmitting = false; // Guard against double submission
 
 // Feedback state
 let feedbackRatings = { enjoyment: 0, difficulty: 0, returnIntent: 0 };
@@ -1293,12 +1294,15 @@ window.addEventListener('keydown', (e) => {
         } else if (e.key === 'ArrowRight') {
             nameEntryPosition = Math.min(2, nameEntryPosition + 1);
         } else if (e.key === 'Enter') {
+            if (scoreSubmitting) return; // Prevent double submission
+            scoreSubmitting = true;
             const name = nameEntryChars.join('');
             submitScore(name).then(rank => {
                 newHighScoreRank = rank;
                 nameEntryUfo.initialized = false;  // Reset for next time
                 resetFeedbackState();
                 gameState = 'FEEDBACK';
+                scoreSubmitting = false;
             });
         } else if (/^[A-Za-z]$/.test(e.key)) {
             // Direct letter input
@@ -1603,12 +1607,15 @@ canvas.addEventListener('click', (e) => {
         const b = nameEntrySubmitBounds;
         if (mouseX >= b.x && mouseX <= b.x + b.width &&
             mouseY >= b.y && mouseY <= b.y + b.height) {
+            if (scoreSubmitting) return; // Prevent double submission
+            scoreSubmitting = true;
             const name = nameEntryChars.join('');
             submitScore(name).then(rank => {
                 newHighScoreRank = rank;
                 nameEntryUfo.initialized = false;
                 resetFeedbackState();
                 gameState = 'FEEDBACK';
+                scoreSubmitting = false;
             });
             return;
         }
@@ -5119,6 +5126,7 @@ function triggerGameOver() {
             nameEntryChars = ['A', 'A', 'A'];
             nameEntryPosition = 0;
             submissionError = null;
+            scoreSubmitting = false;
             gameState = 'NAME_ENTRY';
             createCelebrationEffect();
         } else {
@@ -6885,19 +6893,19 @@ function renderNameEntryScreen() {
     // Store bounds for click detection
     nameEntrySubmitBounds = { x: submitButtonX, y: submitButtonY, width: submitButtonWidth, height: submitButtonHeight };
 
-    // Button background with gradient effect
-    ctx.fillStyle = '#0a0';
+    // Button background with gradient effect (dimmed when submitting)
+    ctx.fillStyle = scoreSubmitting ? '#064' : '#0a0';
     ctx.beginPath();
     ctx.roundRect(submitButtonX, submitButtonY, submitButtonWidth, submitButtonHeight, 8);
     ctx.fill();
 
     // Button border
-    ctx.strokeStyle = '#0f0';
+    ctx.strokeStyle = scoreSubmitting ? '#088' : '#0f0';
     ctx.lineWidth = 3;
     ctx.stroke();
 
     // Button highlight (top edge for 3D effect)
-    ctx.strokeStyle = '#4f4';
+    ctx.strokeStyle = scoreSubmitting ? '#0aa' : '#4f4';
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(submitButtonX + 8, submitButtonY + 2);
@@ -6905,10 +6913,10 @@ function renderNameEntryScreen() {
     ctx.stroke();
 
     // Button text
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = scoreSubmitting ? '#aaa' : '#fff';
     ctx.font = 'bold 24px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('SUBMIT', canvas.width / 2, submitButtonY + 33);
+    ctx.fillText(scoreSubmitting ? 'SUBMITTING...' : 'SUBMIT', canvas.width / 2, submitButtonY + 33);
 
     // Show submission error if any
     if (submissionError) {
