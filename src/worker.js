@@ -2,7 +2,7 @@
 // Static assets are served automatically via the [assets] configuration in wrangler.toml
 
 const LEADERBOARD_KEY = 'leaderboard';
-const MAX_ENTRIES = 10;
+const MAX_ENTRIES = 100;
 
 // Activity tracking constants
 const ACTIVITY_KEY = 'activity_stats';
@@ -11,8 +11,10 @@ const MAX_RECENT_GAMES = 100; // Keep last 100 timestamps for rolling window
 // Feedback constants
 const FEEDBACK_SUGGESTIONS_KEY = 'feedback_suggestions';
 const FEEDBACK_AGGREGATES_KEY = 'feedback_aggregates';
+const FEEDBACK_MODERATION_KEY = 'feedback_moderation_queue';
 const MAX_SUGGESTIONS = 500; // Keep last 500 suggestions
 const MAX_SUGGESTION_LENGTH = 300;
+const MAX_MODERATION_QUEUE = 200; // Keep last 200 pending moderation items
 
 // Basic profanity filter (expandable)
 const PROFANITY_LIST = [
@@ -95,6 +97,13 @@ export default {
 		if (voteMatch) {
 			if (request.method === 'POST') {
 				return handlePostVote(request, env, voteMatch[1]);
+			}
+			return new Response('Method Not Allowed', { status: 405 });
+		}
+
+		if (url.pathname === '/api/feedback/moderation') {
+			if (request.method === 'POST') {
+				return handlePostModerationFeedback(request, env);
 			}
 			return new Response('Method Not Allowed', { status: 405 });
 		}
@@ -522,6 +531,69 @@ async function handlePostVote(request, env, suggestionId) {
 		});
 	} catch (error) {
 		return new Response(JSON.stringify({ error: 'Failed to submit vote' }), {
+			status: 500,
+			headers: { 'Content-Type': 'application/json', ...corsHeaders }
+		});
+	}
+}
+
+async function handlePostModerationFeedback(request, env) {
+	const corsHeaders = getCorsHeaders(request);
+	try {
+		const body = await request.json();
+		const { suggestion } = body;
+
+		// Validate suggestion
+		if (!suggestion || typeof suggestion !== 'string') {
+			return new Response(JSON.stringify({ error: 'Suggestion is required' }), {
+				status: 400,
+				headers: { 'Content-Type': 'application/json', ...corsHeaders }
+			});
+		}
+
+		const trimmed = suggestion.trim();
+		if (trimmed.length === 0) {
+			return new Response(JSON.stringify({ error: 'Suggestion cannot be empty' }), {
+				status: 400,
+				headers: { 'Content-Type': 'application/json', ...corsHeaders }
+			});
+		}
+
+		if (trimmed.length > MAX_SUGGESTION_LENGTH) {
+			return new Response(JSON.stringify({ error: `Suggestion too long: max ${MAX_SUGGESTION_LENGTH} characters` }), {
+				status: 400,
+				headers: { 'Content-Type': 'application/json', ...corsHeaders }
+			});
+		}
+
+		const countryCode = request.headers.get('CF-IPCountry') || 'XX';
+		const timestamp = Date.now();
+		const id = crypto.randomUUID();
+
+		// Get current moderation queue
+		const queue = await env.ALIEN_ABDUCTORAMA_HIGH_SCORES.get(FEEDBACK_MODERATION_KEY, { type: 'json' }) || [];
+
+		// Add to queue
+		queue.push({
+			id,
+			text: trimmed,
+			countryCode,
+			timestamp,
+			status: 'pending'
+		});
+
+		// Keep only the most recent items
+		const trimmedQueue = queue.slice(-MAX_MODERATION_QUEUE);
+		await env.ALIEN_ABDUCTORAMA_HIGH_SCORES.put(FEEDBACK_MODERATION_KEY, JSON.stringify(trimmedQueue));
+
+		return new Response(JSON.stringify({
+			success: true,
+			id
+		}), {
+			headers: { 'Content-Type': 'application/json', ...corsHeaders }
+		});
+	} catch (error) {
+		return new Response(JSON.stringify({ error: 'Failed to submit feedback' }), {
 			status: 500,
 			headers: { 'Content-Type': 'application/json', ...corsHeaders }
 		});
