@@ -15,6 +15,7 @@ const FEEDBACK_MODERATION_KEY = 'feedback_moderation_queue';
 const MAX_SUGGESTIONS = 500; // Keep last 500 suggestions
 const MAX_SUGGESTION_LENGTH = 300;
 const MAX_MODERATION_QUEUE = 200; // Keep last 200 pending moderation items
+const MAX_VOTER_IDS_PER_SUGGESTION = 1000; // Cap to prevent unbounded growth
 
 // Basic profanity filter (expandable)
 const PROFANITY_LIST = [
@@ -55,6 +56,36 @@ function handleCorsPreflightRequest(request) {
 	return new Response('Forbidden', { status: 403 });
 }
 
+// Edge caching configuration
+const CACHE_CONFIG = {
+	'/api/scores': { edgeTtl: 30, browserTtl: 10, stale: 60 },
+	'/api/feedback': { edgeTtl: 60, browserTtl: 30, stale: 120 },
+};
+
+async function getCachedResponse(request) {
+	const cache = caches.default;
+	const cacheKey = new Request(request.url, { method: 'GET' });
+	return await cache.match(cacheKey);
+}
+
+async function cacheResponse(request, response, ctx, config) {
+	const cache = caches.default;
+	const cacheKey = new Request(request.url, { method: 'GET' });
+
+	// Clone response and add cache headers
+	// s-maxage controls edge cache, max-age controls browser cache
+	const responseToCache = new Response(response.body, response);
+	responseToCache.headers.set(
+		'Cache-Control',
+		`public, s-maxage=${config.edgeTtl}, max-age=${config.browserTtl}, stale-while-revalidate=${config.stale}`
+	);
+
+	// Store in cache (don't await - fire and forget)
+	ctx.waitUntil(cache.put(cacheKey, responseToCache.clone()));
+
+	return responseToCache;
+}
+
 export default {
 	async fetch(request, env, ctx) {
 		const url = new URL(request.url);
@@ -67,7 +98,14 @@ export default {
 		// Handle API routes
 		if (url.pathname === '/api/scores') {
 			if (request.method === 'GET') {
-				return handleGetScores(request, env);
+				// Try cache first
+				const cached = await getCachedResponse(request);
+				if (cached) {
+					return cached;
+				}
+				// Fetch fresh and cache
+				const response = await handleGetScores(request, env);
+				return cacheResponse(request, response, ctx, CACHE_CONFIG['/api/scores']);
 			}
 			if (request.method === 'POST') {
 				return handlePostScore(request, env);
@@ -75,16 +113,16 @@ export default {
 			return new Response('Method Not Allowed', { status: 405 });
 		}
 
-		if (url.pathname === '/api/session') {
-			if (request.method === 'POST') {
-				return handlePostSession(request, env);
-			}
-			return new Response('Method Not Allowed', { status: 405 });
-		}
-
 		if (url.pathname === '/api/feedback') {
 			if (request.method === 'GET') {
-				return handleGetFeedback(request, env, url);
+				// Try cache first
+				const cached = await getCachedResponse(request);
+				if (cached) {
+					return cached;
+				}
+				// Fetch fresh and cache
+				const response = await handleGetFeedback(request, env, url);
+				return cacheResponse(request, response, ctx, CACHE_CONFIG['/api/feedback']);
 			}
 			if (request.method === 'POST') {
 				return handlePostFeedback(request, env);
@@ -138,13 +176,6 @@ async function updateActivityStats(env, timestamp) {
 	return stats;
 }
 
-async function updateLastPlayedAt(env, timestamp) {
-	const stats = await getActivityStats(env);
-	stats.lastPlayedAt = timestamp;
-	await env.ALIEN_ABDUCTORAMA_HIGH_SCORES.put(ACTIVITY_KEY, JSON.stringify(stats));
-	return stats;
-}
-
 function calculateGamesThisWeek(recentGames) {
 	const oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
 	return recentGames.filter(ts => ts > oneWeekAgo).length;
@@ -194,7 +225,6 @@ async function handleGetScores(request, env) {
 		return new Response(JSON.stringify({ leaderboard: leaderboard || [], stats }), {
 			headers: {
 				'Content-Type': 'application/json',
-				'Cache-Control': 'public, max-age=10',
 				...corsHeaders,
 			},
 		});
@@ -318,23 +348,6 @@ async function handlePostScore(request, env) {
 		});
 	} catch (error) {
 		return new Response(JSON.stringify({ error: 'Failed to save score' }), {
-			status: 500,
-			headers: { 'Content-Type': 'application/json', ...corsHeaders },
-		});
-	}
-}
-
-async function handlePostSession(request, env) {
-	const corsHeaders = getCorsHeaders(request);
-	try {
-		const timestamp = Date.now();
-		await updateLastPlayedAt(env, timestamp);
-
-		return new Response(JSON.stringify({ success: true }), {
-			headers: { 'Content-Type': 'application/json', ...corsHeaders },
-		});
-	} catch (error) {
-		return new Response(JSON.stringify({ error: 'Failed to update session' }), {
 			status: 500,
 			headers: { 'Content-Type': 'application/json', ...corsHeaders },
 		});
@@ -506,19 +519,24 @@ async function handlePostVote(request, env, suggestionId) {
 			});
 		}
 
-		// Check if already voted
-		if (suggestion.voterIds.includes(voterId)) {
-			return new Response(JSON.stringify({
-				success: false,
-				error: 'Already voted',
-				upvotes: suggestion.upvotes
-			}), {
-				headers: { 'Content-Type': 'application/json', ...corsHeaders }
-			});
+		// Check if already voted (only if we're still tracking voters)
+		if (suggestion.voterIds.length < MAX_VOTER_IDS_PER_SUGGESTION) {
+			if (suggestion.voterIds.includes(voterId)) {
+				return new Response(JSON.stringify({
+					success: false,
+					error: 'Already voted',
+					upvotes: suggestion.upvotes
+				}), {
+					headers: { 'Content-Type': 'application/json', ...corsHeaders }
+				});
+			}
+			// Add voterId to tracking array
+			suggestion.voterIds.push(voterId);
 		}
+		// Note: If voterIds is at capacity, we skip duplicate detection
+		// This is acceptable - it only affects suggestions with 1000+ votes
 
-		// Add vote
-		suggestion.voterIds.push(voterId);
+		// Always increment upvotes
 		suggestion.upvotes += 1;
 
 		await env.ALIEN_ABDUCTORAMA_HIGH_SCORES.put(FEEDBACK_SUGGESTIONS_KEY, JSON.stringify(suggestions));

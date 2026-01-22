@@ -1046,8 +1046,6 @@ let score = 0;
 let highScore = parseInt(localStorage.getItem('alienAbductoramaHighScore')) || 0;
 let combo = 0;
 let ufoBucks = 0;
-let firstPointTracked = false; // Track if we've recorded last played time for this session
-
 // Game session tracking for leaderboard
 let gameStartTime = 0;
 let leaderboard = [];
@@ -1904,12 +1902,6 @@ class Target {
                     waveStats.maxComboHit = true;
                 }
                 combo++;
-
-                // Track last played time on first point scored
-                if (!firstPointTracked) {
-                    firstPointTracked = true;
-                    trackSession();
-                }
 
                 // Heal UFO
                 ufo.health = Math.min(CONFIG.UFO_START_HEALTH, ufo.health + CONFIG.HEAL_PER_ABDUCTION);
@@ -5189,14 +5181,6 @@ const API_BASE = window.location.hostname === 'studio.mfelix.org'
     ? 'https://alien-abductorama.mfelixstudio.workers.dev'
     : '';
 
-async function trackSession() {
-    try {
-        await fetch(`${API_BASE}/api/session`, { method: 'POST' });
-    } catch (e) {
-        // Silently ignore - session tracking is non-critical
-    }
-}
-
 async function fetchLeaderboard() {
     leaderboardLoading = true;
     try {
@@ -5600,7 +5584,6 @@ function startGame() {
     clearTutorialTimeouts();
     gameState = 'PLAYING';
     gameStartTime = Date.now();
-    firstPointTracked = false; // Reset for new game session
     ufo = new UFO();
     targets = [];
     tanks = [];
