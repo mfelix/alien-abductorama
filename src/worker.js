@@ -69,6 +69,11 @@ async function getCachedResponse(request) {
 }
 
 async function cacheResponse(request, response, ctx, config) {
+	// Only cache successful responses
+	if (!response.ok) {
+		return response;
+	}
+
 	const cache = caches.default;
 	const cacheKey = new Request(request.url, { method: 'GET' });
 
