@@ -626,6 +626,61 @@ const SFX = {
         osc.stop(audioCtx.currentTime + 0.3);
     },
 
+    // Shop sounds
+    shopCheckout: () => {
+        if (!audioCtx) return;
+        // Coin/cash register sound - multiple coin clinks with a final "cha-ching"
+        const coinFreqs = [1800, 2200, 2000, 2400, 1600];
+        coinFreqs.forEach((freq, i) => {
+            setTimeout(() => {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(freq * 0.5, audioCtx.currentTime + 0.08);
+                gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.08);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.08);
+            }, i * 40);
+        });
+        // Final "cha-ching" bell
+        setTimeout(() => {
+            playTone(1200, 0.2, 'sine', 0.2);
+            playTone(1500, 0.2, 'sine', 0.15);
+        }, 220);
+    },
+
+    shopEmpty: () => {
+        if (!audioCtx) return;
+        // Whoosh/sweep sound for clearing cart
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(600, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.15);
+        gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.15);
+    },
+
+    shopStartWave: () => {
+        if (!audioCtx) return;
+        // Energetic "ready go" fanfare - quick ascending with punch
+        const notes = [400, 500, 600, 800];
+        notes.forEach((freq, i) => {
+            setTimeout(() => {
+                playTone(freq, 0.12, 'square', 0.18);
+                playTone(freq * 1.5, 0.1, 'sine', 0.08);
+            }, i * 60);
+        });
+    },
+
     tankStunned: () => {
         if (!audioCtx) return;
         // Heavy impact/crash sound - low thud + metallic clang
@@ -1422,6 +1477,7 @@ window.addEventListener('keydown', (e) => {
         } else if (e.code === 'Enter') {
             // Checkout and start wave
             checkoutCart();
+            SFX.shopStartWave && SFX.shopStartWave();
             SFX.stopShopMusic && SFX.stopShopMusic();
             waveTransitionTimer = CONFIG.WAVE_TRANSITION_DURATION;
             gameState = 'WAVE_TRANSITION';
@@ -1764,6 +1820,7 @@ canvas.addEventListener('click', (e) => {
         if (mouseX >= b.x && mouseX <= b.x + b.width &&
             mouseY >= b.y && mouseY <= b.y + b.height) {
             checkoutCart(); // Auto-checkout when done
+            SFX.shopStartWave && SFX.shopStartWave();
             SFX.stopShopMusic && SFX.stopShopMusic();
             waveTransitionTimer = CONFIG.WAVE_TRANSITION_DURATION;
             gameState = 'WAVE_TRANSITION';
@@ -9765,7 +9822,7 @@ function removeFromCart(cartIndex) {
 function emptyCart() {
     if (shopCart.length === 0) return;
     shopCart = [];
-    SFX.powerupCollect && SFX.powerupCollect();
+    SFX.shopEmpty && SFX.shopEmpty();
     createFloatingText(canvas.width / 2, 300, 'CART EMPTIED', '#f80');
 }
 
@@ -9797,7 +9854,7 @@ function checkoutCart() {
     }
 
     // Play purchase sound
-    SFX.powerup && SFX.powerup();
+    SFX.shopCheckout && SFX.shopCheckout();
     createFloatingText(canvas.width / 2, 300, 'PURCHASED!', '#0f0');
 
     // Clear cart
