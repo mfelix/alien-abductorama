@@ -1,8 +1,14 @@
 import { execSync } from 'child_process';
 import { writeFileSync, unlinkSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Path to wrangler.toml relative to this file (dist/kv/client.js -> ../../wrangler.toml)
+const WRANGLER_CONFIG = join(__dirname, '..', '..', '..', '..', 'wrangler.toml');
 const KV_BINDING = 'ALIEN_ABDUCTORAMA_HIGH_SCORES';
 
 export class KVError extends Error {
@@ -40,7 +46,7 @@ export class KVClient {
     let result: string;
     try {
       result = execSync(
-        `npx wrangler kv key get "${key}" --binding=${KV_BINDING} --remote`,
+        `npx wrangler kv key get "${key}" --binding=${KV_BINDING} --remote --config "${WRANGLER_CONFIG}"`,
         { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
       );
     } catch (error: unknown) {
@@ -81,7 +87,7 @@ export class KVClient {
     try {
       writeFileSync(tempFile, json);
       execSync(
-        `npx wrangler kv key put "${key}" --binding=${KV_BINDING} --remote --path "${tempFile}"`,
+        `npx wrangler kv key put "${key}" --binding=${KV_BINDING} --remote --config "${WRANGLER_CONFIG}" --path "${tempFile}"`,
         { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
       );
       return true;
