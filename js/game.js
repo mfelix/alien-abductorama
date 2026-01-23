@@ -25,6 +25,8 @@ const CONFIG = {
     // Target Flee Behavior
     TARGET_FLEE_RADIUS: 150,
     TARGET_FLEE_SPEED_MULTIPLIER: 2,
+    FALL_GRAVITY: 500, // pixels/sec² for dropped targets
+
     TARGET_AWARENESS: {
         human: 0,
         dog: 0,
@@ -1906,6 +1908,10 @@ class Target {
         this.beingAbducted = false;
         this.abductionProgress = 0;
 
+        // Falling state (when dropped from beam)
+        this.falling = false;
+        this.vy = 0; // Vertical velocity
+
         // Lifetime
         this.lifetime = CONFIG.TARGET_LIFETIME;
         this.alive = true;
@@ -1920,7 +1926,8 @@ class Target {
             if (!ufo) {
                 this.beingAbducted = false;
                 this.abductionProgress = 0;
-                this.y = this.groundY;
+                this.falling = true;
+                this.vy = 0;
                 return;
             }
 
@@ -1977,6 +1984,21 @@ class Target {
                 }
             }
             return;
+        }
+
+        // Handle falling state (when dropped from beam)
+        if (this.falling) {
+            // Apply gravity
+            this.vy += CONFIG.FALL_GRAVITY * dt;
+            this.y += this.vy * dt;
+
+            // Check for ground collision
+            if (this.y >= this.groundY) {
+                this.y = this.groundY;
+                this.falling = false;
+                this.vy = 0;
+            }
+            return; // Don't wander while falling
         }
 
         // Check for flee behavior
@@ -2041,6 +2063,28 @@ class Target {
             ctx.translate(centerX, centerY);
             ctx.rotate(angle);
             ctx.scale(scale, scale);
+            ctx.translate(-centerX, -centerY);
+
+            const img = images[this.type];
+            if (img && img.complete) {
+                ctx.drawImage(img, this.x, this.y, this.width, this.height);
+            } else {
+                ctx.fillStyle = this.getPlaceholderColor();
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+            }
+            ctx.restore();
+            return;
+        }
+
+        // Falling animation - tumble while falling
+        if (this.falling) {
+            const angle = (Date.now() / 1000) * 3 * Math.PI * 2; // Fast spin
+            const centerX = this.x + this.width / 2;
+            const centerY = this.y + this.height / 2;
+
+            ctx.save();
+            ctx.translate(centerX, centerY);
+            ctx.rotate(angle);
             ctx.translate(-centerX, -centerY);
 
             const img = images[this.type];
@@ -2452,6 +2496,11 @@ class UFO {
                 this.beamTarget = this.findTargetInBeam();
                 if (this.beamTarget) {
                     this.beamTarget.beingAbducted = true;
+                    // Reset falling state if re-catching a dropped target
+                    if (this.beamTarget.falling) {
+                        this.beamTarget.falling = false;
+                        this.beamTarget.vy = 0;
+                    }
                 }
             }
         } else {
@@ -2494,8 +2543,13 @@ class UFO {
                     }
                     this.beamTarget.beingAbducted = false;
                     this.beamTarget.abductionProgress = 0;
-                    // Target falls back to ground
-                    this.beamTarget.y = this.beamTarget.groundY;
+                    // Tank drops instantly to ground, regular targets fall with gravity
+                    if (isTank) {
+                        this.beamTarget.y = this.beamTarget.groundY;
+                    } else {
+                        this.beamTarget.falling = true;
+                        this.beamTarget.vy = 0;
+                    }
                 }
                 this.beamTarget = null;
             }
@@ -2536,7 +2590,13 @@ class UFO {
                 }
                 this.beamTarget.beingAbducted = false;
                 this.beamTarget.abductionProgress = 0;
-                this.beamTarget.y = this.beamTarget.groundY;
+                // Tank drops instantly to ground, regular targets fall with gravity
+                if (isTank) {
+                    this.beamTarget.y = this.beamTarget.groundY;
+                } else {
+                    this.beamTarget.falling = true;
+                    this.beamTarget.vy = 0;
+                }
                 this.beamTarget = null;
             }
             this.beamActive = false;
@@ -10070,7 +10130,14 @@ function update(dt) {
             if (ufo.beamTarget) {
                 ufo.beamTarget.beingAbducted = false;
                 ufo.beamTarget.abductionProgress = 0;
-                ufo.beamTarget.y = ufo.beamTarget.groundY;
+                // Check if tank or regular target
+                const isTank = ufo.beamTarget.hasOwnProperty('turretAngle') || ufo.beamTarget.hasOwnProperty('turretAngleLeft');
+                if (isTank) {
+                    ufo.beamTarget.y = ufo.beamTarget.groundY;
+                } else {
+                    ufo.beamTarget.falling = true;
+                    ufo.beamTarget.vy = 0;
+                }
                 ufo.beamTarget = null;
             }
             ufo.beamActive = false;
