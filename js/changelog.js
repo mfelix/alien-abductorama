@@ -1,20 +1,8 @@
 // Auto-generated changelog - do not edit manually
 const CHANGELOG = [
   {
-    "message": "Routine UFO maintenance",
-    "timestamp": 1768934864000
-  },
-  {
-    "message": "Redesign title screen with tabbed navigation",
-    "timestamp": 1768934864000
-  },
-  {
-    "message": "Add player feedback system with ratings and suggestions",
-    "timestamp": 1768934864000
-  },
-  {
-    "message": "Expand leaderboard to top 100 players",
-    "timestamp": 1768934864000
+    "message": "Add falling animation when targets are dropped from UFO beam",
+    "timestamp": 1769213200000
   },
   {
     "message": "Improve UFO Shopping Mall",
