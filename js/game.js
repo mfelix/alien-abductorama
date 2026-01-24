@@ -2174,7 +2174,8 @@ class Target {
         }
 
         // Show floating text
-        createFloatingText(this.x + this.width / 2, this.y, 'BLASTED!', '#f80');
+        const blastText = this.type === 'cat' ? 'POOR KITTY' : this.type === 'dog' ? 'POOR DOGGY' : 'BLASTED!';
+        createFloatingText(this.x + this.width / 2, this.y, blastText, '#f80');
 
         // Mark as dead
         this.alive = false;
