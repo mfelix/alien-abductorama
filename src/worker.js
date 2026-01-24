@@ -106,7 +106,13 @@ export default {
 				// Try cache first
 				const cached = await getCachedResponse(request);
 				if (cached) {
-					return cached;
+					// Update CORS headers for current request's origin
+					const response = new Response(cached.body, cached);
+					const corsHeaders = getCorsHeaders(request);
+					for (const [key, value] of Object.entries(corsHeaders)) {
+						response.headers.set(key, value);
+					}
+					return response;
 				}
 				// Fetch fresh and cache
 				const response = await handleGetScores(request, env);
@@ -123,7 +129,13 @@ export default {
 				// Try cache first
 				const cached = await getCachedResponse(request);
 				if (cached) {
-					return cached;
+					// Update CORS headers for current request's origin
+					const response = new Response(cached.body, cached);
+					const corsHeaders = getCorsHeaders(request);
+					for (const [key, value] of Object.entries(corsHeaders)) {
+						response.headers.set(key, value);
+					}
+					return response;
 				}
 				// Fetch fresh and cache
 				const response = await handleGetFeedback(request, env, url);
