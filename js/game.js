@@ -1687,18 +1687,12 @@ canvas.addEventListener('click', (e) => {
                     const keys = ['enjoyment', 'difficulty', 'returnIntent'];
                     feedbackRatings[keys[bound.row]] = bound.star;
                     feedbackSelectedRow = bound.row;
+                    // Auto-submit when all 3 dimensions are rated
+                    if (feedbackRatings.enjoyment > 0 && feedbackRatings.difficulty > 0 && feedbackRatings.returnIntent > 0) {
+                        submitRatingsOnly();
+                    }
                     return;
                 }
-            }
-        }
-
-        // Check Send Feedback button clicks
-        if (feedbackButtonBounds.submit) {
-            const b = feedbackButtonBounds.submit;
-            if (mouseX >= b.x && mouseX <= b.x + b.width &&
-                mouseY >= b.y && mouseY <= b.y + b.height) {
-                submitRatingsOnly();
-                return;
             }
         }
 
@@ -5448,7 +5442,9 @@ async function submitFeedback() {
 function skipFeedback() {
     resetFeedbackState();
     gameState = 'TITLE';
+    titleTab = 'feedback';
     fetchLeaderboard();
+    fetchFeedback();
 }
 
 function playAgainFromFeedback() {
@@ -5482,14 +5478,6 @@ async function submitRatingsOnly() {
         if (response.ok) {
             ratingsSubmitted = true;
             SFX.feedbackSuccess();
-            // Navigate to title screen with feedback tab after sound plays
-            setTimeout(() => {
-                resetFeedbackState();
-                gameState = 'TITLE';
-                titleTab = 'feedback';
-                fetchLeaderboard();
-                fetchFeedback();
-            }, 400);
         }
     } catch (error) {
         console.error('Failed to submit ratings:', error);
@@ -8417,8 +8405,8 @@ function renderFeedbackScreen() {
 
     const questions = [
         { key: 'enjoyment', label: 'How fun was it?', icon: '🎮' },
-        { key: 'difficulty', label: 'Difficulty?', icon: '💪' },
-        { key: 'returnIntent', label: 'Play again?', icon: '🔄' }
+        { key: 'difficulty', label: 'Was it hard enough?', icon: '💪' },
+        { key: 'returnIntent', label: 'Would you play it again?', icon: '🔄' }
     ];
 
     const starSize = 32;
@@ -8495,54 +8483,25 @@ function renderFeedbackScreen() {
         ctx.font = '16px monospace';
         ctx.fillStyle = '#888';
         ctx.textAlign = 'center';
-        ctx.fillText('Submitting...', centerX, buttonsY);
+        ctx.fillText('Sending...', centerX, buttonsY);
         buttonsY += 50;
     } else {
-        const allRated = feedbackRatings.enjoyment > 0 && feedbackRatings.difficulty > 0 && feedbackRatings.returnIntent > 0;
         ctx.font = '14px monospace';
         ctx.textAlign = 'center';
-        if (allRated) {
-            ctx.fillStyle = '#0ff';
-            ctx.fillText('Ready to send! Click Send Feedback below.', centerX, buttonsY);
-        } else {
-            ctx.fillStyle = '#666';
-            ctx.fillText('Rate all three to send feedback', centerX, buttonsY);
-        }
+        ctx.fillStyle = '#666';
+        ctx.fillText('Rate all three to send feedback', centerX, buttonsY);
         buttonsY += 50;
     }
 
-    // Buttons - three buttons in a row
+    // Buttons - two buttons in a row
     const buttonWidth = 160;
     const buttonHeight = 48;
     const buttonGap = 20;
-    const totalButtonsWidth = buttonWidth * 3 + buttonGap * 2;
+    const totalButtonsWidth = buttonWidth * 2 + buttonGap;
     const buttonsStartX = centerX - totalButtonsWidth / 2;
 
-    const allRated = feedbackRatings.enjoyment > 0 && feedbackRatings.difficulty > 0 && feedbackRatings.returnIntent > 0;
-    const canSend = allRated && !ratingsSubmitting && !ratingsSubmitted;
-
-    // Send Feedback button (left)
-    const sendBtnX = buttonsStartX;
-
-    ctx.fillStyle = canSend ? '#0aa' : '#444';
-    ctx.beginPath();
-    ctx.roundRect(sendBtnX, buttonsY, buttonWidth, buttonHeight, 8);
-    ctx.fill();
-    if (canSend) {
-        ctx.strokeStyle = '#0ff';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-    }
-
-    feedbackButtonBounds.submit = { x: sendBtnX, y: buttonsY, width: buttonWidth, height: buttonHeight };
-
-    ctx.font = 'bold 14px monospace';
-    ctx.fillStyle = canSend ? '#fff' : '#666';
-    ctx.textAlign = 'center';
-    ctx.fillText('Send Feedback', sendBtnX + buttonWidth / 2, buttonsY + 30);
-
-    // Play Again button (center) - prominent green
-    const playBtnX = buttonsStartX + buttonWidth + buttonGap;
+    // Play Again button (left) - prominent green
+    const playBtnX = buttonsStartX;
 
     ctx.fillStyle = '#080';
     ctx.beginPath();
@@ -8560,7 +8519,7 @@ function renderFeedbackScreen() {
     ctx.fillText('Play Again', playBtnX + buttonWidth / 2, buttonsY + 30);
 
     // Main Menu button (right) - subtle
-    const menuBtnX = buttonsStartX + (buttonWidth + buttonGap) * 2;
+    const menuBtnX = buttonsStartX + buttonWidth + buttonGap;
 
     ctx.fillStyle = '#333';
     ctx.beginPath();
