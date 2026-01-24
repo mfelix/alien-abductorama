@@ -46,7 +46,7 @@ export class KVClient {
     let result: string;
     try {
       result = execSync(
-        `npx wrangler kv key get "${key}" --binding=${KV_BINDING} --remote --config "${WRANGLER_CONFIG}"`,
+        `npx wrangler kv key get "${key}" --binding=${KV_BINDING} --remote --preview false --config "${WRANGLER_CONFIG}"`,
         { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
       );
     } catch (error: unknown) {
@@ -87,7 +87,7 @@ export class KVClient {
     try {
       writeFileSync(tempFile, json);
       execSync(
-        `npx wrangler kv key put "${key}" --binding=${KV_BINDING} --remote --config "${WRANGLER_CONFIG}" --path "${tempFile}"`,
+        `npx wrangler kv key put "${key}" --binding=${KV_BINDING} --remote --preview false --config "${WRANGLER_CONFIG}" --path "${tempFile}"`,
         { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
       );
       return true;
