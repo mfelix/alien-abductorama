@@ -1,7 +1,7 @@
 // Auto-generated changelog - do not edit manually
 const CHANGELOG = [
   {
-    "message": "Add falling animation when targets are dropped from UFO beam",
+    "message": "Add falling animation when targets are dropped",
     "timestamp": 1769213200000
   },
   {
