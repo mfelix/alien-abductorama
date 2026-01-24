@@ -5,8 +5,20 @@ const CHANGELOG = [
     "timestamp": 1769213200000
   },
   {
+    "message": "Expanded leaderboard to top 100",
+    "timestamp": 1768943580000
+  },
+  {
     "message": "Improve UFO Shopping Mall",
     "timestamp": 1768770781000
+  },
+  {
+    "message": "Added weapons: bombs + laser turret",
+    "timestamp": 1768770780000
+  },
+  {
+    "message": "Added warp juke",
+    "timestamp": 1768770779000
   },
   {
     "message": "UFO Shopping Mall: buy power-ups between waves",
