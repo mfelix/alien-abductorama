@@ -5234,9 +5234,11 @@ function triggerGameOver() {
             gameState = 'NAME_ENTRY';
             createCelebrationEffect();
         } else {
-            // Go directly to feedback screen
-            resetFeedbackState();
-            gameState = 'FEEDBACK';
+            // Record activity for non-qualifying score (no name needed)
+            submitScore(null).then(() => {
+                resetFeedbackState();
+                gameState = 'FEEDBACK';
+            });
         }
     }, 1200);
 }

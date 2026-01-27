@@ -263,8 +263,22 @@ async function handlePostScore(request, env) {
 		const gameTimestamp = Date.now();
 		await updateActivityStats(env, gameTimestamp);
 
-		// Validation
-		if (!name || typeof name !== 'string' || !/^[A-Z]{3}$/.test(name)) {
+		// If no name provided, this is an activity-only submission (non-qualifying score)
+		// Just return updated stats without adding to leaderboard
+		if (!name) {
+			const activityStats = await getActivityStats(env);
+			const stats = {
+				lastGamePlayed: gameTimestamp,
+				gamesThisWeek: calculateGamesThisWeek(activityStats.recentGames),
+			};
+			return new Response(JSON.stringify({ success: true, activityOnly: true, stats }), {
+				status: 200,
+				headers: { 'Content-Type': 'application/json', ...corsHeaders },
+			});
+		}
+
+		// Validation for leaderboard submissions
+		if (typeof name !== 'string' || !/^[A-Z]{3}$/.test(name)) {
 			return new Response(JSON.stringify({ error: 'Invalid name: must be 3 uppercase letters' }), {
 				status: 400,
 				headers: { 'Content-Type': 'application/json', ...corsHeaders },
