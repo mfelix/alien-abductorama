@@ -13,9 +13,10 @@ dist/
 # Environment files
 .env
 .env.local
-<<<<<<< HEAD
 
 # Gas Town
-=======
->>>>>>> 1f61ac3 (Add .beads to gitignore)
 .beads/
+
+# Processed sounds (generated at build time)
+assets/sounds/processed/
+assets/sounds/manifest.json

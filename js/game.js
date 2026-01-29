@@ -257,14 +257,230 @@ const CONFIG = {
 let audioCtx = null;
 let audioInitialized = false;
 
+// Loaded sound buffers organized by target type
+// Format: { cow: [AudioBuffer, AudioBuffer], human: [AudioBuffer, ...], ... }
+let targetSoundBuffers = {};
+let soundsLoaded = false;
+
 function initAudio() {
     if (audioInitialized) return;
     try {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         audioInitialized = true;
+        // Load target sounds after audio context is created
+        loadTargetSounds();
     } catch (e) {
         console.warn('Web Audio API not supported');
     }
+}
+
+// Load the sound manifest and preload all target sounds
+async function loadTargetSounds() {
+    if (!audioCtx) return;
+
+    try {
+        const response = await fetch('assets/sounds/manifest.json');
+        if (!response.ok) {
+            console.warn('Sound manifest not found, using synthesized sounds');
+            return;
+        }
+        const manifest = await response.json();
+
+        // Load all sounds in parallel
+        const loadPromises = [];
+        for (const [type, files] of Object.entries(manifest)) {
+            targetSoundBuffers[type] = [];
+            for (const file of files) {
+                loadPromises.push(
+                    loadSound(file).then(buffer => {
+                        if (buffer) {
+                            targetSoundBuffers[type].push(buffer);
+                        }
+                    })
+                );
+            }
+        }
+
+        await Promise.all(loadPromises);
+        soundsLoaded = true;
+        console.log('Target sounds loaded:', Object.keys(targetSoundBuffers).map(t => `${t}: ${targetSoundBuffers[t].length}`).join(', '));
+    } catch (e) {
+        console.warn('Failed to load target sounds:', e);
+    }
+}
+
+// Load a single sound file and decode it
+async function loadSound(url) {
+    try {
+        const response = await fetch(url);
+        if (!response.ok) return null;
+        const arrayBuffer = await response.arrayBuffer();
+        return await audioCtx.decodeAudioData(arrayBuffer);
+    } catch (e) {
+        console.warn(`Failed to load sound: ${url}`, e);
+        return null;
+    }
+}
+
+// Create a bitcrusher curve for the WaveShaper (stair-step quantization)
+function createBitcrusherCurve(bits = 4) {
+    const samples = 65536;
+    const curve = new Float32Array(samples);
+    const steps = Math.pow(2, bits);
+
+    for (let i = 0; i < samples; i++) {
+        const x = (i / samples) * 2 - 1; // -1 to 1
+        // Quantize to discrete steps
+        curve[i] = Math.round(x * steps) / steps;
+    }
+    return curve;
+}
+
+// Create distortion curve for extra crunch
+function createDistortionCurve(amount = 20) {
+    const samples = 44100;
+    const curve = new Float32Array(samples);
+    for (let i = 0; i < samples; i++) {
+        const x = (i * 2 / samples) - 1;
+        curve[i] = ((3 + amount) * x * 20 * (Math.PI / 180)) / (Math.PI + amount * Math.abs(x));
+    }
+    return curve;
+}
+
+// Play a random sound for the given target type with alien digitization effects
+function playTargetSound(type, volume = 0.5) {
+    if (!audioCtx || !soundsLoaded) return false;
+
+    const sounds = targetSoundBuffers[type];
+    if (!sounds || sounds.length === 0) return false;
+
+    // Pick a random sound
+    const buffer = sounds[Math.floor(Math.random() * sounds.length)];
+    const duration = buffer.duration;
+
+    // === SOURCE ===
+    const source = audioCtx.createBufferSource();
+    source.buffer = buffer;
+    // Slight random detune for alien warble (-100 to +100 cents)
+    source.detune.setValueAtTime((Math.random() - 0.5) * 200, audioCtx.currentTime);
+
+    // === BITCRUSHER (via WaveShaper) ===
+    const bitcrusher = audioCtx.createWaveShaper();
+    bitcrusher.curve = createBitcrusherCurve(6); // 6-bit for crunchy but intelligible
+    bitcrusher.oversample = 'none';
+
+    // === RING MODULATOR ===
+    // Multiply signal with a carrier oscillator for metallic alien sound
+    const ringOsc = audioCtx.createOscillator();
+    const ringGain = audioCtx.createGain();
+    ringOsc.type = 'sine';
+    ringOsc.frequency.setValueAtTime(30, audioCtx.currentTime); // Low frequency modulation
+    // Sweep the frequency up during the sound for "being digitized" feel
+    ringOsc.frequency.linearRampToValueAtTime(120, audioCtx.currentTime + duration);
+    ringGain.gain.setValueAtTime(0.3, audioCtx.currentTime); // Mix amount
+
+    // === LOWPASS FILTER ===
+    // Simulates sample rate reduction / removes harsh high frequencies
+    const lowpass = audioCtx.createBiquadFilter();
+    lowpass.type = 'lowpass';
+    lowpass.frequency.setValueAtTime(4000, audioCtx.currentTime);
+    // Sweep down for increasing digitization feel
+    lowpass.frequency.linearRampToValueAtTime(2000, audioCtx.currentTime + duration);
+    lowpass.Q.setValueAtTime(1, audioCtx.currentTime);
+
+    // === SUBTLE DISTORTION ===
+    const distortion = audioCtx.createWaveShaper();
+    distortion.curve = createDistortionCurve(10);
+    distortion.oversample = '2x';
+
+    // === FEEDBACK DELAY (Echo) ===
+    const delay = audioCtx.createDelay(2.0);
+    delay.delayTime.setValueAtTime(0.15, audioCtx.currentTime); // 150ms delay
+    const delayFeedback = audioCtx.createGain();
+    delayFeedback.gain.setValueAtTime(0.4, audioCtx.currentTime); // 40% feedback for multiple echoes
+    const delayFilter = audioCtx.createBiquadFilter();
+    delayFilter.type = 'lowpass';
+    delayFilter.frequency.setValueAtTime(3000, audioCtx.currentTime); // Darken echoes
+    // Delay feedback loop
+    delay.connect(delayFilter);
+    delayFilter.connect(delayFeedback);
+    delayFeedback.connect(delay);
+
+    // === REVERB (Multi-tap delay approximation) ===
+    // Create multiple delay taps at different times for spacious reverb feel
+    const reverbMix = audioCtx.createGain();
+    reverbMix.gain.setValueAtTime(0.3, audioCtx.currentTime);
+    const reverbTaps = [
+        { time: 0.03, gain: 0.4 },
+        { time: 0.05, gain: 0.3 },
+        { time: 0.08, gain: 0.25 },
+        { time: 0.12, gain: 0.2 },
+        { time: 0.17, gain: 0.15 },
+        { time: 0.23, gain: 0.1 },
+        { time: 0.31, gain: 0.07 },
+        { time: 0.41, gain: 0.04 },
+    ];
+    const reverbDelays = reverbTaps.map(tap => {
+        const d = audioCtx.createDelay(1.0);
+        d.delayTime.setValueAtTime(tap.time, audioCtx.currentTime);
+        const g = audioCtx.createGain();
+        g.gain.setValueAtTime(tap.gain, audioCtx.currentTime);
+        d.connect(g);
+        g.connect(reverbMix);
+        return d;
+    });
+    // Reverb filter to soften the tails
+    const reverbFilter = audioCtx.createBiquadFilter();
+    reverbFilter.type = 'lowpass';
+    reverbFilter.frequency.setValueAtTime(2500, audioCtx.currentTime);
+    reverbMix.connect(reverbFilter);
+
+    // === OUTPUT GAIN ===
+    const outputGain = audioCtx.createGain();
+    outputGain.gain.setValueAtTime(volume, audioCtx.currentTime);
+
+    // === DRY/WET MIX ===
+    // Blend original with effected signal
+    const dryGain = audioCtx.createGain();
+    const wetGain = audioCtx.createGain();
+    const mixerGain = audioCtx.createGain();
+    dryGain.gain.setValueAtTime(0.25, audioCtx.currentTime); // 25% dry
+    wetGain.gain.setValueAtTime(0.75, audioCtx.currentTime); // 75% wet
+
+    // === SIGNAL ROUTING ===
+    // Dry path: source -> dryGain -> mixer
+    source.connect(dryGain);
+    dryGain.connect(mixerGain);
+
+    // Wet path: source -> bitcrusher -> lowpass -> distortion -> wetGain
+    source.connect(bitcrusher);
+    bitcrusher.connect(lowpass);
+    lowpass.connect(distortion);
+    distortion.connect(wetGain);
+
+    // Wet signal goes to mixer AND to delay/reverb
+    wetGain.connect(mixerGain);
+    wetGain.connect(delay); // Feed into delay
+    delay.connect(mixerGain); // Delay output to mixer
+
+    // Feed wet signal into reverb taps
+    reverbDelays.forEach(d => wetGain.connect(d));
+    reverbFilter.connect(mixerGain); // Reverb output to mixer
+
+    // Ring modulator affects the wet signal
+    ringOsc.connect(ringGain);
+    ringGain.connect(wetGain.gain); // Modulates the wet gain for tremolo/ring effect
+
+    // Final output
+    mixerGain.connect(outputGain);
+    outputGain.connect(audioCtx.destination);
+
+    // Start everything
+    source.start();
+    ringOsc.start();
+    ringOsc.stop(audioCtx.currentTime + duration + 0.1);
+
+    return true;
 }
 
 // Sound synthesis helper
@@ -342,9 +558,13 @@ const SFX = {
         }
     },
 
-    abductionSuccess: () => {
+    abductionSuccess: (targetType) => {
         if (!audioCtx) return;
-        // Happy ascending jingle
+        // Try to play a custom sound for this target type
+        if (playTargetSound(targetType, 0.25)) {
+            return; // Custom sound played successfully
+        }
+        // Fallback to synthesized jingle if no custom sound available
         [400, 500, 600, 800].forEach((freq, i) => {
             setTimeout(() => playTone(freq, 0.15, 'sine', 0.2), i * 80);
         });
@@ -1945,7 +2165,7 @@ class Target {
             // Check if abduction complete
             if (this.abductionProgress >= this.abductionTime) {
                 this.alive = false;
-                SFX.abductionSuccess();
+                SFX.abductionSuccess(this.type);
                 // Increment harvest counter and trigger bounce
                 harvestCount[this.type]++;
                 harvestBounce[this.type] = 1.0;
