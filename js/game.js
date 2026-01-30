@@ -347,140 +347,59 @@ function createDistortionCurve(amount = 20) {
     return curve;
 }
 
-// Play a random sound for the given target type with alien digitization effects
+// Play a random sound for the given target type
+// Returns an object with source and delay controls for manipulation during abduction
 function playTargetSound(type, volume = 0.5) {
-    if (!audioCtx || !soundsLoaded) return false;
+    if (!audioCtx || !soundsLoaded) return null;
 
     const sounds = targetSoundBuffers[type];
-    if (!sounds || sounds.length === 0) return false;
+    if (!sounds || sounds.length === 0) return null;
 
     // Pick a random sound
     const buffer = sounds[Math.floor(Math.random() * sounds.length)];
-    const duration = buffer.duration;
 
-    // === SOURCE ===
     const source = audioCtx.createBufferSource();
     source.buffer = buffer;
-    // Slight random detune for alien warble (-100 to +100 cents)
-    source.detune.setValueAtTime((Math.random() - 0.5) * 200, audioCtx.currentTime);
 
-    // === BITCRUSHER (via WaveShaper) ===
-    const bitcrusher = audioCtx.createWaveShaper();
-    bitcrusher.curve = createBitcrusherCurve(6); // 6-bit for crunchy but intelligible
-    bitcrusher.oversample = 'none';
+    // Dry path gain
+    const dryGain = audioCtx.createGain();
+    dryGain.gain.setValueAtTime(volume, audioCtx.currentTime);
 
-    // === RING MODULATOR ===
-    // Multiply signal with a carrier oscillator for metallic alien sound
-    const ringOsc = audioCtx.createOscillator();
-    const ringGain = audioCtx.createGain();
-    ringOsc.type = 'sine';
-    ringOsc.frequency.setValueAtTime(30, audioCtx.currentTime); // Low frequency modulation
-    // Sweep the frequency up during the sound for "being digitized" feel
-    ringOsc.frequency.linearRampToValueAtTime(120, audioCtx.currentTime + duration);
-    ringGain.gain.setValueAtTime(0.3, audioCtx.currentTime); // Mix amount
+    // Delay effect with feedback
+    const delay = audioCtx.createDelay(1.0);
+    delay.delayTime.setValueAtTime(0.12, audioCtx.currentTime);
 
-    // === LOWPASS FILTER ===
-    // Simulates sample rate reduction / removes harsh high frequencies
-    const lowpass = audioCtx.createBiquadFilter();
-    lowpass.type = 'lowpass';
-    lowpass.frequency.setValueAtTime(4000, audioCtx.currentTime);
-    // Sweep down for increasing digitization feel
-    lowpass.frequency.linearRampToValueAtTime(2000, audioCtx.currentTime + duration);
-    lowpass.Q.setValueAtTime(1, audioCtx.currentTime);
+    const feedback = audioCtx.createGain();
+    feedback.gain.setValueAtTime(0.7, audioCtx.currentTime); // Heavy feedback
 
-    // === SUBTLE DISTORTION ===
-    const distortion = audioCtx.createWaveShaper();
-    distortion.curve = createDistortionCurve(10);
-    distortion.oversample = '2x';
-
-    // === FEEDBACK DELAY (Echo) ===
-    const delay = audioCtx.createDelay(2.0);
-    delay.delayTime.setValueAtTime(0.15, audioCtx.currentTime); // 150ms delay
-    const delayFeedback = audioCtx.createGain();
-    delayFeedback.gain.setValueAtTime(0.4, audioCtx.currentTime); // 40% feedback for multiple echoes
     const delayFilter = audioCtx.createBiquadFilter();
     delayFilter.type = 'lowpass';
-    delayFilter.frequency.setValueAtTime(3000, audioCtx.currentTime); // Darken echoes
-    // Delay feedback loop
+    delayFilter.frequency.setValueAtTime(3000, audioCtx.currentTime);
+
+    // Delay wet gain (starts at 0, ramps up at end)
+    const delayWet = audioCtx.createGain();
+    delayWet.gain.setValueAtTime(0, audioCtx.currentTime);
+
+    // Feedback loop: delay -> filter -> feedback -> delay
     delay.connect(delayFilter);
-    delayFilter.connect(delayFeedback);
-    delayFeedback.connect(delay);
+    delayFilter.connect(feedback);
+    feedback.connect(delay);
 
-    // === REVERB (Multi-tap delay approximation) ===
-    // Create multiple delay taps at different times for spacious reverb feel
-    const reverbMix = audioCtx.createGain();
-    reverbMix.gain.setValueAtTime(0.3, audioCtx.currentTime);
-    const reverbTaps = [
-        { time: 0.03, gain: 0.4 },
-        { time: 0.05, gain: 0.3 },
-        { time: 0.08, gain: 0.25 },
-        { time: 0.12, gain: 0.2 },
-        { time: 0.17, gain: 0.15 },
-        { time: 0.23, gain: 0.1 },
-        { time: 0.31, gain: 0.07 },
-        { time: 0.41, gain: 0.04 },
-    ];
-    const reverbDelays = reverbTaps.map(tap => {
-        const d = audioCtx.createDelay(1.0);
-        d.delayTime.setValueAtTime(tap.time, audioCtx.currentTime);
-        const g = audioCtx.createGain();
-        g.gain.setValueAtTime(tap.gain, audioCtx.currentTime);
-        d.connect(g);
-        g.connect(reverbMix);
-        return d;
-    });
-    // Reverb filter to soften the tails
-    const reverbFilter = audioCtx.createBiquadFilter();
-    reverbFilter.type = 'lowpass';
-    reverbFilter.frequency.setValueAtTime(2500, audioCtx.currentTime);
-    reverbMix.connect(reverbFilter);
-
-    // === OUTPUT GAIN ===
-    const outputGain = audioCtx.createGain();
-    outputGain.gain.setValueAtTime(volume, audioCtx.currentTime);
-
-    // === DRY/WET MIX ===
-    // Blend original with effected signal
-    const dryGain = audioCtx.createGain();
-    const wetGain = audioCtx.createGain();
-    const mixerGain = audioCtx.createGain();
-    dryGain.gain.setValueAtTime(0.25, audioCtx.currentTime); // 25% dry
-    wetGain.gain.setValueAtTime(0.75, audioCtx.currentTime); // 75% wet
-
-    // === SIGNAL ROUTING ===
-    // Dry path: source -> dryGain -> mixer
+    // Signal routing
     source.connect(dryGain);
-    dryGain.connect(mixerGain);
+    source.connect(delay);
+    delay.connect(delayWet);
 
-    // Wet path: source -> bitcrusher -> lowpass -> distortion -> wetGain
-    source.connect(bitcrusher);
-    bitcrusher.connect(lowpass);
-    lowpass.connect(distortion);
-    distortion.connect(wetGain);
+    dryGain.connect(audioCtx.destination);
+    delayWet.connect(audioCtx.destination);
 
-    // Wet signal goes to mixer AND to delay/reverb
-    wetGain.connect(mixerGain);
-    wetGain.connect(delay); // Feed into delay
-    delay.connect(mixerGain); // Delay output to mixer
-
-    // Feed wet signal into reverb taps
-    reverbDelays.forEach(d => wetGain.connect(d));
-    reverbFilter.connect(mixerGain); // Reverb output to mixer
-
-    // Ring modulator affects the wet signal
-    ringOsc.connect(ringGain);
-    ringGain.connect(wetGain.gain); // Modulates the wet gain for tremolo/ring effect
-
-    // Final output
-    mixerGain.connect(outputGain);
-    outputGain.connect(audioCtx.destination);
-
-    // Start everything
     source.start();
-    ringOsc.start();
-    ringOsc.stop(audioCtx.currentTime + duration + 0.1);
 
-    return true;
+    return {
+        source: source,
+        delayWet: delayWet,
+        volume: volume
+    };
 }
 
 // Sound synthesis helper
@@ -558,16 +477,29 @@ const SFX = {
         }
     },
 
-    abductionSuccess: (targetType) => {
+    abductionComplete: (targetType) => {
         if (!audioCtx) return;
-        // Try to play a custom sound for this target type
-        if (playTargetSound(targetType, 0.25)) {
-            return; // Custom sound played successfully
-        }
-        // Fallback to synthesized jingle if no custom sound available
+        // Quick success jingle when target is fully beamed
         [400, 500, 600, 800].forEach((freq, i) => {
             setTimeout(() => playTone(freq, 0.15, 'sine', 0.2), i * 80);
         });
+    },
+
+    targetPickup: (target) => {
+        if (!audioCtx) return;
+        // Cooldown to prevent sound spam if target is dropped and re-grabbed quickly
+        const now = performance.now();
+        const cooldown = 2000; // 2 seconds between sounds for same target
+        if (target.lastSoundTime && (now - target.lastSoundTime) < cooldown) {
+            return; // Too soon to play again
+        }
+        // Try to play a custom sound for this target type
+        // Store the source node so we can manipulate playback rate as target rises
+        const source = playTargetSound(target.type, 0.15);
+        if (source) {
+            target.lastSoundTime = now;
+            target.abductionSound = source;
+        }
     },
 
     countTick: (frequency = 600) => {
@@ -2162,10 +2094,25 @@ class Target {
             // Update abduction progress
             this.abductionProgress += dt * rapidMultiplier;
 
+            // Adjust sound based on rise progress
+            if (this.abductionSound && this.abductionSound.source) {
+                const progress = Math.min(1, this.abductionProgress / this.abductionTime);
+
+                // Pitch shifts up as target rises (0.7 -> 2.2)
+                const playbackRate = 0.7 + progress * 1.5;
+                this.abductionSound.source.playbackRate.value = playbackRate;
+
+                // Heavy delay kicks in at the end (last 30% of abduction)
+                // Envelope: 0 until 70%, then ramps up quickly to full
+                const delayProgress = Math.max(0, (progress - 0.7) / 0.3);
+                const delayAmount = delayProgress * delayProgress * this.abductionSound.volume * 1.5;
+                this.abductionSound.delayWet.gain.setValueAtTime(delayAmount, audioCtx.currentTime);
+            }
+
             // Check if abduction complete
             if (this.abductionProgress >= this.abductionTime) {
                 this.alive = false;
-                SFX.abductionSuccess(this.type);
+                SFX.abductionComplete(this.type);
                 // Increment harvest counter and trigger bounce
                 harvestCount[this.type]++;
                 harvestBounce[this.type] = 1.0;
@@ -2711,6 +2658,8 @@ class UFO {
                 this.beamTarget = this.findTargetInBeam();
                 if (this.beamTarget) {
                     this.beamTarget.beingAbducted = true;
+                    // Play pickup sound (with cooldown to prevent spam)
+                    SFX.targetPickup(this.beamTarget);
                     // Reset falling state if re-catching a dropped target
                     if (this.beamTarget.falling) {
                         this.beamTarget.falling = false;
@@ -2758,6 +2707,7 @@ class UFO {
                     }
                     this.beamTarget.beingAbducted = false;
                     this.beamTarget.abductionProgress = 0;
+                    this.beamTarget.abductionSound = null; // Clear sound reference on drop
                     // Tank drops instantly to ground, regular targets fall with gravity
                     if (isTank) {
                         this.beamTarget.y = this.beamTarget.groundY;
