@@ -14,8 +14,10 @@ dist/
 .env
 .env.local
 
-# Gas Town
+# Agent/AI tooling
 .beads/
+.agent/
+.claude/
 
 # Processed sounds (generated at build time)
 assets/sounds/processed/
