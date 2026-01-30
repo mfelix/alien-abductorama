@@ -1,6 +1,10 @@
 // Auto-generated changelog - do not edit manually
 const CHANGELOG = [
   {
+    "message": "Add target pickup sounds + fix re-beaming dropped targets",
+    "timestamp": 1769792079196
+  },
+  {
     "message": "Add falling animation when targets are dropped",
     "timestamp": 1769213200000
   },
