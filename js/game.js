@@ -2109,8 +2109,9 @@ class Target {
                 this.abductionSound.delayWet.gain.setValueAtTime(delayAmount, audioCtx.currentTime);
             }
 
-            // Check if abduction complete
-            if (this.abductionProgress >= this.abductionTime) {
+            // Check if abduction complete (either time elapsed OR reached UFO position)
+            // The position check handles re-beaming a dropped target mid-air
+            if (this.abductionProgress >= this.abductionTime || this.y <= targetY) {
                 this.alive = false;
                 SFX.abductionComplete(this.type);
                 // Increment harvest counter and trigger bounce
@@ -3431,8 +3432,9 @@ class Tank {
 
             this.abductionProgress += dt * rapidMultiplier;
 
-            // Check if abduction complete
-            if (this.abductionProgress >= this.abductionTime) {
+            // Check if abduction complete (either time elapsed OR reached UFO position)
+            // The position check handles re-beaming a dropped target mid-air
+            if (this.abductionProgress >= this.abductionTime || this.y <= targetY) {
                 // Tank explodes near UFO! Multiple explosions for bigger effect
                 const tankCenterX = this.x + this.width / 2;
                 const tankCenterY = this.y + this.height / 2;
@@ -4279,7 +4281,9 @@ class Powerup {
 
         this.abductionProgress += dt;
 
-        if (this.abductionProgress >= this.abductionTime) {
+        // Check if abduction complete (either time elapsed OR reached UFO position)
+        // The position check handles re-beaming a dropped powerup mid-air
+        if (this.abductionProgress >= this.abductionTime || this.y <= targetY) {
             this.collect();
         }
     }
@@ -4713,8 +4717,9 @@ class HeavyTank {
 
             this.abductionProgress += dt * rapidMultiplier;
 
-            // Check if abduction complete
-            if (this.abductionProgress >= this.abductionTime) {
+            // Check if abduction complete (either time elapsed OR reached UFO position)
+            // The position check handles re-beaming a dropped target mid-air
+            if (this.abductionProgress >= this.abductionTime || this.y <= targetY) {
                 // MASSIVE explosion for heavy tank!
                 const tankCenterX = this.x + this.width / 2;
                 const tankCenterY = this.y + this.height / 2;
