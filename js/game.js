@@ -4580,7 +4580,9 @@ function updateActivePowerups(dt) {
                 state.timer = 0;
                 state.stacks = 0;
                 SFX.powerupExpire();
-                createFloatingText(ufo.x, ufo.y - 60, `${CONFIG.POWERUPS[key].name} ENDED`, '#888');
+                if (ufo) {
+                    createFloatingText(ufo.x, ufo.y - 60, `${CONFIG.POWERUPS[key].name} ENDED`, '#888');
+                }
             }
         }
     }
