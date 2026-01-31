@@ -6,7 +6,7 @@ const MAX_ENTRIES = 100;
 
 // Activity tracking constants
 const ACTIVITY_KEY = 'activity_stats';
-const MAX_RECENT_GAMES = 100; // Keep last 100 timestamps for rolling window
+const MAX_RECENT_GAMES = 1000; // Keep last 1000 timestamps for rolling window
 
 // Feedback constants
 const FEEDBACK_SUGGESTIONS_KEY = 'feedback_suggestions';
@@ -163,6 +163,14 @@ export default {
 			return new Response('Method Not Allowed', { status: 405 });
 		}
 
+		// Lightweight activity ping endpoint
+		if (url.pathname === '/api/activity') {
+			if (request.method === 'POST') {
+				return handlePostActivity(request, env);
+			}
+			return new Response('Method Not Allowed', { status: 405 });
+		}
+
 		// Static assets are handled automatically by the assets configuration
 		return new Response('Not Found', { status: 404 });
 	},
@@ -196,6 +204,30 @@ async function updateActivityStats(env, timestamp) {
 function calculateGamesThisWeek(recentGames) {
 	const oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
 	return recentGames.filter(ts => ts > oneWeekAgo).length;
+}
+
+// Lightweight activity ping handler - called when player starts playing
+async function handlePostActivity(request, env) {
+	const corsHeaders = getCorsHeaders(request);
+	try {
+		const timestamp = Date.now();
+		await updateActivityStats(env, timestamp);
+
+		const activityStats = await getActivityStats(env);
+		const stats = {
+			lastGamePlayed: timestamp,
+			gamesThisWeek: calculateGamesThisWeek(activityStats.recentGames),
+		};
+
+		return new Response(JSON.stringify({ success: true, stats }), {
+			headers: { 'Content-Type': 'application/json', ...corsHeaders },
+		});
+	} catch (error) {
+		return new Response(JSON.stringify({ error: 'Failed to record activity' }), {
+			status: 500,
+			headers: { 'Content-Type': 'application/json', ...corsHeaders },
+		});
+	}
 }
 
 // Feedback helpers
@@ -259,26 +291,11 @@ async function handlePostScore(request, env) {
 		const body = await request.json();
 		const { name, score, wave, gameLength } = body;
 
-		// Track this game attempt (before any validation that might reject it)
+		// Activity is now tracked via /api/activity endpoint during gameplay
 		const gameTimestamp = Date.now();
-		await updateActivityStats(env, gameTimestamp);
 
-		// If no name provided, this is an activity-only submission (non-qualifying score)
-		// Just return updated stats without adding to leaderboard
-		if (!name) {
-			const activityStats = await getActivityStats(env);
-			const stats = {
-				lastGamePlayed: gameTimestamp,
-				gamesThisWeek: calculateGamesThisWeek(activityStats.recentGames),
-			};
-			return new Response(JSON.stringify({ success: true, activityOnly: true, stats }), {
-				status: 200,
-				headers: { 'Content-Type': 'application/json', ...corsHeaders },
-			});
-		}
-
-		// Validation for leaderboard submissions
-		if (typeof name !== 'string' || !/^[A-Z]{3}$/.test(name)) {
+		// Name is required for leaderboard submissions
+		if (!name || typeof name !== 'string' || !/^[A-Z]{3}$/.test(name)) {
 			return new Response(JSON.stringify({ error: 'Invalid name: must be 3 uppercase letters' }), {
 				status: 400,
 				headers: { 'Content-Type': 'application/json', ...corsHeaders },

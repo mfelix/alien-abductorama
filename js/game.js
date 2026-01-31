@@ -1257,6 +1257,7 @@ let combo = 0;
 let ufoBucks = 0;
 // Game session tracking for leaderboard
 let gameStartTime = 0;
+let activityPingSent = false; // Track if we've pinged activity this session
 let leaderboard = [];
 let leaderboardLoading = false;
 let activityStats = null;
@@ -5409,11 +5410,9 @@ function triggerGameOver() {
             gameState = 'NAME_ENTRY';
             createCelebrationEffect();
         } else {
-            // Record activity for non-qualifying score (no name needed)
-            submitScore(null).then(() => {
-                resetFeedbackState();
-                gameState = 'FEEDBACK';
-            });
+            // Activity already tracked during gameplay via /api/activity
+            resetFeedbackState();
+            gameState = 'FEEDBACK';
         }
     }, 1200);
 }
@@ -5541,6 +5540,31 @@ function scoreQualifiesForLeaderboard() {
     if (finalScore !== last.score) return finalScore > last.score;
     if (finalWave !== last.wave) return finalWave > last.wave;
     return true; // Same score/wave qualifies; sort will keep earlier timestamp first
+}
+
+// Send activity ping to register that someone is playing
+// Called once per game session after 10 seconds OR when first point is scored
+async function sendActivityPing() {
+    if (activityPingSent) return;
+    activityPingSent = true;
+
+    try {
+        const response = await fetch(`${API_BASE}/api/activity`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+        });
+
+        if (response.ok) {
+            const result = await response.json();
+            if (result.stats) {
+                activityStats = result.stats;
+            }
+        }
+    } catch (error) {
+        // Silently fail - activity tracking is non-critical
+        console.error('Failed to send activity ping:', error);
+    }
 }
 
 // ============================================
@@ -5867,6 +5891,7 @@ function startGame() {
     clearTutorialTimeouts();
     gameState = 'PLAYING';
     gameStartTime = Date.now();
+    activityPingSent = false;
     ufo = new UFO();
     targets = [];
     tanks = [];
@@ -10197,6 +10222,11 @@ function gameLoop(timestamp) {
 }
 
 function update(dt) {
+    // Send activity ping after 10 seconds of gameplay OR when first point is scored
+    if (!activityPingSent && ((Date.now() - gameStartTime) >= 10000 || score > 0)) {
+        sendActivityPing();
+    }
+
     // Update screen shake
     if (screenShake > 0) {
         screenShake -= dt;
