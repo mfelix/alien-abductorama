@@ -4866,8 +4866,10 @@ class HeavyTank {
 
         // Aim both turrets at UFO
         if (ufo) {
+            const aimOffset = this.direction < 0 ? -30 : 30;
+
             // Left turret
-            const leftTurretX = this.x + this.width / 2 + 30 - this.turretSpacing;
+            const leftTurretX = this.x + this.width / 2 + aimOffset - this.turretSpacing;
             const leftTurretY = this.y + 20;
             const dxLeft = ufo.x - leftTurretX;
             const dyLeft = ufo.y - leftTurretY;
@@ -4875,7 +4877,7 @@ class HeavyTank {
             this.turretAngleLeft += (targetAngleLeft - this.turretAngleLeft) * 5 * dt;
 
             // Right turret
-            const rightTurretX = this.x + this.width / 2 + 30 + this.turretSpacing;
+            const rightTurretX = this.x + this.width / 2 + aimOffset + this.turretSpacing;
             const rightTurretY = this.y + 20;
             const dxRight = ufo.x - rightTurretX;
             const dyRight = ufo.y - rightTurretY;
@@ -4898,7 +4900,8 @@ class HeavyTank {
         const isLeft = this.nextTurret === 'left';
         this.nextTurret = isLeft ? 'right' : 'left';
 
-        const turretX = this.x + this.width / 2 + 30 + (isLeft ? -this.turretSpacing : this.turretSpacing);
+        const fireOffset = this.direction < 0 ? -30 : 30;
+        const turretX = this.x + this.width / 2 + fireOffset + (isLeft ? -this.turretSpacing : this.turretSpacing);
         const turretY = this.y + 20;
         const turretAngle = isLeft ? this.turretAngleLeft : this.turretAngleRight;
 
@@ -5130,7 +5133,8 @@ class HeavyTank {
     }
 
     renderTurrets() {
-        const centerX = this.x + this.width / 2 + 30;
+        const turretOffset = this.direction < 0 ? -30 : 30;
+        const centerX = this.x + this.width / 2 + turretOffset;
         const turretY = this.y + 30;
 
         // Left turret
