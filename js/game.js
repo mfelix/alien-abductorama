@@ -2014,6 +2014,79 @@ function loadImages() {
 loadImages();
 
 // ============================================
+// ANIMATED SPRITE SYSTEM
+// ============================================
+
+// Stores arrays of Image objects keyed by asset name
+// e.g. animationFrames['human'] = [Image, Image, ...]
+const animationFrames = {};
+let animationManifestLoaded = false;
+
+// Animation speed in frames per second
+const ANIMATION_FPS = 10;
+
+// When set, animations freeze at this timestamp
+let animationPausedAt = null;
+
+async function loadAnimationFrames() {
+    try {
+        const response = await fetch('assets/sprites-manifest.json');
+        if (!response.ok) {
+            console.warn('No sprites manifest found, skipping animation loading');
+            animationManifestLoaded = true;
+            return;
+        }
+        const manifest = await response.json();
+
+        const loadPromises = [];
+
+        for (const [name, framePaths] of Object.entries(manifest)) {
+            animationFrames[name] = new Array(framePaths.length);
+
+            framePaths.forEach((src, index) => {
+                const img = new Image();
+                const promise = new Promise(resolve => {
+                    img.onload = resolve;
+                    img.onerror = () => {
+                        console.warn(`Failed to load animation frame: ${src}`);
+                        resolve();
+                    };
+                });
+                img.src = src;
+                animationFrames[name][index] = img;
+                loadPromises.push(promise);
+            });
+        }
+
+        await Promise.all(loadPromises);
+        console.log('Animation frames loaded:', Object.keys(animationFrames).map(k => `${k}(${animationFrames[k].length})`).join(', '));
+    } catch (e) {
+        console.warn('Could not load animation frames:', e);
+    }
+    animationManifestLoaded = true;
+}
+
+loadAnimationFrames();
+
+// Returns the correct frame Image for an animated asset, or the static
+// image if no animation exists.  `timeOffset` (in ms) lets each instance
+// start at a different point in the cycle so they don't all walk in sync.
+function getAssetImage(type, timeOffset) {
+    const frames = animationFrames[type];
+    if (frames && frames.length > 0) {
+        const now = animationPausedAt !== null ? animationPausedAt : Date.now();
+        const elapsed = (now + (timeOffset || 0)) / 1000;
+        const frameIndex = Math.floor(elapsed * ANIMATION_FPS) % frames.length;
+        const frame = frames[frameIndex];
+        if (frame && frame.complete && frame.naturalWidth > 0) {
+            return frame;
+        }
+    }
+    // Fallback to static image
+    return images[type];
+}
+
+// ============================================
 // TARGET CLASS
 // ============================================
 
@@ -2058,6 +2131,9 @@ class Target {
         // Falling state (when dropped from beam)
         this.falling = false;
         this.vy = 0; // Vertical velocity
+
+        // Animation offset so targets don't animate in sync
+        this.animationOffset = Math.random() * 10000;
 
         // Lifetime
         this.lifetime = CONFIG.TARGET_LIFETIME;
@@ -2228,7 +2304,7 @@ class Target {
             ctx.scale(scale, scale);
             ctx.translate(-centerX, -centerY);
 
-            const img = images[this.type];
+            const img = getAssetImage(this.type, this.animationOffset);
             if (img && img.complete) {
                 ctx.drawImage(img, this.x, this.y, this.width, this.height);
             } else {
@@ -2250,7 +2326,7 @@ class Target {
             ctx.rotate(angle);
             ctx.translate(-centerX, -centerY);
 
-            const img = images[this.type];
+            const img = getAssetImage(this.type, this.animationOffset);
             if (img && img.complete) {
                 ctx.drawImage(img, this.x, this.y, this.width, this.height);
             } else {
@@ -2261,7 +2337,7 @@ class Target {
             return;
         }
 
-        const img = images[this.type];
+        const img = getAssetImage(this.type, this.animationOffset);
         if (img && img.complete) {
             // Flip sprite based on wander direction
             ctx.save();
@@ -2279,11 +2355,6 @@ class Target {
             ctx.fillRect(this.x, this.y, this.width, this.height);
         }
 
-        // Debug: show flee state
-        if (this.fleeing) {
-            ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
-            ctx.fillRect(this.x, this.y, this.width, this.height);
-        }
     }
 
     getPlaceholderColor() {
@@ -3351,6 +3422,9 @@ class Tank {
         // Health (for laser turret damage)
         this.health = CONFIG.TANK_HEALTH;
         this.maxHealth = CONFIG.TANK_HEALTH;
+
+        // Animation offset so tanks don't animate in sync
+        this.animationOffset = Math.random() * 10000;
     }
 
     takeDamage(amount) {
@@ -3590,7 +3664,7 @@ class Tank {
             abductedTransform = true;
         }
 
-        const img = images.tank;
+        const img = getAssetImage('tank', this.animationOffset);
 
         // Check if being targeted by turret
         const isBeingLasered = ufo && ufo.turretTarget === this;
@@ -3714,14 +3788,8 @@ class Tank {
         const turretX = this.x + this.width / 2;
         const turretY = this.y + 15;
 
-        // Turret base
-        ctx.fillStyle = '#3a4a2f';
-        ctx.beginPath();
-        ctx.arc(turretX, turretY, 22, 0, Math.PI * 2);
-        ctx.fill();
-
         // Turret barrel
-        ctx.strokeStyle = '#2a3a1f';
+        ctx.strokeStyle = '#b0b0b0';
         ctx.lineWidth = 12;
         ctx.lineCap = 'round';
         ctx.beginPath();
@@ -4608,7 +4676,7 @@ class HeavyTank {
         this.turretAngleLeft = 0;
         this.turretAngleRight = 0;
         this.turretLength = 60;
-        this.turretSpacing = 70; // Distance from center to each turret
+        this.turretSpacing = 35; // Distance from center to each turret (flanking the hump)
 
         // Firing - only missiles, alternating turrets
         this.fireTimer = 1.5; // Fires more frequently
@@ -4638,6 +4706,9 @@ class HeavyTank {
         // Bomb damage tracking (takes 2 bombs to destroy)
         this.bombHits = 0;
         this.isDamaged = false;
+
+        // Animation offset so tanks don't animate in sync
+        this.animationOffset = Math.random() * 10000;
     }
 
     takeDamage(amount) {
@@ -4796,7 +4867,7 @@ class HeavyTank {
         // Aim both turrets at UFO
         if (ufo) {
             // Left turret
-            const leftTurretX = this.x + this.width / 2 - this.turretSpacing;
+            const leftTurretX = this.x + this.width / 2 + 30 - this.turretSpacing;
             const leftTurretY = this.y + 20;
             const dxLeft = ufo.x - leftTurretX;
             const dyLeft = ufo.y - leftTurretY;
@@ -4804,7 +4875,7 @@ class HeavyTank {
             this.turretAngleLeft += (targetAngleLeft - this.turretAngleLeft) * 5 * dt;
 
             // Right turret
-            const rightTurretX = this.x + this.width / 2 + this.turretSpacing;
+            const rightTurretX = this.x + this.width / 2 + 30 + this.turretSpacing;
             const rightTurretY = this.y + 20;
             const dxRight = ufo.x - rightTurretX;
             const dyRight = ufo.y - rightTurretY;
@@ -4827,7 +4898,7 @@ class HeavyTank {
         const isLeft = this.nextTurret === 'left';
         this.nextTurret = isLeft ? 'right' : 'left';
 
-        const turretX = this.x + this.width / 2 + (isLeft ? -this.turretSpacing : this.turretSpacing);
+        const turretX = this.x + this.width / 2 + 30 + (isLeft ? -this.turretSpacing : this.turretSpacing);
         const turretY = this.y + 20;
         const turretAngle = isLeft ? this.turretAngleLeft : this.turretAngleRight;
 
@@ -4885,7 +4956,7 @@ class HeavyTank {
             abductedTransform = true;
         }
 
-        const img = images.tank;
+        const img = getAssetImage('tank', this.animationOffset);
 
         // Check if being targeted by turret
         const isBeingLasered = ufo && ufo.turretTarget === this;
@@ -5059,7 +5130,7 @@ class HeavyTank {
     }
 
     renderTurrets() {
-        const centerX = this.x + this.width / 2;
+        const centerX = this.x + this.width / 2 + 30;
         const turretY = this.y + 30;
 
         // Left turret
@@ -5072,14 +5143,8 @@ class HeavyTank {
     }
 
     renderSingleTurret(x, y, angle) {
-        // Turret base (larger than regular tank)
-        ctx.fillStyle = '#2a3a1f';
-        ctx.beginPath();
-        ctx.arc(x, y, 28, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Turret barrel (thicker)
-        ctx.strokeStyle = '#1a2a0f';
+        // Turret barrel
+        ctx.strokeStyle = '#b0b0b0';
         ctx.lineWidth = 16;
         ctx.lineCap = 'round';
         ctx.beginPath();
@@ -5336,6 +5401,9 @@ function triggerRevive() {
 // ============================================
 
 function triggerGameOver() {
+    // Freeze sprite animations
+    animationPausedAt = Date.now();
+
     // Stop beam sound if active
     SFX.stopBeamLoop();
 
@@ -5891,6 +5959,7 @@ function createCelebrationEffect() {
 
 function startGame() {
     clearTutorialTimeouts();
+    animationPausedAt = null;
     gameState = 'PLAYING';
     gameStartTime = Date.now();
     activityPingSent = false;
@@ -6704,7 +6773,8 @@ function updateTitleHumans() {
             beingAbducted: false,
             abductionProgress: 0,
             direction: fromLeft ? 1 : -1,
-            walkSpeed: 0.8 + Math.random() * 0.6 // Vary walking speed slightly
+            walkSpeed: 0.8 + Math.random() * 0.6, // Vary walking speed slightly
+            animationOffset: Math.random() * 10000
         });
     }
 
@@ -6771,7 +6841,7 @@ function updateTitleHumans() {
 
 function renderTitleHumans() {
     for (const human of titleHumans) {
-        const img = images.human;
+        const img = getAssetImage('human', human.animationOffset);
         if (img && img.complete) {
             ctx.save();
 
@@ -8862,6 +8932,9 @@ function buildWaveSummary(completedWave) {
 }
 
 function startWaveSummary(completedWave) {
+    // Freeze sprite animations while stats overlay is shown
+    animationPausedAt = Date.now();
+
     waveSummary = buildWaveSummary(completedWave);
 
     const targetsDuration = TARGET_TYPES.length * WAVE_SUMMARY_TIMING.targetPer;
@@ -9247,6 +9320,7 @@ function updateWaveTransition(dt) {
 
     if (waveTransitionTimer <= 0) {
         // Start the new wave
+        animationPausedAt = null;
         resetWaveStats();
         waveTimer = CONFIG.WAVE_DURATION;
         lastTimerWarningSecond = -1; // Reset timer warning

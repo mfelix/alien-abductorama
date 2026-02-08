@@ -1,0 +1,56 @@
+{
+  "cat": [
+    "assets/cat/frame_001.png",
+    "assets/cat/frame_002.png",
+    "assets/cat/frame_003.png",
+    "assets/cat/frame_004.png"
+  ],
+  "cow": [
+    "assets/cow/frame_001.png",
+    "assets/cow/frame_002.png",
+    "assets/cow/frame_003.png",
+    "assets/cow/frame_004.png",
+    "assets/cow/frame_005.png",
+    "assets/cow/frame_006.png",
+    "assets/cow/frame_007.png",
+    "assets/cow/frame_008.png"
+  ],
+  "dog": [
+    "assets/dog/frame_001.png",
+    "assets/dog/frame_002.png",
+    "assets/dog/frame_003.png",
+    "assets/dog/frame_004.png",
+    "assets/dog/frame_005.png",
+    "assets/dog/frame_006.png"
+  ],
+  "human": [
+    "assets/human/frame_001.png",
+    "assets/human/frame_002.png",
+    "assets/human/frame_003.png",
+    "assets/human/frame_004.png",
+    "assets/human/frame_005.png",
+    "assets/human/frame_006.png",
+    "assets/human/frame_007.png",
+    "assets/human/frame_008.png"
+  ],
+  "sheep": [
+    "assets/sheep/frame_001.png",
+    "assets/sheep/frame_002.png",
+    "assets/sheep/frame_003.png",
+    "assets/sheep/frame_004.png",
+    "assets/sheep/frame_005.png",
+    "assets/sheep/frame_006.png",
+    "assets/sheep/frame_007.png",
+    "assets/sheep/frame_008.png"
+  ],
+  "tank": [
+    "assets/tank/frame_001.png",
+    "assets/tank/frame_002.png",
+    "assets/tank/frame_003.png",
+    "assets/tank/frame_004.png",
+    "assets/tank/frame_005.png",
+    "assets/tank/frame_006.png",
+    "assets/tank/frame_007.png",
+    "assets/tank/frame_008.png"
+  ]
+}

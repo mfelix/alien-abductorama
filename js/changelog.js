@@ -1,6 +1,14 @@
 // Auto-generated changelog - do not edit manually
 const CHANGELOG = [
   {
+    "message": "Polish pass: snappier visuals and squashed bugs",
+    "timestamp": 1770521125029
+  },
+  {
+    "message": "Animated sprites: targets and tanks now play frame-by-frame animations",
+    "timestamp": 1770521121876
+  },
+  {
     "message": "Add target pickup sounds + fix re-beaming dropped targets",
     "timestamp": 1769792079196
   },

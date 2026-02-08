@@ -8,7 +8,8 @@
     "changelog:from-git": "node scripts/changelog.cjs from-git",
     "changelog:generate": "node scripts/changelog.cjs",
     "sounds:process": "node scripts/process-sounds.cjs",
-    "build": "npm run sounds:process && mkdir -p dist && cp -r index.html css js assets changelog.json dist/",
+    "sprites:process": "node scripts/process-sprites.cjs",
+    "build": "npm run sounds:process && npm run sprites:process && mkdir -p dist && cp -r index.html css js assets changelog.json dist/",
     "dev": "wrangler dev",
     "deploy": "npm run build && wrangler deploy",
     "login": "wrangler login"
