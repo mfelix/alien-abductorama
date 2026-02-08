@@ -5706,6 +5706,7 @@ async function submitFeedback() {
 
         // Success - go to title
         resetFeedbackState();
+        animationPausedAt = null;
         gameState = 'TITLE';
         fetchLeaderboard();
         fetchFeedback(); // Refresh feedback data
@@ -5717,6 +5718,7 @@ async function submitFeedback() {
 
 function skipFeedback() {
     resetFeedbackState();
+    animationPausedAt = null;
     gameState = 'TITLE';
     titleTab = 'feedback';
     fetchLeaderboard();
@@ -5794,6 +5796,7 @@ async function submitSuggestionOnly() {
             // Navigate to title screen with feedback tab after sound plays
             setTimeout(() => {
                 resetFeedbackState();
+                animationPausedAt = null;
                 gameState = 'TITLE';
                 titleTab = 'feedback';
                 fetchLeaderboard();
