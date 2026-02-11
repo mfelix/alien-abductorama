@@ -12947,6 +12947,39 @@ function renderShop() {
     const rightContentRight = outerX + outerW - rightInnerPad;
     const rightColumnW = outerX + outerW - dividerX;
 
+    // --- Guidance panel state ---
+    const allNodes = getAllTechNodes();
+    const allResearched = allNodes.every(n => techTree.researched.has(n.id));
+    const hasActiveOrQueued = techTree.activeResearch !== null || techTree.queue.length > 0;
+    const availableCount = allNodes.filter(n => canResearchNode(n.id)).length;
+    const hasAvailable = availableCount > 0;
+
+    let guidanceState = 'HIDDEN';
+    let guidanceMessage = '';
+    if (allResearched) {
+        guidanceState = 'HIDDEN';
+    } else if (allNodes.every(n => techTree.researched.has(n.id) || techTree.queue.includes(n.id) || (techTree.activeResearch && techTree.activeResearch.nodeId === n.id))) {
+        guidanceState = 'ALL_SET';
+        guidanceMessage = 'ALL RESEARCH QUEUED \u2014 LAUNCH WHEN READY';
+    } else if (bioMatter === 0 && !hasActiveOrQueued) {
+        guidanceState = 'NO_BM';
+        guidanceMessage = 'NO BIOMATTER THIS ROUND \u2014 EARN MORE NEXT WAVE';
+    } else if (bioMatter > 0 && !hasAvailable && !hasActiveOrQueued) {
+        guidanceState = 'CANT_AFFORD';
+        guidanceMessage = 'NOT ENOUGH BIOMATTER \u2014 EARN MORE NEXT WAVE';
+    } else if (hasActiveOrQueued && hasAvailable) {
+        guidanceState = 'HAS_QUEUED_MORE_AVAIL';
+        guidanceMessage = `RESEARCH QUEUED \u2014 ${availableCount} MORE UPGRADE${availableCount === 1 ? '' : 'S'} AVAILABLE`;
+    } else if (hasActiveOrQueued && !hasAvailable) {
+        guidanceState = 'HAS_QUEUED_DONE';
+        guidanceMessage = 'RESEARCH QUEUED \u2014 LAUNCH WHEN READY';
+    } else if (bioMatter > 0 && hasAvailable && !hasActiveOrQueued) {
+        guidanceState = 'INTRO';
+        guidanceMessage = `${availableCount} UPGRADE${availableCount === 1 ? '' : 'S'} AVAILABLE \u2014 CLICK TO RESEARCH`;
+    }
+    const showGuidance = guidanceState !== 'HIDDEN';
+    const guidancePanelH = showGuidance ? 36 : 0;
+
     // Title left-aligned, vertically centered in title row
     ctx.fillStyle = '#8af';
     ctx.font = `bold ${Math.min(18, rightW * 0.038)}px monospace`;
@@ -12982,12 +13015,48 @@ function renderShop() {
     ctx.lineTo(outerX + outerW - 1, topY + titleH);
     ctx.stroke();
 
+    // --- Guidance alert panel ---
+    if (showGuidance) {
+        let panelBg, panelBorder, panelText, iconChar;
+        if (guidanceState === 'INTRO' || guidanceState === 'ALL_SET') {
+            panelBg = 'rgba(0, 200, 0, 0.08)';
+            panelBorder = 'rgba(0, 200, 0, 0.35)';
+            panelText = '#0c0';
+            iconChar = guidanceState === 'INTRO' ? '\u25B8' : '\u2713';
+        } else if (guidanceState === 'HAS_QUEUED_MORE_AVAIL' || guidanceState === 'HAS_QUEUED_DONE') {
+            panelBg = 'rgba(68, 170, 255, 0.08)';
+            panelBorder = 'rgba(68, 170, 255, 0.35)';
+            panelText = '#4af';
+            iconChar = guidanceState === 'HAS_QUEUED_DONE' ? '\u2713' : '\u25B8';
+        } else {
+            panelBg = 'rgba(255, 170, 0, 0.08)';
+            panelBorder = 'rgba(255, 170, 0, 0.35)';
+            panelText = '#fa0';
+            iconChar = '\u26A0';
+        }
+        const gpX = rightContentLeft;
+        const gpW = rightContentRight - rightContentLeft;
+        const gpY = topY + titleH + 8;
+        const gpH = 24;
+        ctx.fillStyle = panelBg;
+        ctx.beginPath();
+        ctx.roundRect(gpX, gpY, gpW, gpH, 4);
+        ctx.fill();
+        ctx.strokeStyle = panelBorder;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.fillStyle = panelText;
+        ctx.font = `bold ${Math.min(12, gpW * 0.022)}px monospace`;
+        ctx.textAlign = 'center';
+        ctx.fillText(`${iconChar}  ${guidanceMessage}`, gpX + gpW / 2, gpY + gpH / 2 + 4);
+    }
+
     // Track config
     const trackNames = ['quantumCore', 'bioComputer', 'spiceNavigator'];
     const trackLabels = ['QUANTUM CORE', 'BIO-COMPUTER', 'SPICE NAVIGATOR'];
     const trackColors = ['#0ff', '#0f0', '#f80'];
-    const treeTopY = topY + titleH + 38;
-    const treeBottomPad = 50;
+    const treeTopY = topY + titleH + 38 + guidancePanelH;
+    const treeBottomPad = 10;
     const treeH = mainH - (treeTopY - topY) - treeBottomPad;
     const treePadX = rightInnerPad; // horizontal padding inside the right column
     const nodeGap = 24; // gap between node columns
@@ -13121,10 +13190,14 @@ function renderShop() {
                 ctx.beginPath();
                 ctx.roundRect(rx + 1, ry + 1, nodeW - 2, nodeH - 2, nodeR - 1);
                 ctx.fill();
-                // Bright border
+                // Dim base border (progress trace overlays this)
+                ctx.globalAlpha = 0.25;
                 ctx.strokeStyle = trackColors[t];
-                ctx.lineWidth = 3;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.roundRect(rx, ry, nodeW, nodeH, nodeR);
                 ctx.stroke();
+                ctx.globalAlpha = 1;
             } else if (isInQueue) {
                 // Queued: slightly tinted background, solid border
                 ctx.fillStyle = 'rgba(28, 32, 55, 0.96)';
@@ -13160,15 +13233,24 @@ function renderShop() {
                 ctx.stroke();
             }
 
-            // --- Active research progress bar ---
+            // --- Active research progress border trace ---
             if (isActive && techTree.activeResearch) {
                 const prog = 1 - (techTree.activeResearch.timeRemaining / techTree.activeResearch.totalTime);
-                ctx.fillStyle = trackColors[t];
-                ctx.globalAlpha = 0.4;
+                const straightW = nodeW - 2 * nodeR;
+                const straightH = nodeH - 2 * nodeR;
+                const perimeter = 2 * straightW + 2 * straightH + 2 * Math.PI * nodeR;
+                const drawLen = Math.max(1, prog * perimeter);
+                const gapLen = perimeter;
+                ctx.save();
+                ctx.strokeStyle = trackColors[t];
+                ctx.lineWidth = 3;
+                ctx.shadowColor = trackColors[t];
+                ctx.shadowBlur = 8;
+                ctx.setLineDash([drawLen, gapLen]);
                 ctx.beginPath();
-                ctx.roundRect(rx + 1, ry + nodeH - 5, (nodeW - 2) * prog, 4, 2);
-                ctx.fill();
-                ctx.globalAlpha = 1;
+                ctx.roundRect(rx, ry, nodeW, nodeH, nodeR);
+                ctx.stroke();
+                ctx.restore();
             }
 
             // --- Text content ---
@@ -13205,13 +13287,19 @@ function renderShop() {
                 ctx.font = costFont;
                 ctx.textAlign = 'center';
                 ctx.fillText('COMPLETE', ttx, bottomTextY);
+            } else if (isActive && techTree.activeResearch) {
+                ctx.font = costFont;
+                ctx.textAlign = 'center';
+                ctx.fillStyle = trackColors[t];
+                const secs = Math.ceil(techTree.activeResearch.timeRemaining);
+                ctx.fillText(`RESEARCHING... ${secs}s`, ttx, bottomTextY);
             } else {
                 ctx.font = costFont;
                 ctx.textAlign = 'left';
-                ctx.fillStyle = isAvailable || isInQueue || isActive ? '#8f8' : '#7a9a7a';
+                ctx.fillStyle = isAvailable || isInQueue ? '#8f8' : '#7a9a7a';
                 ctx.fillText(`${node.cost} BM`, textX, bottomTextY);
                 ctx.textAlign = 'right';
-                ctx.fillStyle = isAvailable || isInQueue || isActive ? '#aaf' : '#7a7a9a';
+                ctx.fillStyle = isAvailable || isInQueue ? '#aaf' : '#7a7a9a';
                 ctx.fillText(`${node.researchTime}s`, rx + nodeW - nodePad, bottomTextY);
             }
 
@@ -13266,34 +13354,6 @@ function renderShop() {
                 nodeId: node.id
             });
         }
-    }
-
-    // ===== ACTIVE RESEARCH PROGRESS BAR (compact, bottom) =====
-    if (techTree.activeResearch) {
-        const ar = techTree.activeResearch;
-        const arNode = getTechNode(ar.nodeId);
-        const barX = rightContentLeft;
-        const barW = rightContentRight - rightContentLeft;
-        const barY = topY + mainH - 30;
-        const barH = 20;
-        const prog = 1 - (ar.timeRemaining / ar.totalTime);
-
-        ctx.fillStyle = 'rgba(20, 20, 30, 0.8)';
-        ctx.beginPath();
-        ctx.roundRect(barX, barY, barW, barH, 4);
-        ctx.fill();
-
-        const tIdx = arNode ? trackNames.indexOf(arNode.track) : 0;
-        ctx.fillStyle = trackColors[tIdx] || '#0ff';
-        ctx.beginPath();
-        ctx.roundRect(barX, barY, barW * prog, barH, 4);
-        ctx.fill();
-
-        ctx.fillStyle = '#fff';
-        ctx.font = `bold ${Math.min(11, barH - 4)}px monospace`;
-        ctx.textAlign = 'center';
-        const timeLeft = Math.ceil(ar.timeRemaining);
-        ctx.fillText(arNode ? `${arNode.name} - ${timeLeft}s` : `Research - ${timeLeft}s`, barX + barW / 2, barY + barH / 2 + 4);
     }
 
     // ===== BOTTOM BAR (darker overlay, split into two columns) =====
