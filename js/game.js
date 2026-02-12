@@ -86,12 +86,6 @@ const CONFIG = {
     WARP_JUKE_GHOST_DURATION: 0.5,  // Ghost trail duration
     WARP_JUKE_ENERGY_COST: 25,      // Energy cost to warp
 
-    // Laser Turret
-    TURRET_DAMAGE_PER_SECOND: 32,   // Damage dealt per second to tanks (~1.5s to kill light tank, ~3s for heavy)
-    TURRET_ENERGY_COST: 25,         // Energy per second to fire (drains energy slower)
-    TURRET_BEAM_WIDTH: 4,           // Visual beam width
-    TURRET_RANGE: 800,              // Max range of turret
-
     // Tank Health
     TANK_HEALTH: 50,                // Regular tank health
     HEAVY_TANK_HEALTH: 100,         // Heavy tank health
@@ -229,28 +223,9 @@ const CONFIG = {
             value: 1
         },
         {
-            id: 'laser_turret',
-            name: 'LASER TURRET',
-            description: 'Anti-tank laser',
-            cost: 400,
-            color: '#f44',
-            effect: 'turret',
-            value: 1
-        },
-        {
-            id: 'turret_damage',
-            name: 'LASER DAMAGE',
-            description: '+25% laser damage',
-            cost: 220,
-            color: '#ff6666',
-            effect: 'turretDamage',
-            value: 0.25,
-            requiresTurret: true
-        },
-        {
             id: 'harvester_drone',
             name: 'HARVESTER DRONE',
-            description: '+1 harvester drone slot (S/H key)',
+            description: 'Unlock harvester drones (S/H key)',
             cost: 100,
             color: '#0ff',
             effect: 'harvesterDrone',
@@ -259,7 +234,7 @@ const CONFIG = {
         {
             id: 'battle_drone',
             name: 'BATTLE DRONE',
-            description: '+1 battle drone slot (A key)',
+            description: 'Unlock attack drones (A key)',
             cost: 100,
             color: '#f44',
             effect: 'battleDrone',
@@ -268,7 +243,7 @@ const CONFIG = {
         {
             id: 'missile_swarm',
             name: 'MISSILE SWARM',
-            description: 'Homing missiles (C key)',
+            description: 'Homing missiles (X key)',
             cost: 400,
             color: '#ff2200',
             effect: 'missileSwarm',
@@ -312,16 +287,6 @@ const CONFIG = {
             effect: 'bombDamage',
             value: 1
         },
-        {
-            id: 'multi_turret',
-            name: 'MULTI-TURRET',
-            description: '+1 turret beam',
-            cost: 600,
-            color: '#ff4444',
-            effect: 'multiTurret',
-            value: 1,
-            requiresTurret: true
-        }
     ],
 
     // === EXPANSION: Missile Swarm ===
@@ -341,10 +306,6 @@ const CONFIG = {
     BATTLE_TIMER: 40,
     HARVESTER_BATCH_SIZE: 3,
 
-    // === EXPANSION: Turret Multi-beam ===
-    TURRET_MULTI_BEAM_MAX: 3,
-    TURRET_BEAM_ENERGY_COST: 25,
-
     // === EXPANSION: Bio-Matter ===
     BIO_MATTER_RATES: { human: 3, cow: 2, sheep: 2, cat: 1, dog: 1, harvester_batch: 2 },
 
@@ -356,30 +317,72 @@ const CONFIG = {
 
     // === EXPANSION: Tech Tree (3 tracks x 5 tiers) ===
     TECH_TREE: {
-        // Track 1: Quantum Core (Energy)
-        quantumCore: [
-            { id: 'qc1', track: 'quantumCore', tier: 1, name: 'Reactor Ignition', cost: 10, researchTime: 30, description: 'Turret beam can recharge drones', crossConnect: null },
-            { id: 'qc2', track: 'quantumCore', tier: 2, name: 'Power Routing', cost: 15, researchTime: 45, description: 'Auto-balance energy between turret + drones', crossConnect: 'bc2' },
-            { id: 'qc3', track: 'quantumCore', tier: 3, name: 'Energy Broadcast Array', cost: 25, researchTime: 60, description: 'Turret recharge beam splits to ALL drones', crossConnect: null },
-            { id: 'qc4', track: 'quantumCore', tier: 4, name: 'Fusion Amplifier', cost: 40, researchTime: 90, description: '+100% max energy, broadcast at full strength', crossConnect: null },
-            { id: 'qc5', track: 'quantumCore', tier: 5, name: 'Quantum Fold Core', cost: 60, researchTime: 120, description: 'Energy recharges while beam active (slow)', crossConnect: 'sn5' }
+        powerGrid: [
+            { id: 'pg1', name: 'Beam Conduit', cost: 10, researchTime: 30, tier: 1, track: 'powerGrid',
+              description: 'Beam recharges raw drones and coordinators it passes through' },
+            { id: 'pg2', name: 'Energy Efficiency', cost: 20, researchTime: 45, tier: 2, track: 'powerGrid',
+              description: 'All drone/coordinator energy drain rates reduced by 30%', crossConnect: 'dc2' },
+            { id: 'pg3', name: 'Power Broadcast', cost: 30, researchTime: 60, tier: 3, track: 'powerGrid',
+              description: 'Beam recharges in wider horizontal radius' },
+            { id: 'pg4', name: 'Reactor Amplifier', cost: 45, researchTime: 90, tier: 4, track: 'powerGrid',
+              description: 'Beam recharge rate doubled', crossConnect: 'dc4' },
+            { id: 'pg5', name: 'Self-Sustaining Grid', cost: 65, researchTime: 120, tier: 5, track: 'powerGrid',
+              description: 'Coordinators and drones passively regenerate energy', crossConnect: 'dn5' }
         ],
-        // Track 2: Bio-Computer (Intelligence/Automation)
-        bioComputer: [
-            { id: 'bc1', track: 'bioComputer', tier: 1, name: 'Neural Bootstrap', cost: 10, researchTime: 30, description: 'Drones get smarter pathfinding', crossConnect: null },
-            { id: 'bc2', track: 'bioComputer', tier: 2, name: 'Threat Matrix', cost: 15, researchTime: 45, description: 'Auto-prioritize turret targets', crossConnect: 'qc2' },
-            { id: 'bc3', track: 'bioComputer', tier: 3, name: 'Auto-Shield Matrix', cost: 25, researchTime: 60, description: 'Regenerate 1 shield charge every 45s', crossConnect: null },
-            { id: 'bc4', track: 'bioComputer', tier: 4, name: 'Harvest Protocol', cost: 40, researchTime: 90, description: 'Harvester drones 50% faster, +2 batch size', crossConnect: 'sn4' },
-            { id: 'bc5', track: 'bioComputer', tier: 5, name: 'Hive Mind', cost: 60, researchTime: 120, description: 'All drones share targeting, coordinate attacks', crossConnect: null }
+        droneCommand: [
+            { id: 'dc1', name: 'Drone Uplink', cost: 10, researchTime: 30, tier: 1, track: 'droneCommand',
+              description: '+1 drone slot, smarter pathfinding' },
+            { id: 'dc2', name: 'Harvester Coordinator', cost: 20, researchTime: 45, tier: 2, track: 'droneCommand',
+              description: 'Unlocks harvester coordinator deployment', crossConnect: 'pg2' },
+            { id: 'dc3', name: 'Attack Coordinator', cost: 30, researchTime: 60, tier: 3, track: 'droneCommand',
+              description: 'Unlocks attack coordinator deployment' },
+            { id: 'dc4', name: 'Fleet Expansion', cost: 45, researchTime: 90, tier: 4, track: 'droneCommand',
+              description: 'Coordinators manage up to 5 sub-drones, allow multiple coordinators', crossConnect: 'pg4' },
+            { id: 'dc5', name: 'Autonomous Swarm', cost: 65, researchTime: 120, tier: 5, track: 'droneCommand',
+              description: 'Coordinators auto-deploy, full fleet automation' }
         ],
-        // Track 3: Spice Navigator (Speed/Time)
-        spiceNavigator: [
-            { id: 'sn1', track: 'spiceNavigator', tier: 1, name: 'Spice Inhalation', cost: 10, researchTime: 30, description: '+30% UFO speed', crossConnect: null },
-            { id: 'sn2', track: 'spiceNavigator', tier: 2, name: 'Dimensional Compression', cost: 15, researchTime: 45, description: 'UFO hitbox shrinks 30%, flickering visual', crossConnect: null },
-            { id: 'sn3', track: 'spiceNavigator', tier: 3, name: 'Prescient Jump', cost: 25, researchTime: 60, description: 'Dash auto-targets nearest safe zone', crossConnect: null },
-            { id: 'sn4', track: 'spiceNavigator', tier: 4, name: 'Time Dilation', cost: 40, researchTime: 90, description: 'Brief slow-mo when health < 25%', crossConnect: 'bc4' },
-            { id: 'sn5', track: 'spiceNavigator', tier: 5, name: 'Guild Navigator', cost: 60, researchTime: 120, description: 'Bombs and drones deploy instantly', crossConnect: 'qc5' }
+        defenseNetwork: [
+            { id: 'dn1', name: 'Thruster Boost', cost: 10, researchTime: 30, tier: 1, track: 'defenseNetwork',
+              description: '+30% UFO speed' },
+            { id: 'dn2', name: 'Drone Armor', cost: 20, researchTime: 45, tier: 2, track: 'defenseNetwork',
+              description: 'Drones and coordinators take 40% less damage' },
+            { id: 'dn3', name: 'Shield Transfer', cost: 30, researchTime: 60, tier: 3, track: 'defenseNetwork',
+              description: 'Coordinators gain 1 shield charge, regenerates every 30s' },
+            { id: 'dn4', name: 'Fleet Resilience', cost: 45, researchTime: 90, tier: 4, track: 'defenseNetwork',
+              description: '50% faster drone redeploy, 2x shield regen speed', crossConnect: 'dc4' },
+            { id: 'dn5', name: 'Swarm Shield', cost: 65, researchTime: 120, tier: 5, track: 'defenseNetwork',
+              description: 'Fleet generates passive damage absorption around UFO', crossConnect: 'pg5' }
         ]
+    }
+};
+
+// ============================================
+// TUTORIAL CONFIG
+// ============================================
+const TUTORIAL_CONFIG = {
+    // Timing
+    MOVE_HINT_DELAY: 0.5,            // Seconds before move hint appears
+    BEAM_HINT_DELAY: 0.3,            // Delay after move dismissal before beam hint
+    BEAM_HINT_FALLBACK_TIME: 4.0,    // Show beam hint after this time even if move not done
+    WARP_JUKE_HINT_DELAY: 0.3,      // Delay after tank warning before warp juke hint
+    BOMB_HINT_DELAY: 0.3,            // Delay after warp juke dismissal before bomb hint
+    COMPLETION_DELAY: 0.3,           // Delay after bomb dismissal before celebration
+    PHASE1_HARD_CUTOFF: 32,          // Force Phase 2 when waveTimer <= this (28s elapsed)
+    MOVE_CUMULATIVE_TIME: 1.0,       // Seconds of movement to complete move hint
+    HINT_SLIDE_DURATION: 0.3,        // Entrance slide-in duration
+    HINT_DISMISS_DURATION: 0.2,      // Dismissal animation duration
+    TANK_WARNING_DURATION: 2.5,      // Total tank entrance sequence
+    COMPLETION_DURATION: 2.0,        // Completion celebration duration
+    COMPLETION_FADE_START: 1.5,      // When to start fading out completion text
+
+    // Colors
+    COLORS: {
+        movement: '#0ff',
+        beam: '#ff0',
+        warp_juke: '#0f0',
+        bomb: '#f80',
+        warning: '#f44',
+        complete: '#fff'
     }
 };
 
@@ -898,6 +901,43 @@ const SFX = {
         noise.start();
     },
 
+    warpJuke: () => {
+        if (!audioCtx) return;
+        // Sci-fi teleport/warp sound - quick rising sweep with echo
+        const osc = audioCtx.createOscillator();
+        const osc2 = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        const filter = audioCtx.createBiquadFilter();
+
+        osc.connect(filter);
+        osc2.connect(filter);
+        filter.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        // Main warp tone
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(200, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(2000, audioCtx.currentTime + 0.1);
+        osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.2);
+
+        // Sub harmonics
+        osc2.type = 'triangle';
+        osc2.frequency.setValueAtTime(100, audioCtx.currentTime);
+        osc2.frequency.exponentialRampToValueAtTime(1000, audioCtx.currentTime + 0.1);
+
+        // High-pass filter for electric feel
+        filter.type = 'highpass';
+        filter.frequency.setValueAtTime(300, audioCtx.currentTime);
+
+        gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
+
+        osc.start();
+        osc2.start();
+        osc.stop(audioCtx.currentTime + 0.25);
+        osc2.stop(audioCtx.currentTime + 0.25);
+    },
+
     powerupExpire: () => {
         if (!audioCtx) return;
         // Subtle whoosh - descending filtered noise
@@ -1182,124 +1222,6 @@ const SFX = {
 
         osc.start();
         osc.stop(audioCtx.currentTime + 0.1);
-    },
-
-    warpJuke: () => {
-        if (!audioCtx) return;
-        // Sci-fi teleport/warp sound - quick rising sweep with echo
-        const osc = audioCtx.createOscillator();
-        const osc2 = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        const filter = audioCtx.createBiquadFilter();
-
-        osc.connect(filter);
-        osc2.connect(filter);
-        filter.connect(gain);
-        gain.connect(audioCtx.destination);
-
-        // Main warp tone
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(200, audioCtx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(2000, audioCtx.currentTime + 0.1);
-        osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.2);
-
-        // Sub harmonics
-        osc2.type = 'triangle';
-        osc2.frequency.setValueAtTime(100, audioCtx.currentTime);
-        osc2.frequency.exponentialRampToValueAtTime(1000, audioCtx.currentTime + 0.1);
-
-        // High-pass filter for electric feel
-        filter.type = 'highpass';
-        filter.frequency.setValueAtTime(300, audioCtx.currentTime);
-
-        gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
-
-        osc.start();
-        osc2.start();
-        osc.stop(audioCtx.currentTime + 0.25);
-        osc2.stop(audioCtx.currentTime + 0.25);
-    },
-
-    turretStart: () => {
-        if (!audioCtx) return;
-        // Electric hum that builds up - laser charging
-        const osc = audioCtx.createOscillator();
-        const osc2 = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-
-        osc.connect(gain);
-        osc2.connect(gain);
-        gain.connect(audioCtx.destination);
-
-        osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(100, audioCtx.currentTime);
-        osc.frequency.linearRampToValueAtTime(400, audioCtx.currentTime + 0.15);
-
-        osc2.type = 'square';
-        osc2.frequency.setValueAtTime(50, audioCtx.currentTime);
-        osc2.frequency.linearRampToValueAtTime(200, audioCtx.currentTime + 0.15);
-
-        gain.gain.setValueAtTime(0, audioCtx.currentTime);
-        gain.gain.linearRampToValueAtTime(0.2, audioCtx.currentTime + 0.1);
-        gain.gain.linearRampToValueAtTime(0.15, audioCtx.currentTime + 0.15);
-
-        osc.start();
-        osc2.start();
-        osc.stop(audioCtx.currentTime + 0.15);
-        osc2.stop(audioCtx.currentTime + 0.15);
-    },
-
-    turretFiring: () => {
-        if (!audioCtx) return;
-        // Continuous electric buzz - the laser beam
-        const osc = audioCtx.createOscillator();
-        const osc2 = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        const filter = audioCtx.createBiquadFilter();
-
-        osc.connect(filter);
-        osc2.connect(filter);
-        filter.connect(gain);
-        gain.connect(audioCtx.destination);
-
-        osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(300 + Math.random() * 50, audioCtx.currentTime);
-
-        osc2.type = 'square';
-        osc2.frequency.setValueAtTime(150 + Math.random() * 25, audioCtx.currentTime);
-
-        filter.type = 'bandpass';
-        filter.frequency.setValueAtTime(500, audioCtx.currentTime);
-        filter.Q.setValueAtTime(2, audioCtx.currentTime);
-
-        gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
-
-        osc.start();
-        osc2.start();
-        osc.stop(audioCtx.currentTime + 0.1);
-        osc2.stop(audioCtx.currentTime + 0.1);
-    },
-
-    turretStop: () => {
-        if (!audioCtx) return;
-        // Power down sound
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-
-        osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(400, audioCtx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.2);
-
-        gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
-
-        osc.start();
-        osc.stop(audioCtx.currentTime + 0.2);
     },
 
     // Shop music state
@@ -2065,8 +1987,14 @@ let waveSummary = null;
 let waveSummaryState = null;
 let waveHistory = []; // Per-wave history for analytics graph
 
+// Warp juke input tracking
+let leftTapHistory = [];
+let rightTapHistory = [];
+
 // Shop state
 let shopTimer = 0;
+let shopCheatBuffer = '';
+let techCheatActive = false;
 let selectedShopItem = 0;
 let shopItemBounds = []; // For click detection on shop items
 let shopButtonBounds = { done: null, cancel: null, checkout: null, empty: null }; // For click detection on buttons
@@ -2099,9 +2027,7 @@ let playerInventory = {
     bombRechargeTimers: [],
     bombReadyBounceTimer: 0,
     bombReadyBounceIndex: -1,
-    energyRechargeBonus: 0,
-    turretDamageBonus: 0,
-    hasTurret: false // Laser turret ownership
+    energyRechargeBonus: 0
 };
 
 // === EXPANSION: Bio-Matter & Quota ===
@@ -2119,29 +2045,23 @@ let techTree = {
 
 // === EXPANSION: Tech Flags (set by research completion) ===
 let techFlags = {
-    // Quantum Core
-    turretCanRechargeDrones: false,
-    autoEnergyBalance: false,
-    broadcastRecharge: false,
-    fullBroadcast: false,
-    beamEnergyRegen: false,
-    // Bio-Computer
-    smartDrones: false,
-    smartTurret: false,
-    autoShield: false,
-    harvestBoost: false,
-    hiveMind: false,
-    // Spice Navigator
-    spiceSpeed: false,
-    phaseShift: false,
-    prescientDash: false,
-    timeDilation: false,
-    instantDeploy: false
+    beamConduit: false,
+    energyEfficiency: false,
+    powerBroadcast: false,
+    reactorAmplifier: false,
+    selfSustainingGrid: false,
+    droneUplink: false,
+    harvesterCoordinator: false,
+    attackCoordinator: false,
+    fleetExpansion: false,
+    autonomousSwarm: false,
+    thrusterBoost: false,
+    droneArmor: false,
+    shieldTransfer: false,
+    fleetResilience: false,
+    swarmShield: false
 };
-let autoShieldTimer = 0; // Timer for bc3 auto-shield regeneration
-let timeDilationActive = false; // Whether time dilation slow-mo is active
-let timeDilationTimer = 0; // Duration remaining for slow-mo
-let timeDilationCooldown = 0; // Cooldown before it can trigger again
+
 
 // === EXPANSION: Missile Swarm State ===
 let missileAmmo = 0;
@@ -2155,11 +2075,13 @@ let missileUnlocked = false; // Whether missile swarm is purchased
 
 // === EXPANSION: Drone State ===
 let activeDrones = [];
+let activeCoordinators = [];
 let droneSlots = 0;
 let harvesterUnlocked = false;
 let battleDroneUnlocked = false;
 let droneCooldownTimer = 0;
 const DRONE_DEPLOY_COOLDOWN = 0.5; // seconds between deployments
+let autoDeployCooldown = 0; // DC5 Autonomous Swarm auto-deploy timer
 
 // === EXPANSION: Commander Dialogue System ===
 const COMMANDER_DIALOGUES = {
@@ -2191,10 +2113,6 @@ const COMMANDER_DIALOGUES = {
             "My INTERN could tell you: BUY HARVESTERS! Why are you abducting by hand like a PRIMITIVE?!",
             "A harvester drone automates collection. STOP doing this the hard way!"
         ],
-        noTurret: [
-            "Those tanks are EATING you alive! Get a LASER TURRET from the weapons tab!",
-            "You know turrets exist, RIGHT? WEAPONS tab. LASER TURRET. NOW!"
-        ],
         noBombs: [
             "Heavy tanks giving you trouble? BOMBS clear clusters. Check the weapons tab!",
             "A well-placed BOMB takes out everything nearby. Just saying."
@@ -2209,8 +2127,8 @@ const COMMANDER_DIALOGUES = {
             "See those upgrade nodes on the right? CLICK ONE. They research while you play!"
         ],
         moreHarvesters: [
-            "More drone slots = more automated harvesting. Scale up, commander!",
-            "Each harvester works independently. MORE SLOTS means MORE specimens per wave!"
+            "Research DRONE UPLINK in the tech tree for more drone slots, commander!",
+            "The Drone Command track has upgrades for extra drone slots. Invest that biomatter!"
         ],
         quotaFailed: [
             "You MISSED QUOTA last wave! Maybe if you actually UPGRADED your equipment you'd keep up!",
@@ -2255,14 +2173,6 @@ let bombDamageTier = 0;
 // Active bombs in the world
 let bombs = [];
 
-// Warp Juke double-tap detection (track last 2 tap times for each direction)
-let leftTapHistory = [];
-let rightTapHistory = [];
-
-// Easter egg: Triple-T on title screen for free turret
-let titleTurretTaps = [];
-let titleTurretUnlocked = false;
-let titleTurretFlashTimer = 0;
 let titleCheatBuffer = '';
 
 // Title screen UFO animation state
@@ -2477,6 +2387,20 @@ window.addEventListener('keydown', (e) => {
             waveTransitionTimer = CONFIG.WAVE_TRANSITION_DURATION;
             gameState = 'WAVE_TRANSITION';
         }
+
+        // "TECH" cheat code detection
+        if (e.key.length === 1 && !techCheatActive) {
+            shopCheatBuffer += e.key.toLowerCase();
+            if (shopCheatBuffer.length > 4) shopCheatBuffer = shopCheatBuffer.slice(-4);
+            if (shopCheatBuffer.endsWith('tech')) {
+                techCheatActive = true;
+                shopCheatBuffer = '';
+                createFloatingText(canvas.width / 2, canvas.height / 2, 'TECH UNLOCKED', '#0ff', { fontSize: 28, duration: 2 });
+                SFX.researchComplete && SFX.researchComplete();
+                screenShake = 0.3;
+            }
+        }
+
         return;
     }
 
@@ -2488,13 +2412,13 @@ window.addEventListener('keydown', (e) => {
         return;
     }
 
-    // Handle bomb drop during gameplay (X or B key)
-    if (gameState === 'PLAYING' && (e.code === 'KeyX' || e.code === 'KeyB')) {
+    // Handle bomb drop during gameplay (Z or B key)
+    if (gameState === 'PLAYING' && (e.code === 'KeyZ' || e.code === 'KeyB')) {
         dropBomb();
     }
 
-    // Handle missile swarm during gameplay (C or M key)
-    if (gameState === 'PLAYING' && (e.code === 'KeyC' || e.code === 'KeyM')) {
+    // Handle missile swarm during gameplay (X or M key)
+    if (gameState === 'PLAYING' && (e.code === 'KeyX' || e.code === 'KeyM')) {
         fireMissileSwarm();
     }
 
@@ -2571,6 +2495,7 @@ window.addEventListener('keydown', (e) => {
             if (warpWave >= 1 && warpWave <= 99) {
                 startGame();
                 wave = warpWave;
+                cleanupTutorial(); // Tutorial was init'd for wave 1, clean up since we're warping
                 ufoBucks = 5000;
                 bioMatter = 100;
                 quotaTarget = getQuotaTarget(wave);
@@ -2597,22 +2522,6 @@ window.addEventListener('keydown', (e) => {
             titleCheatBuffer = '';
         }
 
-        // Easter egg: Triple-T for free turret
-        if (e.code === 'KeyT' && !e.repeat && !titleTurretUnlocked) {
-            const now = Date.now();
-            titleTurretTaps.push(now);
-            // Keep only taps from last 1 second
-            titleTurretTaps = titleTurretTaps.filter(t => now - t < 1000);
-
-            if (titleTurretTaps.length >= 3) {
-                // Unlock the turret!
-                titleTurretUnlocked = true;
-                titleTurretFlashTimer = 2; // Flash for 2 seconds
-                titleTurretTaps = [];
-                SFX.powerup && SFX.powerup();
-                SFX.turretStart && SFX.turretStart();
-            }
-        }
     }
 });
 
@@ -2891,6 +2800,14 @@ canvas.addEventListener('click', (e) => {
         const b = shopState.techNodeBounds[i];
         if (b && mouseX >= b.x && mouseX <= b.x + b.width &&
             mouseY >= b.y && mouseY <= b.y + b.height) {
+            // Tech cheat: instantly activate any node
+            if (techCheatActive && !techTree.researched.has(b.nodeId)) {
+                // Cancel if it was queued or active
+                cancelResearch(b.nodeId);
+                completeResearch(b.nodeId);
+                createFloatingText(mouseX, mouseY - 20, 'ACTIVATED!', '#0ff');
+                return;
+            }
             // If already queued or active, toggle it off
             const isQueued = techTree.queue.includes(b.nodeId);
             const isActiveNode = techTree.activeResearch && techTree.activeResearch.nodeId === b.nodeId;
@@ -3457,8 +3374,7 @@ class Target {
 // ============================================
 
 let floatingTexts = [];
-let tutorialTimeouts = [];
-let turretHintPending = false;
+let tutorialState = null;
 
 function createFloatingText(x, y, text, color, options = {}) {
     const {
@@ -3500,38 +3416,762 @@ function renderFloatingTexts() {
     ctx.globalAlpha = 1;
 }
 
-function clearTutorialTimeouts() {
-    for (const id of tutorialTimeouts) {
-        clearTimeout(id);
+// ============================================
+// WAVE 1 TUTORIAL SYSTEM
+// ============================================
+
+function initTutorial() {
+    if (wave !== 1) {
+        tutorialState = null;
+        return;
     }
-    tutorialTimeouts = [];
+    tutorialState = {
+        phase: 'MOVE_BEAM',
+        moveCompleted: false,
+        beamCompleted: false,
+        warpCompleted: false,
+        bombCompleted: false,
+        phaseTimer: 0,
+        moveTime: 0,               // Cumulative movement time
+        hintVisible: false,         // Is the current hint visible?
+        hintTimer: 0,              // Time since hint became visible
+        dismissing: false,          // Is a dismiss animation playing?
+        dismissTimer: 0,           // Dismiss animation progress
+        dismissType: null,         // Which hint is being dismissed
+        pendingNextHint: false,     // Waiting to show next hint
+        pendingNextTimer: 0,       // Timer for pending next hint
+        beamHintShown: false,      // Has beam hint appeared?
+        tankWarningTimer: 0,
+        tankWarningPhase: 'none',  // 'none' | 'warning' | 'callout' | 'spawning' | 'done'
+        completionTimer: 0,
+        completionActive: false
+    };
 }
 
-function scheduleTutorialHints() {
-    clearTutorialTimeouts();
-    const baseY = canvas.height * 0.35;
-    const step = 2.6;
-    const items = [
-        { text: 'MOVE: LEFT / RIGHT ARROWS', color: '#0ff' },
-        { text: 'BEAM: SPACEBAR', color: '#ff0' },
-        { text: 'BOMB: B OR X', color: '#f80' },
-        { text: 'WARP JUKE: DOUBLE-TAP ARROWS OR SHIFT + ARROW', color: '#0f0' },
-        { text: 'HAVE FUN!', color: '#fff' }
-    ];
+function cleanupTutorial() {
+    tutorialState = null;
+}
 
-    items.forEach((item, index) => {
-        const id = setTimeout(() => {
-            if (gameState !== 'PLAYING' || wave !== 1) return;
-            createFloatingText(
-                canvas.width / 2,
-                baseY + index * 28,
-                item.text,
-                item.color,
-                { lifetime: 2.5, vy: -10, fontSize: 22 }
-            );
-        }, index * step * 1000);
-        tutorialTimeouts.push(id);
-    });
+function notifyTutorialBeamLock() {
+    if (!tutorialState || tutorialState.phase !== 'MOVE_BEAM' || tutorialState.beamCompleted) return;
+    if (!tutorialState.beamHintShown) return;
+    tutorialState.beamCompleted = true;
+}
+
+function notifyTutorialWarpJuke() {
+    if (!tutorialState || tutorialState.phase !== 'WARP_JUKE' || tutorialState.warpCompleted) return;
+    tutorialState.warpCompleted = true;
+}
+
+function notifyTutorialBomb() {
+    if (!tutorialState || tutorialState.phase !== 'BOMB' || tutorialState.bombCompleted) return;
+    tutorialState.bombCompleted = true;
+}
+
+function startTutorialDismiss(type) {
+    if (!tutorialState) return;
+    tutorialState.dismissing = true;
+    tutorialState.dismissTimer = 0;
+    tutorialState.dismissType = type;
+    tutorialState.hintVisible = false;
+
+    // Spawn completion particles
+    const hintY = canvas.height * 0.45;
+    const hintX = canvas.width / 2;
+    const color = TUTORIAL_CONFIG.COLORS[type] || '#fff';
+    const r = parseInt(color.length === 4 ? color[1] + color[1] : color.slice(1, 3), 16);
+    const g = parseInt(color.length === 4 ? color[2] + color[2] : color.slice(3, 5), 16);
+    const b = parseInt(color.length === 4 ? color[3] + color[3] : color.slice(5, 7), 16);
+    const particleColor = `rgb(${r}, ${g}, ${b})`;
+
+    for (let i = 0; i < 8; i++) {
+        const angle = (i / 8) * Math.PI * 2 + Math.random() * 0.5;
+        const speed = 80 + Math.random() * 70;
+        particles.push(new Particle(
+            hintX + (Math.random() - 0.5) * 40,
+            hintY,
+            Math.cos(angle) * speed,
+            Math.sin(angle) * speed,
+            particleColor,
+            3 + Math.random() * 2,
+            0.3 + Math.random() * 0.2
+        ));
+    }
+
+    // Sound on dismiss
+    SFX.powerupCollect && SFX.powerupCollect();
+}
+
+function updateTutorial(dt) {
+    if (!tutorialState || tutorialState.phase === 'COMPLETE') return;
+
+    tutorialState.phaseTimer += dt;
+
+    // Handle dismissal animations
+    if (tutorialState.dismissing) {
+        tutorialState.dismissTimer += dt;
+        if (tutorialState.dismissTimer >= TUTORIAL_CONFIG.HINT_DISMISS_DURATION) {
+            tutorialState.dismissing = false;
+            tutorialState.dismissTimer = 0;
+
+            // Transition to next phase/state
+            const dismissed = tutorialState.dismissType;
+            tutorialState.dismissType = null;
+
+            if (dismissed === 'movement') {
+                // Show beam hint next
+                tutorialState.pendingNextHint = true;
+                tutorialState.pendingNextTimer = 0;
+            } else if (dismissed === 'beam') {
+                // Start tank entrance, then show warp juke hint
+                startTankEntrance();
+            } else if (dismissed === 'warp_juke') {
+                // Show bomb hint next
+                tutorialState.phase = 'BOMB';
+                tutorialState.phaseTimer = 0;
+                tutorialState.pendingNextHint = true;
+                tutorialState.pendingNextTimer = 0;
+            } else if (dismissed === 'bomb') {
+                // Extra effects for bomb dismiss
+                screenShake = 0.15;
+                SFX.explosion && SFX.explosion(false);
+                // Start completion celebration
+                tutorialState.phase = 'CELEBRATION';
+                tutorialState.phaseTimer = 0;
+                tutorialState.completionActive = false;
+                tutorialState.pendingNextHint = true;
+                tutorialState.pendingNextTimer = 0;
+            }
+        }
+        return; // Don't process other logic during dismiss animation
+    }
+
+    // Handle pending next hint delay
+    if (tutorialState.pendingNextHint) {
+        tutorialState.pendingNextTimer += dt;
+        let delay;
+        if (tutorialState.phase === 'CELEBRATION') delay = TUTORIAL_CONFIG.COMPLETION_DELAY;
+        else if (tutorialState.phase === 'BOMB') delay = TUTORIAL_CONFIG.BOMB_HINT_DELAY;
+        else if (tutorialState.phase === 'WARP_JUKE') delay = TUTORIAL_CONFIG.WARP_JUKE_HINT_DELAY;
+        else delay = TUTORIAL_CONFIG.BEAM_HINT_DELAY;
+        if (tutorialState.pendingNextTimer >= delay) {
+            tutorialState.pendingNextHint = false;
+            if (tutorialState.phase === 'MOVE_BEAM' && !tutorialState.beamHintShown) {
+                tutorialState.beamHintShown = true;
+                tutorialState.hintVisible = true;
+                tutorialState.hintTimer = 0;
+            } else if (tutorialState.phase === 'WARP_JUKE') {
+                tutorialState.hintVisible = true;
+                tutorialState.hintTimer = 0;
+            } else if (tutorialState.phase === 'BOMB') {
+                tutorialState.hintVisible = true;
+                tutorialState.hintTimer = 0;
+            } else if (tutorialState.phase === 'CELEBRATION') {
+                tutorialState.completionActive = true;
+                tutorialState.completionTimer = 0;
+                // Celebration particles
+                const cx = canvas.width / 2;
+                const cy = canvas.height * 0.40;
+                const celebColors = ['rgb(0, 255, 255)', 'rgb(255, 255, 0)', 'rgb(0, 255, 0)', 'rgb(255, 136, 0)'];
+                for (let i = 0; i < 30; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const speed = 100 + Math.random() * 150;
+                    particles.push(new Particle(
+                        cx + (Math.random() - 0.5) * 20,
+                        cy + (Math.random() - 0.5) * 20,
+                        Math.cos(angle) * speed,
+                        Math.sin(angle) * speed,
+                        celebColors[Math.floor(Math.random() * celebColors.length)],
+                        4 + Math.random() * 4,
+                        0.5 + Math.random() * 0.3
+                    ));
+                }
+                SFX.waveComplete && SFX.waveComplete();
+            }
+        }
+        return;
+    }
+
+    // Phase-specific logic
+    switch (tutorialState.phase) {
+        case 'MOVE_BEAM':
+            updateTutorialMoveBeam(dt);
+            break;
+        case 'WARP_JUKE':
+            updateTutorialWarpJuke(dt);
+            break;
+        case 'BOMB':
+            updateTutorialBomb(dt);
+            break;
+        case 'CELEBRATION':
+            updateTutorialCelebration(dt);
+            break;
+    }
+}
+
+function updateTutorialMoveBeam(dt) {
+    const ts = tutorialState;
+
+    // Show move hint after initial delay
+    if (!ts.moveCompleted && !ts.hintVisible && !ts.beamHintShown && ts.phaseTimer >= TUTORIAL_CONFIG.MOVE_HINT_DELAY) {
+        ts.hintVisible = true;
+        ts.hintTimer = 0;
+    }
+
+    if (ts.hintVisible) {
+        ts.hintTimer += dt;
+    }
+
+    // Track movement
+    if (!ts.moveCompleted && (keys['ArrowLeft'] || keys['ArrowRight'])) {
+        ts.moveTime += dt;
+        if (ts.moveTime >= TUTORIAL_CONFIG.MOVE_CUMULATIVE_TIME) {
+            ts.moveCompleted = true;
+            startTutorialDismiss('movement');
+            return;
+        }
+    }
+
+    // Show beam hint as fallback if player hasn't moved yet after fallback time
+    if (!ts.moveCompleted && !ts.beamHintShown && ts.phaseTimer >= TUTORIAL_CONFIG.BEAM_HINT_FALLBACK_TIME) {
+        ts.moveCompleted = true; // Skip move completion
+        ts.beamHintShown = true;
+        ts.hintVisible = true;
+        ts.hintTimer = 0;
+    }
+
+    // Beam hint visible - check for beam lock completion
+    if (ts.beamHintShown && ts.beamCompleted && !ts.dismissing) {
+        startTutorialDismiss('beam');
+        return;
+    }
+
+    // Hard cutoff: force to Phase 2 if time is running out
+    if (waveTimer <= TUTORIAL_CONFIG.PHASE1_HARD_CUTOFF && !ts.beamCompleted) {
+        ts.beamCompleted = true;
+        ts.moveCompleted = true;
+        ts.hintVisible = false;
+        startTankEntrance();
+    }
+}
+
+function startTankEntrance() {
+    const ts = tutorialState;
+    ts.phase = 'WARP_JUKE';
+    ts.phaseTimer = 0;
+    ts.hintVisible = false;
+    ts.hintTimer = 0;
+    ts.tankWarningPhase = 'warning';
+    ts.tankWarningTimer = 0;
+}
+
+function updateTutorialWarpJuke(dt) {
+    const ts = tutorialState;
+
+    // Handle tank entrance sequence (plays before warp juke hint)
+    if (ts.tankWarningPhase && ts.tankWarningPhase !== 'done') {
+        ts.tankWarningTimer += dt;
+
+        if (ts.tankWarningPhase === 'warning' && ts.tankWarningTimer >= 0.8) {
+            ts.tankWarningPhase = 'callout';
+            screenShake = 0.3;
+        }
+        if (ts.tankWarningPhase === 'callout' && ts.tankWarningTimer >= 1.5) {
+            ts.tankWarningPhase = 'spawning';
+            // Spawn a single tank from the side furthest from UFO
+            const ufoX = ufo ? ufo.x : canvas.width / 2;
+            const direction = ufoX < canvas.width / 2 ? -1 : 1;
+            const spawnX = direction === 1 ? -50 : canvas.width + 50;
+            tanks = [new Tank(spawnX, direction)];
+
+            // Dust particles at tank entry point
+            const dustX = direction === -1 ? canvas.width - 20 : 20;
+            const dustY = canvas.height - 60;
+            for (let i = 0; i < 5; i++) {
+                particles.push(new Particle(
+                    dustX + (Math.random() - 0.5) * 30,
+                    dustY - Math.random() * 10,
+                    (Math.random() - 0.5) * 60 - direction * 30,
+                    -20 - Math.random() * 40,
+                    'rgb(180, 150, 100)',
+                    2 + Math.random() * 3,
+                    0.3 + Math.random() * 0.3
+                ));
+            }
+        }
+        if (ts.tankWarningPhase === 'spawning' && ts.tankWarningTimer >= TUTORIAL_CONFIG.TANK_WARNING_DURATION) {
+            ts.tankWarningPhase = 'done';
+            ts.pendingNextHint = true;
+            ts.pendingNextTimer = 0;
+        }
+        return;
+    }
+
+    if (ts.hintVisible) {
+        ts.hintTimer += dt;
+    }
+
+    // Check for warp juke completion
+    if (ts.warpCompleted && !ts.dismissing) {
+        startTutorialDismiss('warp_juke');
+    }
+}
+
+function updateTutorialBomb(dt) {
+    const ts = tutorialState;
+
+    if (ts.hintVisible) {
+        ts.hintTimer += dt;
+    }
+
+    // Check for bomb completion
+    if (ts.bombCompleted && !ts.dismissing) {
+        startTutorialDismiss('bomb');
+    }
+}
+
+function updateTutorialCelebration(dt) {
+    const ts = tutorialState;
+    if (ts.completionActive) {
+        ts.completionTimer += dt;
+        if (ts.completionTimer >= TUTORIAL_CONFIG.COMPLETION_DURATION) {
+            ts.phase = 'COMPLETE';
+        }
+    }
+}
+
+// ---- Tutorial Rendering ----
+
+function renderKeyBadge(x, y, text, width, height) {
+    height = height || 22;
+    // Outer key shape
+    ctx.fillStyle = '#444';
+    ctx.beginPath();
+    ctx.roundRect(x, y, width, height, 4);
+    ctx.fill();
+    // Inner raised surface
+    ctx.fillStyle = '#666';
+    ctx.beginPath();
+    ctx.roundRect(x + 1, y + 1, width - 2, height - 3, 3);
+    ctx.fill();
+    // Text
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x + width / 2, y + height / 2 - 1);
+    ctx.textBaseline = 'alphabetic'; // Reset
+}
+
+function renderTutorialHints() {
+    if (!tutorialState || tutorialState.phase === 'COMPLETE') return;
+
+    const ts = tutorialState;
+
+    // Render tank warning sequence (renders over everything)
+    if (ts.phase === 'WARP_JUKE' && ts.tankWarningPhase && ts.tankWarningPhase !== 'done' && ts.tankWarningPhase !== 'none') {
+        renderTankWarning();
+    }
+
+    // Render completion celebration
+    if (ts.phase === 'CELEBRATION' && ts.completionActive) {
+        renderTutorialCompletion();
+        return;
+    }
+
+    // Render dismiss animation
+    if (ts.dismissing) {
+        renderDismissAnimation();
+        return;
+    }
+
+    // Render current visible hint
+    if (!ts.hintVisible) return;
+
+    const hintY = canvas.height * 0.45;
+    const t = ts.hintTimer;
+
+    // Entrance animation: slide in from above + fade
+    const slideDuration = TUTORIAL_CONFIG.HINT_SLIDE_DURATION;
+    let entranceAlpha = Math.min(1, t / slideDuration);
+    let entranceOffsetY = (1 - Math.min(1, t / slideDuration)) * -10;
+
+    ctx.save();
+    ctx.globalAlpha = entranceAlpha;
+
+    switch (ts.phase) {
+        case 'MOVE_BEAM':
+            if (!ts.beamHintShown) {
+                renderMoveHint(canvas.width / 2, hintY + entranceOffsetY, t);
+            } else {
+                renderBeamHint(canvas.width / 2, hintY + entranceOffsetY, t);
+            }
+            break;
+        case 'WARP_JUKE':
+            renderWarpJukeHint(canvas.width / 2, hintY + entranceOffsetY, t);
+            break;
+        case 'BOMB':
+            renderBombHint(canvas.width / 2, hintY + entranceOffsetY, t);
+            break;
+    }
+
+    ctx.restore();
+}
+
+function renderHintPanel(cx, cy, width, height) {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.beginPath();
+    ctx.roundRect(cx - width / 2, cy - height / 2, width, height, 10);
+    ctx.fill();
+}
+
+function renderMoveHint(cx, cy, t) {
+    const panelW = 220;
+    const panelH = 50;
+    renderHintPanel(cx, cy, panelW, panelH);
+
+    // Pulsing glow
+    const glowBlur = 8 + Math.sin(t * 4) * 6;
+    ctx.shadowColor = TUTORIAL_CONFIG.COLORS.movement;
+    ctx.shadowBlur = glowBlur;
+
+    // Key badges: [<] [>]
+    const keyY = cy - 11;
+    const keyW = 28;
+    const keyH = 22;
+    const keyGap = 8;
+    const totalKeysW = keyW * 2 + keyGap;
+    const textLabel = 'MOVE';
+    ctx.font = 'bold 22px monospace';
+    const textW = ctx.measureText(textLabel).width;
+    const totalW = totalKeysW + 12 + textW;
+    const startX = cx - totalW / 2;
+
+    renderKeyBadge(startX, keyY, '\u25C0', keyW, keyH);
+    renderKeyBadge(startX + keyW + keyGap, keyY, '\u25B6', keyW, keyH);
+
+    // "MOVE" text
+    ctx.fillStyle = TUTORIAL_CONFIG.COLORS.movement;
+    ctx.font = 'bold 22px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(textLabel, startX + totalKeysW + 12, cy + 7);
+
+    ctx.shadowBlur = 0;
+}
+
+function renderBeamHint(cx, cy, t) {
+    const panelW = 320;
+    const panelH = 60;
+    renderHintPanel(cx, cy, panelW, panelH);
+
+    // Pulsing glow
+    const glowBlur = 8 + Math.sin(t * 4) * 6;
+    ctx.shadowColor = TUTORIAL_CONFIG.COLORS.beam;
+    ctx.shadowBlur = glowBlur;
+
+    // [SPACE] key badge
+    const keyW = 60;
+    const keyH = 22;
+    const textLabel = 'BEAM UP TARGETS!';
+    ctx.font = 'bold 22px monospace';
+    const textW = ctx.measureText(textLabel).width;
+    const totalW = keyW + 12 + textW;
+    const startX = cx - totalW / 2;
+    const keyY = cy - 16;
+
+    renderKeyBadge(startX, keyY, 'SPACE', keyW, keyH);
+
+    // "BEAM UP TARGETS!" text
+    ctx.fillStyle = TUTORIAL_CONFIG.COLORS.beam;
+    ctx.font = 'bold 22px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(textLabel, startX + keyW + 12, cy - 1);
+
+    // Animated chevron arrows pointing down
+    const chevronAlpha = 0.3 + Math.sin(t * 4) * 0.25 + 0.25;
+    ctx.strokeStyle = `rgba(255, 255, 0, ${chevronAlpha})`;
+    ctx.lineWidth = 2;
+    const chevronY = cy + 12;
+    for (let i = -1; i <= 1; i++) {
+        const chevX = cx + i * 20;
+        ctx.beginPath();
+        ctx.moveTo(chevX - 6, chevronY);
+        ctx.lineTo(chevX, chevronY + 7);
+        ctx.lineTo(chevX + 6, chevronY);
+        ctx.stroke();
+    }
+
+    ctx.shadowBlur = 0;
+}
+
+function renderWarpJukeHint(cx, cy, t) {
+    const panelW = 340;
+    const panelH = 50;
+    renderHintPanel(cx, cy, panelW, panelH);
+
+    // Pulsing glow
+    const glowBlur = 8 + Math.sin(t * 5) * 6;
+    ctx.shadowColor = TUTORIAL_CONFIG.COLORS.warp_juke;
+    ctx.shadowBlur = glowBlur;
+
+    // Two arrow key badges with jitter effect
+    const textLabel = 'DOUBLE-TAP TO DODGE!';
+    ctx.font = 'bold 20px monospace';
+    const textW = ctx.measureText(textLabel).width;
+    const keyW = 22;
+    const keyH = 22;
+    const keyGap = 6;
+    const totalW = keyW + keyGap + keyW + 14 + textW;
+    const startX = cx - totalW / 2;
+    const keyY = cy - 11;
+
+    // Jittering left/right key badges
+    const jitter1 = Math.sin(t * 12) * 2;
+    const jitter2 = Math.sin(t * 12 + Math.PI) * 2;
+    renderKeyBadge(startX + jitter1, keyY, '\u25C0', keyW, keyH);
+    renderKeyBadge(startX + keyW + keyGap + jitter2, keyY, '\u25B6', keyW, keyH);
+
+    // "DOUBLE-TAP TO DODGE!" text
+    ctx.fillStyle = TUTORIAL_CONFIG.COLORS.warp_juke;
+    ctx.font = 'bold 20px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(textLabel, startX + keyW + keyGap + keyW + 14, cy + 7);
+
+    ctx.shadowBlur = 0;
+}
+
+function renderBombHint(cx, cy, t) {
+    const panelW = 280;
+    const panelH = 50;
+    renderHintPanel(cx, cy, panelW, panelH);
+
+    // Pulsing glow
+    const glowBlur = 8 + Math.sin(t * 4) * 6;
+    ctx.shadowColor = TUTORIAL_CONFIG.COLORS.bomb;
+    ctx.shadowBlur = glowBlur;
+
+    // [B] key badge
+    const keyW = 28;
+    const keyH = 22;
+    const textLabel = 'DROP A BOMB!';
+    ctx.font = 'bold 22px monospace';
+    const textW = ctx.measureText(textLabel).width;
+    // Bomb icon space
+    const bombIconW = 28;
+    const totalW = keyW + 12 + textW + 8 + bombIconW;
+    const startX = cx - totalW / 2;
+    const keyY = cy - 11;
+
+    renderKeyBadge(startX, keyY, 'B', keyW, keyH);
+
+    // "DROP A BOMB!" text
+    ctx.fillStyle = TUTORIAL_CONFIG.COLORS.bomb;
+    ctx.font = 'bold 22px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(textLabel, startX + keyW + 12, cy + 7);
+
+    // Mini bomb icon
+    const bombX = startX + keyW + 12 + textW + 8 + 10;
+    const bombY = cy;
+    ctx.fillStyle = '#333';
+    ctx.beginPath();
+    ctx.arc(bombX, bombY, 10, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#555';
+    ctx.beginPath();
+    ctx.arc(bombX - 2, bombY - 2, 5, 0, Math.PI * 2);
+    ctx.fill();
+    // Fuse spark
+    const sparkIntensity = Math.sin(t * 10) * 0.5 + 0.5;
+    ctx.fillStyle = `rgba(255, ${Math.floor(150 + sparkIntensity * 100)}, 0, ${0.7 + sparkIntensity * 0.3})`;
+    ctx.beginPath();
+    ctx.arc(bombX, bombY - 12, 3 + sparkIntensity * 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.shadowBlur = 0;
+}
+
+function renderTankWarning() {
+    const ts = tutorialState;
+    const t = ts.tankWarningTimer;
+
+    if (ts.tankWarningPhase === 'warning') {
+        // Red edge vignette
+        const vignetteAlpha = Math.min(0.4, t * 0.8);
+        ctx.fillStyle = `rgba(255, 0, 0, ${vignetteAlpha})`;
+        const edgeW = 40;
+        ctx.fillRect(0, 0, canvas.width, edgeW); // top
+        ctx.fillRect(0, canvas.height - edgeW, canvas.width, edgeW); // bottom
+        ctx.fillRect(0, 0, edgeW, canvas.height); // left
+        ctx.fillRect(canvas.width - edgeW, 0, edgeW, canvas.height); // right
+
+        // "!! WARNING !!" text
+        const warningY = canvas.height * 0.38;
+        const pulseScale = 1 + Math.sin(t * 8 * Math.PI * 2) * 0.05;
+        ctx.save();
+        ctx.translate(canvas.width / 2, warningY);
+        ctx.scale(pulseScale, pulseScale);
+        ctx.shadowColor = '#f00';
+        ctx.shadowBlur = 20;
+        ctx.fillStyle = '#f44';
+        ctx.font = 'bold 36px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('!! WARNING !!', 0, 0);
+        ctx.shadowBlur = 0;
+        ctx.restore();
+    } else if (ts.tankWarningPhase === 'callout') {
+        // Fade out red vignette
+        const fadeProgress = (t - 0.8) / 0.5;
+        const vignetteAlpha = Math.max(0, 0.4 * (1 - fadeProgress));
+        if (vignetteAlpha > 0) {
+            ctx.fillStyle = `rgba(255, 0, 0, ${vignetteAlpha})`;
+            const edgeW = 40;
+            ctx.fillRect(0, 0, canvas.width, edgeW);
+            ctx.fillRect(0, canvas.height - edgeW, canvas.width, edgeW);
+            ctx.fillRect(0, 0, edgeW, canvas.height);
+            ctx.fillRect(canvas.width - edgeW, 0, edgeW, canvas.height);
+        }
+
+        // "INCOMING TANK!" text
+        const calloutY = canvas.height * 0.38;
+        ctx.shadowColor = '#f80';
+        ctx.shadowBlur = 15;
+        ctx.fillStyle = '#f80';
+        ctx.font = 'bold 30px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('INCOMING TANK!', canvas.width / 2, calloutY);
+        ctx.shadowBlur = 0;
+    } else if (ts.tankWarningPhase === 'spawning') {
+        // Brief "INCOMING TANK!" fade out
+        const fadeProgress = Math.min(1, (t - 1.5) / 0.5);
+        const alpha = 1 - fadeProgress;
+        if (alpha > 0) {
+            const calloutY = canvas.height * 0.38;
+            ctx.globalAlpha = alpha;
+            ctx.shadowColor = '#f80';
+            ctx.shadowBlur = 15;
+            ctx.fillStyle = '#f80';
+            ctx.font = 'bold 30px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('INCOMING TANK!', canvas.width / 2, calloutY);
+            ctx.shadowBlur = 0;
+            ctx.globalAlpha = 1;
+        }
+    }
+}
+
+function renderDismissAnimation() {
+    const ts = tutorialState;
+    const progress = ts.dismissTimer / TUTORIAL_CONFIG.HINT_DISMISS_DURATION;
+    const type = ts.dismissType;
+    const color = TUTORIAL_CONFIG.COLORS[type] || '#fff';
+    const hintY = canvas.height * 0.45;
+
+    ctx.save();
+
+    if (type === 'warp_juke') {
+        // Split apart horizontally
+        const splitOffset = progress * 50;
+        const alpha = 1 - progress;
+        ctx.globalAlpha = alpha;
+        // Left half
+        ctx.save();
+        ctx.translate(-splitOffset, 0);
+        ctx.beginPath();
+        ctx.rect(0, 0, canvas.width / 2, canvas.height);
+        ctx.clip();
+        renderWarpJukeHint(canvas.width / 2, hintY, ts.hintTimer);
+        ctx.restore();
+        // Right half
+        ctx.save();
+        ctx.translate(splitOffset, 0);
+        ctx.beginPath();
+        ctx.rect(canvas.width / 2, 0, canvas.width / 2, canvas.height);
+        ctx.clip();
+        renderWarpJukeHint(canvas.width / 2, hintY, ts.hintTimer);
+        ctx.restore();
+    } else if (type === 'bomb') {
+        // Explode outward
+        const scale = 1 + progress * 1.0;
+        const alpha = 1 - progress;
+        ctx.globalAlpha = alpha;
+        ctx.translate(canvas.width / 2, hintY);
+        ctx.scale(scale, scale);
+        ctx.translate(-canvas.width / 2, -hintY);
+        renderBombHint(canvas.width / 2, hintY, ts.hintTimer);
+    } else {
+        // Default: scale up + fade out
+        const scale = 1 + progress * 0.15;
+        const alpha = 1 - progress;
+        ctx.globalAlpha = alpha;
+        ctx.translate(canvas.width / 2, hintY);
+        ctx.scale(scale, scale);
+        ctx.translate(-canvas.width / 2, -hintY);
+        if (type === 'movement') {
+            renderMoveHint(canvas.width / 2, hintY, ts.hintTimer);
+        } else if (type === 'beam') {
+            renderBeamHint(canvas.width / 2, hintY, ts.hintTimer);
+        }
+    }
+
+    ctx.restore();
+}
+
+function renderTutorialCompletion() {
+    const ts = tutorialState;
+    const t = ts.completionTimer;
+    const cy = canvas.height * 0.40;
+
+    // Fade out after COMPLETION_FADE_START
+    let alpha = 1;
+    if (t >= TUTORIAL_CONFIG.COMPLETION_FADE_START) {
+        alpha = 1 - (t - TUTORIAL_CONFIG.COMPLETION_FADE_START) / (TUTORIAL_CONFIG.COMPLETION_DURATION - TUTORIAL_CONFIG.COMPLETION_FADE_START);
+        alpha = Math.max(0, alpha);
+    }
+
+    // Scale bounce entrance
+    let scale = 1;
+    if (t < 0.3) {
+        const bounceT = t / 0.3;
+        scale = bounceT * 1.1 - (bounceT > 0.7 ? (bounceT - 0.7) / 0.3 * 0.1 : 0);
+        scale = Math.max(0, Math.min(1.1, scale));
+    }
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(canvas.width / 2, cy);
+    ctx.scale(scale, scale);
+
+    // Background panel with cycling border
+    const panelW = 380;
+    const panelH = 70;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.beginPath();
+    ctx.roundRect(-panelW / 2, -panelH / 2, panelW, panelH, 10);
+    ctx.fill();
+
+    // Cycling border
+    const borderColors = [TUTORIAL_CONFIG.COLORS.movement, TUTORIAL_CONFIG.COLORS.beam, TUTORIAL_CONFIG.COLORS.bomb];
+    const borderIdx = Math.floor((t * 4) % borderColors.length);
+    ctx.strokeStyle = borderColors[borderIdx];
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(-panelW / 2, -panelH / 2, panelW, panelH, 10);
+    ctx.stroke();
+
+    // Rainbow glow
+    const hue = (Date.now() / 5) % 360;
+    ctx.shadowColor = `hsl(${hue}, 100%, 50%)`;
+    ctx.shadowBlur = 15;
+
+    // "ALL SYSTEMS GO!" text
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 32px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('ALL SYSTEMS GO!', 0, 12);
+    ctx.shadowBlur = 0;
+
+    ctx.restore();
 }
 
 // Helper function to convert hex color to rgba string
@@ -3639,14 +4279,9 @@ class UFO {
         this.hoverTime = 0;
         this.beamRotation = 0; // For spiral effect
         this.invincibleTimer = 0; // Invincibility after revive
-        this.warpGhosts = []; // Ghost trail positions for visual effect
-        this.turretActive = false; // Laser turret active
-        this.turretTarget = null; // Current turret target
-        this.turretSoundTimer = 0; // Timer for continuous firing sound
-        this.turretOutOfEnergy = false; // Flag to prevent repeated stop sound when out of energy
-        this.turretStopSoundCooldown = 0; // Cooldown to prevent repeated stop sounds
         this.vx = 0; // Track horizontal velocity for bomb physics
         this.lastX = this.x; // For velocity calculation
+        this.warpGhosts = []; // Ghost trail positions for warp juke
     }
 
     update(dt) {
@@ -3663,11 +4298,6 @@ class UFO {
         // Beam rotation for spiral effect
         this.beamRotation += dt * 5;
 
-        // Update invincibility timer
-        if (this.invincibleTimer > 0) {
-            this.invincibleTimer -= dt;
-        }
-
         // Update warp ghosts
         for (let i = this.warpGhosts.length - 1; i >= 0; i--) {
             this.warpGhosts[i].alpha -= dt / CONFIG.WARP_JUKE_GHOST_DURATION;
@@ -3676,81 +4306,11 @@ class UFO {
             }
         }
 
-        // Handle laser turret (T or Z key) - only if player owns turret
-        const wantsTurret = (keys['KeyT'] || keys['KeyZ']) && playerInventory.hasTurret;
-        // Require minimum energy to fire; once depleted, need more energy to restart
-        const minEnergyToStart = CONFIG.TURRET_ENERGY_COST * 0.5; // Need 0.5 seconds worth to start
-        const canFireTurret = this.energy >= minEnergyToStart && !this.turretOutOfEnergy;
-
-        // Update stop sound cooldown
-        if (this.turretStopSoundCooldown > 0) {
-            this.turretStopSoundCooldown -= dt;
+        // Update invincibility timer
+        if (this.invincibleTimer > 0) {
+            this.invincibleTimer -= dt;
         }
 
-        // Reset out-of-energy state when player releases the turret key
-        if (!wantsTurret) {
-            this.turretOutOfEnergy = false;
-        }
-
-        if (wantsTurret && canFireTurret) {
-            if (!this.turretActive) {
-                SFX.turretStart && SFX.turretStart();
-            }
-            this.turretActive = true;
-            this.energy -= CONFIG.TURRET_ENERGY_COST * dt;
-
-            // Check if we just ran out of energy
-            if (this.energy <= 0) {
-                this.energy = 0;
-            }
-
-            // Find closest tank or drone to recharge in range
-            this.turretTarget = this.findTurretTarget();
-
-            // Deal damage or recharge drone
-            if (this.turretTarget) {
-                const isDrone = this.turretTarget instanceof HarvesterDrone || this.turretTarget instanceof BattleDrone;
-                if (isDrone) {
-                    // Recharge drone energy: 10 seconds per second of beam
-                    const rechargeRate = 10 * dt;
-                    if (techFlags.broadcastRecharge) {
-                        // qc3: Broadcast to ALL active drones
-                        for (const drone of activeDrones) {
-                            if (!drone.alive) continue;
-                            const rate = techFlags.fullBroadcast ? rechargeRate : rechargeRate / activeDrones.length;
-                            drone.energyTimer = Math.min(drone.maxEnergy, drone.energyTimer + rate);
-                        }
-                    } else {
-                        this.turretTarget.energyTimer = Math.min(this.turretTarget.maxEnergy, this.turretTarget.energyTimer + rechargeRate);
-                    }
-                } else {
-                    const damage = CONFIG.TURRET_DAMAGE_PER_SECOND * (1 + playerInventory.turretDamageBonus) * dt;
-                    this.turretTarget.takeDamage(damage);
-                }
-
-                // Play continuous firing sound
-                this.turretSoundTimer -= dt;
-                if (this.turretSoundTimer <= 0) {
-                    SFX.turretFiring && SFX.turretFiring();
-                    this.turretSoundTimer = 0.1;
-                }
-            }
-        } else {
-            // Turret forced off while player wants it - mark as out of energy to prevent
-            // rapid on/off cycling when energy hovers near the threshold
-            if (wantsTurret) {
-                this.turretOutOfEnergy = true;
-            }
-
-            // Only play stop sound once when turret was active, with cooldown
-            if (this.turretActive && this.turretStopSoundCooldown <= 0) {
-                SFX.turretStop && SFX.turretStop();
-                this.turretStopSoundCooldown = 1.0; // Don't play stop sound again for 1 second
-            }
-            this.turretActive = false;
-            this.turretTarget = null;
-            this.turretSoundTimer = 0;
-        }
 
         // Handle beam activation
         const wantsBeam = keys['Space'];
@@ -3771,10 +4331,6 @@ class UFO {
             if (!activePowerups.energy_surge.active) {
                 this.energy -= CONFIG.ENERGY_DRAIN_RATE * dt;
             }
-            // qc5: Quantum Fold Core - slowly regenerate energy while beam is active
-            if (techFlags.beamEnergyRegen) {
-                this.energy += 3 * dt; // +3 energy/sec
-            }
             this.energy = Math.min(this.energy, this.maxEnergy);
 
             // Check for target lock
@@ -3782,12 +4338,61 @@ class UFO {
                 this.beamTarget = this.findTargetInBeam();
                 if (this.beamTarget) {
                     this.beamTarget.beingAbducted = true;
+                    notifyTutorialBeamLock();
                     // Play pickup sound (with cooldown to prevent spam)
                     SFX.targetPickup(this.beamTarget);
                     // Reset falling state if re-catching a dropped target
                     if (this.beamTarget.falling) {
                         this.beamTarget.falling = false;
                         this.beamTarget.vy = 0;
+                    }
+                }
+            }
+
+            // Beam recharges coordinators and drones
+            if (this.beamActive) {
+                const beamTop = this.y + this.height / 2;
+                const beamBottom = canvas.height - 60;
+                const widthMult = activePowerups.wide_beam.active ? CONFIG.POWERUPS.wide_beam.widthMultiplier : 1;
+                const beamTopWidth = 30 * widthMult;
+                const beamBottomWidth = 225 * widthMult;
+
+                const rechargeRate = techFlags.reactorAmplifier ? 4.0 : 2.0;
+                const broadcastExtra = techFlags.powerBroadcast ? 60 : 0;
+
+                const isInBeam = (ex, ey) => {
+                    if (ey < beamTop || ey > beamBottom) return false;
+                    const t = (ey - beamTop) / (beamBottom - beamTop);
+                    const beamWidth = beamTopWidth + (beamBottomWidth - beamTopWidth) * t;
+                    const halfWidth = beamWidth / 2 + broadcastExtra;
+                    return Math.abs(ex - this.x) <= halfWidth;
+                };
+
+                // Recharge coordinators (always works, no tech required)
+                for (const coord of activeCoordinators) {
+                    if (!coord.alive || coord.state === 'DEPLOYING' || coord.state === 'DYING') continue;
+                    if (isInBeam(coord.x, coord.y)) {
+                        coord.rechargeEnergy(rechargeRate * dt);
+                    }
+                }
+
+                // Recharge raw drones (requires beamConduit / PG1)
+                if (techFlags.beamConduit) {
+                    for (const drone of activeDrones) {
+                        if (!drone.alive) continue;
+                        if (isInBeam(drone.x, drone.y)) {
+                            drone.energyTimer = Math.min(drone.maxEnergy, drone.energyTimer + rechargeRate * dt);
+                        }
+                    }
+                    // Also recharge coordinator sub-drones
+                    for (const coord of activeCoordinators) {
+                        if (!coord.alive) continue;
+                        for (const drone of coord.subDrones) {
+                            if (!drone.alive) continue;
+                            if (isInBeam(drone.x, drone.y)) {
+                                drone.energyTimer = Math.min(drone.maxEnergy, drone.energyTimer + rechargeRate * dt);
+                            }
+                        }
                     }
                 }
             }
@@ -3895,7 +4500,8 @@ class UFO {
         const isAbducting = this.beamActive && this.beamTarget;
         if (!isAbducting) {
             let moved = false;
-            const effectiveSpeed = CONFIG.UFO_SPEED * (1 + playerInventory.speedBonus) * (techFlags.spiceSpeed ? 1.3 : 1);
+            const thrusterMult = techFlags.thrusterBoost ? 1.3 : 1.0;
+            const effectiveSpeed = CONFIG.UFO_SPEED * (1 + playerInventory.speedBonus) * thrusterMult;
             if (keys['ArrowLeft']) {
                 this.x -= effectiveSpeed * dt;
                 moved = true;
@@ -4002,68 +4608,6 @@ class UFO {
         return null;
     }
 
-    findTurretTarget() {
-        let closestTarget = null;
-        let closestDistance = Infinity;
-
-        const allTanks = [...tanks, ...heavyTanks];
-
-        if (techFlags.smartTurret) {
-            // Smart targeting (bc2): pick lowest HP tank in range
-            let lowestHP = Infinity;
-            for (const tank of allTanks) {
-                if (!tank.alive || tank.isStunned) continue;
-                const dx = (tank.x + tank.width / 2) - this.x;
-                const dy = (tank.y + tank.height / 2) - this.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist < CONFIG.TURRET_RANGE && tank.health < lowestHP) {
-                    lowestHP = tank.health;
-                    closestTarget = tank;
-                    closestDistance = dist;
-                }
-            }
-        } else {
-            // Default: find closest tank
-            for (const tank of allTanks) {
-                if (!tank.alive || tank.isStunned) continue;
-                const dx = (tank.x + tank.width / 2) - this.x;
-                const dy = (tank.y + tank.height / 2) - this.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist < CONFIG.TURRET_RANGE && dist < closestDistance) {
-                    closestDistance = dist;
-                    closestTarget = tank;
-                }
-            }
-        }
-
-        // Drone recharge logic (requires qc1: Reactor Ignition)
-        if (techFlags.turretCanRechargeDrones && activeDrones.length > 0) {
-            let dyingDrone = null;
-            let dyingDroneDist = Infinity;
-            let nearestDrone = null;
-            let nearestDroneDist = Infinity;
-            for (const drone of activeDrones) {
-                if (!drone.alive || drone.state === 'FALLING') continue;
-                const dx = drone.x - this.x;
-                const dy = drone.y - this.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist > CONFIG.TURRET_RANGE) continue;
-                if (drone.energyTimer < 5 && dist < dyingDroneDist) {
-                    dyingDroneDist = dist;
-                    dyingDrone = drone;
-                }
-                if (dist < nearestDroneDist) {
-                    nearestDroneDist = dist;
-                    nearestDrone = drone;
-                }
-            }
-            if (dyingDrone) return dyingDrone;
-            if (!closestTarget && nearestDrone) return nearestDrone;
-        }
-
-        return closestTarget;
-    }
-
     render() {
         const drawX = this.x - this.width / 2;
         const drawY = this.y - this.height / 2 + this.hoverOffset;
@@ -4107,13 +4651,6 @@ class UFO {
             }
         }
 
-        // sn2: Dimensional Compression - phasing/flickering visual
-        const isPhaseShift = techFlags.phaseShift;
-        if (isPhaseShift) {
-            const phaseFlicker = Math.sin(Date.now() * 0.03) * 0.3 + 0.7;
-            ctx.globalAlpha *= phaseFlicker;
-        }
-
         if (images.ufo && images.ufo.complete) {
             ctx.drawImage(images.ufo, drawX, drawY, this.width, this.height);
         } else {
@@ -4125,7 +4662,7 @@ class UFO {
         }
 
         // Reset alpha if we modified it
-        if (isInvincible || isPhaseShift) {
+        if (isInvincible) {
             ctx.globalAlpha = 1;
         }
 
@@ -4159,147 +4696,6 @@ class UFO {
             ctx.stroke();
         }
 
-        // Render laser turret beam or scanning effect
-        if (this.turretActive) {
-            if (this.turretTarget) {
-                this.renderLaserBeam();
-            } else {
-                this.renderTurretScanning();
-            }
-        }
-    }
-
-    renderTurretScanning() {
-        // Show a scanning effect when turret is active but no target in range
-        ctx.save();
-
-        const time = Date.now() / 1000;
-        const scanAngle = Math.sin(time * 2) * 0.5; // Sweep back and forth
-        const scanLength = CONFIG.TURRET_RANGE;
-        const startX = this.x;
-        const startY = this.y + this.height / 2;
-
-        // Calculate end point of scan beam
-        const baseAngle = Math.PI / 2; // Pointing down
-        const angle = baseAngle + scanAngle;
-        const endX = startX + Math.cos(angle) * scanLength;
-        const endY = startY + Math.sin(angle) * scanLength;
-
-        // Draw gradient trail behind the scan line (shows recent sweep path)
-        const trailSteps = 8;
-        for (let i = trailSteps; i >= 1; i--) {
-            const trailTime = time - i * 0.03;
-            const trailAngle = baseAngle + Math.sin(trailTime * 2) * 0.5;
-            const trailEndX = startX + Math.cos(trailAngle) * scanLength;
-            const trailEndY = startY + Math.sin(trailAngle) * scanLength;
-            const alpha = (1 - i / trailSteps) * 0.15;
-
-            ctx.strokeStyle = `rgba(255, 50, 50, ${alpha})`;
-            ctx.lineWidth = 6 - i * 0.5;
-            ctx.beginPath();
-            ctx.moveTo(startX, startY);
-            ctx.lineTo(trailEndX, trailEndY);
-            ctx.stroke();
-        }
-
-        // Draw main scanning beam with gradient
-        const gradient = ctx.createLinearGradient(startX, startY, endX, endY);
-        gradient.addColorStop(0, 'rgba(255, 100, 100, 0.8)');
-        gradient.addColorStop(0.3, 'rgba(255, 50, 50, 0.5)');
-        gradient.addColorStop(1, 'rgba(255, 0, 0, 0.1)');
-
-        ctx.strokeStyle = gradient;
-        ctx.lineWidth = 3;
-        ctx.setLineDash([]);
-        ctx.beginPath();
-        ctx.moveTo(startX, startY);
-        ctx.lineTo(endX, endY);
-        ctx.stroke();
-
-        // Draw brighter core line
-        ctx.strokeStyle = 'rgba(255, 200, 200, 0.6)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(startX, startY);
-        ctx.lineTo(endX, endY);
-        ctx.stroke();
-
-        // Draw scanning dot at the end
-        const pulse = Math.sin(time * 10) * 0.3 + 0.7;
-        ctx.fillStyle = `rgba(255, 100, 100, ${pulse})`;
-        ctx.beginPath();
-        ctx.arc(endX, endY, 5 + pulse * 3, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Draw range arc (bottom half only, where tanks are)
-        ctx.strokeStyle = 'rgba(255, 50, 50, 0.15)';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([5, 10]);
-        ctx.beginPath();
-        ctx.arc(startX, startY, scanLength, Math.PI * 0.15, Math.PI * 0.85);
-        ctx.stroke();
-
-        ctx.restore();
-    }
-
-    renderLaserBeam() {
-        const target = this.turretTarget;
-        const targetX = target.x + (target.width ? target.width / 2 : 0);
-        const targetY = target.y + (target.height ? target.height / 2 : 0);
-        const isDroneTarget = target instanceof HarvesterDrone || target instanceof BattleDrone;
-
-        // Draw main laser beam
-        ctx.save();
-
-        if (isDroneTarget) {
-            // Recharge beam - cyan/green
-            ctx.strokeStyle = 'rgba(0, 200, 255, 0.3)';
-            ctx.lineWidth = CONFIG.TURRET_BEAM_WIDTH * 3;
-            ctx.beginPath(); ctx.moveTo(this.x, this.y + this.height / 2); ctx.lineTo(targetX, targetY); ctx.stroke();
-            ctx.strokeStyle = 'rgba(50, 255, 200, 0.6)';
-            ctx.lineWidth = CONFIG.TURRET_BEAM_WIDTH * 1.5;
-            ctx.beginPath(); ctx.moveTo(this.x, this.y + this.height / 2); ctx.lineTo(targetX, targetY); ctx.stroke();
-            ctx.strokeStyle = 'rgba(200, 255, 255, 0.9)';
-            ctx.lineWidth = CONFIG.TURRET_BEAM_WIDTH;
-            ctx.beginPath(); ctx.moveTo(this.x, this.y + this.height / 2); ctx.lineTo(targetX, targetY); ctx.stroke();
-            // Recharge glow at drone
-            const pulse = Math.sin(Date.now() / 40) * 0.5 + 0.5;
-            ctx.fillStyle = `rgba(0, 255, 200, ${0.2 + pulse * 0.3})`;
-            ctx.beginPath(); ctx.arc(targetX, targetY, 12 + pulse * 8, 0, Math.PI * 2); ctx.fill();
-        } else {
-            // Damage beam - red (original)
-            ctx.strokeStyle = 'rgba(255, 50, 50, 0.3)';
-            ctx.lineWidth = CONFIG.TURRET_BEAM_WIDTH * 3;
-            ctx.beginPath(); ctx.moveTo(this.x, this.y + this.height / 2); ctx.lineTo(targetX, targetY); ctx.stroke();
-            ctx.strokeStyle = 'rgba(255, 100, 100, 0.6)';
-            ctx.lineWidth = CONFIG.TURRET_BEAM_WIDTH * 1.5;
-            ctx.beginPath(); ctx.moveTo(this.x, this.y + this.height / 2); ctx.lineTo(targetX, targetY); ctx.stroke();
-            ctx.strokeStyle = 'rgba(255, 255, 200, 0.9)';
-            ctx.lineWidth = CONFIG.TURRET_BEAM_WIDTH;
-            ctx.beginPath(); ctx.moveTo(this.x, this.y + this.height / 2); ctx.lineTo(targetX, targetY); ctx.stroke();
-            // Impact effect at target
-            const impactPulse = Math.sin(Date.now() / 30) * 0.5 + 0.5;
-            ctx.fillStyle = `rgba(255, 100, 50, ${0.3 + impactPulse * 0.4})`;
-            ctx.beginPath(); ctx.arc(targetX, targetY, 15 + impactPulse * 10, 0, Math.PI * 2); ctx.fill();
-        }
-
-        // Sparks at impact point
-        if (Math.random() < 0.3) {
-            const sparkAngle = Math.random() * Math.PI * 2;
-            const sparkSpeed = 50 + Math.random() * 100;
-            const sparkColor = isDroneTarget ? 'rgba(50, 255, 200, 0.8)' : 'rgba(255, 200, 50, 0.8)';
-            particles.push(new Particle(
-                targetX + (Math.random() - 0.5) * 20,
-                targetY + (Math.random() - 0.5) * 20,
-                Math.cos(sparkAngle) * sparkSpeed,
-                Math.sin(sparkAngle) * sparkSpeed,
-                sparkColor,
-                2 + Math.random() * 2,
-                0.15 + Math.random() * 0.1
-            ));
-        }
-
-        ctx.restore();
     }
 
     renderBeam() {
@@ -4348,6 +4744,48 @@ class UFO {
         ctx.moveTo(this.x + beamTopWidth / 2, beamTop);
         ctx.lineTo(this.x + beamBottomWidth / 2, beamBottom);
         ctx.stroke();
+
+        // Energy recharge visual effects
+        if (techFlags.beamConduit || activeCoordinators.length > 0) {
+            const broadcastExtra = techFlags.powerBroadcast ? 60 : 0;
+
+            const isInBeamVisual = (ex, ey) => {
+                if (ey < beamTop || ey > beamBottom) return false;
+                const t = (ey - beamTop) / (beamBottom - beamTop);
+                const beamWidth = beamTopWidth + (beamBottomWidth - beamTopWidth) * t;
+                return Math.abs(ex - this.x) <= beamWidth / 2 + broadcastExtra;
+            };
+
+            // Coordinator recharge glow
+            for (const coord of activeCoordinators) {
+                if (!coord.alive || coord.state === 'DEPLOYING') continue;
+                if (isInBeamVisual(coord.x, coord.y)) {
+                    const pulse = 0.3 + Math.sin(Date.now() / 100) * 0.1;
+                    ctx.fillStyle = `rgba(255, 200, 100, ${pulse})`;
+                    ctx.beginPath();
+                    ctx.ellipse(coord.x, coord.y, 30, 20, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            // Drone recharge sparkles (only with beamConduit)
+            if (techFlags.beamConduit) {
+                for (const drone of activeDrones) {
+                    if (!drone.alive) continue;
+                    if (isInBeamVisual(drone.x, drone.y)) {
+                        if (Math.random() < 0.15) {
+                            particles.push(new Particle(
+                                drone.x + (Math.random() - 0.5) * 20,
+                                drone.y - 10,
+                                (Math.random() - 0.5) * 30,
+                                -20 - Math.random() * 30,
+                                'rgb(0, 255, 200)', 2, 0.3
+                            ));
+                        }
+                    }
+                }
+            }
+        }
 
         ctx.restore();
     }
@@ -4502,12 +4940,22 @@ class Tank {
         this.stunTimer = 0;
         this.stunEffectTime = 0; // For visual effect animation
 
-        // Health (for laser turret damage)
+        // Health
         this.health = CONFIG.TANK_HEALTH;
         this.maxHealth = CONFIG.TANK_HEALTH;
 
         // Animation offset so tanks don't animate in sync
         this.animationOffset = Math.random() * 10000;
+
+        // Progressive AI properties
+        this.coordinatorHunter = false; // Set in spawnTanks() based on wave tier
+    }
+
+    getTankBehaviorTier() {
+        if (wave <= 3) return 0;  // Basic
+        if (wave <= 7) return 1;  // Tactical
+        if (wave <= 11) return 2; // Strategic
+        return 3;                  // Veteran
     }
 
     takeDamage(amount) {
@@ -4643,6 +5091,9 @@ class Tank {
             return;
         }
 
+        // Progressive AI tier
+        const tier = this.getTankBehaviorTier();
+
         // Patrol movement
         this.x += this.direction * this.speed * dt;
 
@@ -4656,28 +5107,111 @@ class Tank {
             this.direction = -1;
         }
 
-        // Aim turret at priority target: Battle Drone > Harvester Drone > UFO
+        // Tactical (tier 1+): spread from other tanks and avoid battle drones
+        if (tier >= 1) {
+            for (const other of tanks) {
+                if (other === this || !other.alive) continue;
+                const dist = Math.abs(other.x - this.x);
+                if (dist < 100) {
+                    const pushDir = this.x < other.x ? -1 : 1;
+                    this.x += pushDir * 30 * dt;
+                }
+            }
+            for (const drone of activeDrones) {
+                if (!drone.alive || drone.type !== 'battle') continue;
+                const dist = Math.abs(drone.x - (this.x + this.width / 2));
+                if (dist < 150) {
+                    const pushDir = (this.x + this.width / 2) < drone.x ? -1 : 1;
+                    this.x += pushDir * 40 * dt;
+                }
+            }
+        }
+
+        // Strategic (tier 2+): bias toward screen edges
+        if (tier >= 2) {
+            const centerX = canvas.width / 2;
+            const fromCenter = (this.x + this.width / 2) - centerX;
+            if (Math.abs(fromCenter) < canvas.width * 0.3) {
+                this.x += Math.sign(fromCenter || 1) * 15 * dt;
+            }
+        }
+
+        // Veteran (tier 3): evade bombs and player missiles
+        if (tier >= 3) {
+            for (const bomb of bombs) {
+                if (!bomb.alive) continue;
+                const dist = Math.hypot(bomb.x - (this.x + this.width / 2), bomb.y - (this.y + this.height / 2));
+                if (dist < 200) {
+                    const evadeDir = (this.x + this.width / 2) < bomb.x ? -1 : 1;
+                    this.x += evadeDir * 80 * dt;
+                }
+            }
+            for (const missile of playerMissiles) {
+                if (!missile.alive) continue;
+                const dist = Math.hypot(missile.x - (this.x + this.width / 2), missile.y - (this.y + this.height / 2));
+                if (dist < 180) {
+                    const evadeDir = (this.x + this.width / 2) < missile.x ? -1 : 1;
+                    this.x += evadeDir * 60 * dt;
+                }
+            }
+        }
+
+        // Clamp to screen bounds after all movement modifications
+        this.x = Math.max(margin, Math.min(canvas.width - margin - this.width, this.x));
+
+        // Aim turret at priority target
         {
             const turretX = this.x + this.width / 2;
             const turretY = this.y;
             let aimX = ufo ? ufo.x : turretX;
             let aimY = ufo ? ufo.y : turretY - 100;
 
-            // Find nearest battle drone first, then harvester
-            let nearestDrone = null;
-            let nearestDroneDist = Infinity;
+            let bestTarget = null;
+            let bestPriority = Infinity;
+            let bestDist = Infinity;
+
+            // Coordinator hunters flip priorities: coordinators (0) > drones (1,2)
+            const battlePriority = this.coordinatorHunter ? 2 : 0;
+            const harvesterPriority = this.coordinatorHunter ? 3 : 1;
+            const coordPriority = this.coordinatorHunter ? 0 : 2;
+
             for (const drone of activeDrones) {
                 if (!drone.alive || drone.state === 'FALLING') continue;
                 const ddx = drone.x - turretX;
                 const ddy = drone.y - turretY;
                 const dist = Math.sqrt(ddx * ddx + ddy * ddy);
-                const priority = drone.type === 'battle' ? 0 : 1;
-                if (!nearestDrone || priority < (nearestDrone.type === 'battle' ? 0 : 1) || (priority === (nearestDrone.type === 'battle' ? 0 : 1) && dist < nearestDroneDist)) {
-                    nearestDrone = drone;
-                    nearestDroneDist = dist;
+                const priority = drone.type === 'battle' ? battlePriority : harvesterPriority;
+                if (priority < bestPriority || (priority === bestPriority && dist < bestDist)) {
+                    bestTarget = drone;
+                    bestPriority = priority;
+                    bestDist = dist;
                 }
             }
-            if (nearestDrone) { aimX = nearestDrone.x; aimY = nearestDrone.y; }
+            for (const coord of activeCoordinators) {
+                if (!coord.alive || coord.state === 'DEPLOYING' || coord.state === 'DYING') continue;
+                const ddx = coord.x - turretX;
+                const ddy = coord.y - turretY;
+                const dist = Math.sqrt(ddx * ddx + ddy * ddy);
+                if (coordPriority < bestPriority || (coordPriority === bestPriority && dist < bestDist)) {
+                    bestTarget = coord;
+                    bestPriority = coordPriority;
+                    bestDist = dist;
+                }
+            }
+            if (bestTarget) { aimX = bestTarget.x; aimY = bestTarget.y; }
+
+            // Tactical+: lead shots by predicting target movement
+            if (tier >= 1 && bestTarget) {
+                const targetVx = bestTarget.vx || 0;
+                const targetVy = bestTarget.vy || 0;
+                if (targetVx !== 0 || targetVy !== 0) {
+                    const dist = Math.hypot(aimX - turretX, aimY - turretY);
+                    const bulletSpeed = CONFIG.SHELL_SPEED;
+                    const timeToHit = dist / bulletSpeed;
+                    aimX += targetVx * timeToHit;
+                    aimY += targetVy * timeToHit;
+                }
+            }
 
             const targetAngle = Math.atan2(aimY - turretY, aimX - turretX);
             const angleDiff = targetAngle - this.turretAngle;
@@ -4766,9 +5300,6 @@ class Tank {
 
         const img = getAssetImage('tank', this.animationOffset);
 
-        // Check if being targeted by turret
-        const isBeingLasered = ufo && ufo.turretTarget === this;
-
         // Apply grayed out effect if stunned
         if (this.isStunned) {
             ctx.save();
@@ -4796,26 +5327,6 @@ class Tank {
 
         // Draw turret
         this.renderTurret();
-
-        // Draw laser damage flash effect (flashes faster as health drops)
-        if (isBeingLasered) {
-            const healthPercent = this.health / this.maxHealth;
-            // Flash speed: 4 Hz at full health, up to 20 Hz near death
-            const flashSpeed = 4 + (1 - healthPercent) * 16;
-            const flash = Math.sin(Date.now() / 1000 * flashSpeed * Math.PI * 2);
-
-            if (flash > 0) {
-                ctx.save();
-                ctx.globalCompositeOperation = 'source-atop';
-                ctx.fillStyle = `rgba(255, 0, 0, ${0.3 + (1 - healthPercent) * 0.4})`;
-                ctx.fillRect(this.x, this.y, this.width, this.height);
-                ctx.restore();
-
-                // Also draw an overlay on top
-                ctx.fillStyle = `rgba(255, 50, 50, ${(0.2 + (1 - healthPercent) * 0.3) * flash})`;
-                ctx.fillRect(this.x, this.y, this.width, this.height);
-            }
-        }
 
         if (this.isStunned) {
             ctx.restore();
@@ -4970,7 +5481,24 @@ class Projectile {
                 }
             } else {
                 // Normal damage
-                ufo.health -= this.damage;
+                let finalDamage = this.damage;
+
+                // DN5 Swarm Shield: fleet entities absorb damage
+                if (techFlags.swarmShield) {
+                    let fleetCount = activeDrones.filter(d => d.alive).length;
+                    for (const coord of activeCoordinators) {
+                        if (coord.alive) {
+                            fleetCount++; // coordinator itself
+                            fleetCount += coord.subDrones.filter(d => d.alive).length;
+                        }
+                    }
+                    const absorption = Math.min(fleetCount * 0.02, 0.6); // 2% per entity, max 60%
+                    if (absorption > 0) {
+                        finalDamage = Math.max(1, Math.round(this.damage * (1 - absorption)));
+                    }
+                }
+
+                ufo.health -= finalDamage;
                 waveStats.hitsTaken++;
 
                 // Create small explosion at hit point
@@ -4980,7 +5508,7 @@ class Projectile {
                 SFX.ufoHit();
                 screenShake = 0.2;
                 damageFlash = 0.15;
-                createFloatingText(ufo.x, ufo.y - 30, `-${this.damage}`, '#f00');
+                createFloatingText(ufo.x, ufo.y - 30, `-${finalDamage}`, techFlags.swarmShield && finalDamage < this.damage ? '#0af' : '#f00');
 
                 // Check for game over or revive
                 if (ufo.health <= 0) {
@@ -5000,8 +5528,6 @@ class Projectile {
         const ufoCenterX = ufo.x;
         const ufoCenterY = ufo.y;
         let ufoRadius = ufo.width / 2.5; // Approximate collision radius
-        // sn2: Dimensional Compression - shrink hitbox 30%
-        if (techFlags.phaseShift) ufoRadius *= 0.7;
 
         const dx = this.x - ufoCenterX;
         const dy = this.y - ufoCenterY;
@@ -5021,6 +5547,33 @@ class Projectile {
                 drone.takeDamage(this.damage * 0.2); // Projectiles deal light damage as energy drain
                 createExplosion(this.x, this.y, 'small');
                 return true;
+            }
+        }
+        // Check collision with coordinators and their sub-drones
+        for (const coord of activeCoordinators) {
+            if (!coord.alive || coord.state === 'DEPLOYING' || coord.state === 'DYING') continue;
+            // Coordinator itself
+            const cdx = this.x - coord.x;
+            const cdy = this.y - coord.y;
+            const cdist = Math.sqrt(cdx * cdx + cdy * cdy);
+            if (cdist < (coord.width / 2) + this.radius) {
+                this.alive = false;
+                coord.takeDamage(this.damage * 0.3);
+                createExplosion(this.x, this.y, 'small');
+                return true;
+            }
+            // Sub-drones under this coordinator
+            for (const drone of coord.subDrones) {
+                if (!drone.alive || drone.state === 'FALLING') continue;
+                const ddx = this.x - drone.x;
+                const ddy = this.y - drone.y;
+                const ddist = Math.sqrt(ddx * ddx + ddy * ddy);
+                if (ddist < 20 + this.radius) {
+                    this.alive = false;
+                    drone.takeDamage(this.damage * 0.2);
+                    createExplosion(this.x, this.y, 'small');
+                    return true;
+                }
             }
         }
         return false;
@@ -5125,6 +5678,16 @@ class Bomb {
             if (!target.alive) continue;
             if (this.x > target.x && this.x < target.x + target.width &&
                 this.y + this.radius > target.y && this.y - this.radius < target.y + target.height) {
+                this.explode();
+                return;
+            }
+        }
+
+        // Check for direct collision with drones (explode on contact)
+        for (const drone of activeDrones) {
+            if (!drone.alive) continue;
+            if (this.x > drone.x && this.x < drone.x + drone.width &&
+                this.y + this.radius > drone.y && this.y - this.radius < drone.y + drone.height) {
                 this.explode();
                 return;
             }
@@ -5350,9 +5913,18 @@ class Missile {
         }
 
         if (this.launchPhase) {
-            // Fan out phase
-            this.x += this.vx * dt;
-            this.y += this.vy * dt;
+            // Fan out phase with spiral from the start
+            let speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+            if (speed > 0) {
+                let perpX = -this.vy / speed;
+                let perpY = this.vx / speed;
+                let spiralOffset = Math.sin(this.age * this.spiralFreq + this.spiralPhase) * this.spiralAmp;
+                this.x += (this.vx + perpX * spiralOffset * 3) * dt;
+                this.y += (this.vy + perpY * spiralOffset * 3) * dt;
+            } else {
+                this.x += this.vx * dt;
+                this.y += this.vy * dt;
+            }
             this.vy -= 100 * dt; // slight drag slows downward motion
             if (this.age > this.launchDuration) {
                 this.launchPhase = false;
@@ -5391,9 +5963,16 @@ class Missile {
             } else {
                 // Target dead, retarget
                 this.retarget();
-                // Continue forward if no target
-                this.x += this.vx * dt;
-                this.y += this.vy * dt;
+                // No target — fly wild with spiraling motion
+                let speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+                if (speed < 1) speed = 1;
+                let dirX = this.vx / speed;
+                let dirY = this.vy / speed;
+                let perpX = -dirY;
+                let perpY = dirX;
+                let spiralOffset = Math.sin(this.age * this.spiralFreq + this.spiralPhase) * this.spiralAmp;
+                this.x += (this.vx + perpX * spiralOffset * 3) * dt;
+                this.y += (this.vy + perpY * spiralOffset * 3) * dt;
             }
         }
 
@@ -5402,15 +5981,20 @@ class Missile {
             this.alive = false;
         }
 
-        // Max lifetime
-        if (this.age > 8) this.alive = false;
+        // Max lifetime — explode on timeout
+        if (this.age > 5) {
+            this.alive = false;
+            createExplosion(this.x, this.y, 'small');
+            screenShake = Math.max(screenShake, 0.1);
+        }
     }
 
     retarget() {
         // Find nearest alive tank
         let allTanks = [...tanks, ...heavyTanks].filter(t => t.alive !== false);
         if (allTanks.length === 0) {
-            this.alive = false;
+            // No targets — fly wild with spiral
+            this.targetTank = null;
             return;
         }
         let nearest = null, minDist = Infinity;
@@ -6042,7 +6626,7 @@ class HeavyTank {
         this.stunTimer = 0;
         this.stunEffectTime = 0; // For visual effect animation
 
-        // Health (for laser turret damage)
+        // Health
         this.health = CONFIG.HEAVY_TANK_HEALTH;
         this.maxHealth = CONFIG.HEAVY_TANK_HEALTH;
 
@@ -6052,6 +6636,16 @@ class HeavyTank {
 
         // Animation offset so tanks don't animate in sync
         this.animationOffset = Math.random() * 10000;
+
+        // Progressive AI properties
+        this.coordinatorHunter = false; // Set in spawnTanks() based on wave tier
+    }
+
+    getTankBehaviorTier() {
+        if (wave <= 3) return 0;  // Basic
+        if (wave <= 7) return 1;  // Tactical
+        if (wave <= 11) return 2; // Strategic
+        return 3;                  // Veteran
     }
 
     takeDamage(amount) {
@@ -6194,6 +6788,9 @@ class HeavyTank {
             return;
         }
 
+        // Progressive AI tier
+        const tier = this.getTankBehaviorTier();
+
         // Patrol movement
         this.x += this.direction * this.speed * dt;
 
@@ -6207,27 +6804,110 @@ class HeavyTank {
             this.direction = -1;
         }
 
-        // Aim both turrets at priority target: Battle Drone > Harvester Drone > UFO
+        // Tactical (tier 1+): spread from other heavy tanks and avoid battle drones
+        if (tier >= 1) {
+            for (const other of heavyTanks) {
+                if (other === this || !other.alive) continue;
+                const dist = Math.abs(other.x - this.x);
+                if (dist < 150) {
+                    const pushDir = this.x < other.x ? -1 : 1;
+                    this.x += pushDir * 25 * dt;
+                }
+            }
+            for (const drone of activeDrones) {
+                if (!drone.alive || drone.type !== 'battle') continue;
+                const dist = Math.abs(drone.x - (this.x + this.width / 2));
+                if (dist < 150) {
+                    const pushDir = (this.x + this.width / 2) < drone.x ? -1 : 1;
+                    this.x += pushDir * 30 * dt;
+                }
+            }
+        }
+
+        // Strategic (tier 2+): bias toward screen edges
+        if (tier >= 2) {
+            const edgeCenterX = canvas.width / 2;
+            const fromCenter = (this.x + this.width / 2) - edgeCenterX;
+            if (Math.abs(fromCenter) < canvas.width * 0.3) {
+                this.x += Math.sign(fromCenter || 1) * 12 * dt;
+            }
+        }
+
+        // Veteran (tier 3): evade bombs and player missiles
+        if (tier >= 3) {
+            for (const bomb of bombs) {
+                if (!bomb.alive) continue;
+                const dist = Math.hypot(bomb.x - (this.x + this.width / 2), bomb.y - (this.y + this.height / 2));
+                if (dist < 200) {
+                    const evadeDir = (this.x + this.width / 2) < bomb.x ? -1 : 1;
+                    this.x += evadeDir * 60 * dt;
+                }
+            }
+            for (const missile of playerMissiles) {
+                if (!missile.alive) continue;
+                const dist = Math.hypot(missile.x - (this.x + this.width / 2), missile.y - (this.y + this.height / 2));
+                if (dist < 180) {
+                    const evadeDir = (this.x + this.width / 2) < missile.x ? -1 : 1;
+                    this.x += evadeDir * 45 * dt;
+                }
+            }
+        }
+
+        // Clamp to screen bounds after all movement modifications
+        this.x = Math.max(margin, Math.min(canvas.width - margin - this.width, this.x));
+
+        // Aim both turrets at priority target
         {
             let aimX = ufo ? ufo.x : this.x;
             let aimY = ufo ? ufo.y : this.y - 100;
 
-            // Find nearest battle drone first, then harvester
-            let nearestDrone = null;
-            let nearestDroneDist = Infinity;
+            const centerX = this.x + this.width / 2;
+            let bestTarget = null;
+            let bestPriority = Infinity;
+            let bestDist = Infinity;
+
+            // Coordinator hunters flip priorities: coordinators (0) > drones (1,2)
+            const battlePriority = this.coordinatorHunter ? 2 : 0;
+            const harvesterPriority = this.coordinatorHunter ? 3 : 1;
+            const coordPriority = this.coordinatorHunter ? 0 : 2;
+
             for (const drone of activeDrones) {
                 if (!drone.alive || drone.state === 'FALLING') continue;
-                const centerX = this.x + this.width / 2;
                 const ddx = drone.x - centerX;
                 const ddy = drone.y - this.y;
                 const dist = Math.sqrt(ddx * ddx + ddy * ddy);
-                const priority = drone.type === 'battle' ? 0 : 1;
-                if (!nearestDrone || priority < (nearestDrone.type === 'battle' ? 0 : 1) || (priority === (nearestDrone.type === 'battle' ? 0 : 1) && dist < nearestDroneDist)) {
-                    nearestDrone = drone;
-                    nearestDroneDist = dist;
+                const priority = drone.type === 'battle' ? battlePriority : harvesterPriority;
+                if (priority < bestPriority || (priority === bestPriority && dist < bestDist)) {
+                    bestTarget = drone;
+                    bestPriority = priority;
+                    bestDist = dist;
                 }
             }
-            if (nearestDrone) { aimX = nearestDrone.x; aimY = nearestDrone.y; }
+            for (const coord of activeCoordinators) {
+                if (!coord.alive || coord.state === 'DEPLOYING' || coord.state === 'DYING') continue;
+                const ddx = coord.x - centerX;
+                const ddy = coord.y - this.y;
+                const dist = Math.sqrt(ddx * ddx + ddy * ddy);
+                if (coordPriority < bestPriority || (coordPriority === bestPriority && dist < bestDist)) {
+                    bestTarget = coord;
+                    bestPriority = coordPriority;
+                    bestDist = dist;
+                }
+            }
+            if (bestTarget) { aimX = bestTarget.x; aimY = bestTarget.y; }
+
+            // Tactical+: lead shots by predicting target movement
+            if (tier >= 1 && bestTarget) {
+                const targetVx = bestTarget.vx || 0;
+                const targetVy = bestTarget.vy || 0;
+                if (targetVx !== 0 || targetVy !== 0) {
+                    const dist = Math.hypot(aimX - centerX, aimY - this.y);
+                    const bulletSpeed = CONFIG.MISSILE_SPEED;
+                    const timeToHit = dist / bulletSpeed;
+                    aimX += targetVx * timeToHit;
+                    aimY += targetVy * timeToHit;
+                }
+            }
 
             const aimOffset = this.direction < 0 ? -30 : 30;
 
@@ -6322,9 +7002,6 @@ class HeavyTank {
 
         const img = getAssetImage('tank', this.animationOffset);
 
-        // Check if being targeted by turret
-        const isBeingLasered = ufo && ufo.turretTarget === this;
-
         // Apply grayed out effect if stunned, reddish tint if damaged
         if (this.isStunned || this.isDamaged) {
             ctx.save();
@@ -6352,26 +7029,6 @@ class HeavyTank {
 
         // Draw both turrets
         this.renderTurrets();
-
-        // Draw laser damage flash effect (flashes faster as health drops)
-        if (isBeingLasered) {
-            const healthPercent = this.health / this.maxHealth;
-            // Flash speed: 4 Hz at full health, up to 20 Hz near death
-            const flashSpeed = 4 + (1 - healthPercent) * 16;
-            const flash = Math.sin(Date.now() / 1000 * flashSpeed * Math.PI * 2);
-
-            if (flash > 0) {
-                ctx.save();
-                ctx.globalCompositeOperation = 'source-atop';
-                ctx.fillStyle = `rgba(255, 0, 0, ${0.3 + (1 - healthPercent) * 0.4})`;
-                ctx.fillRect(this.x, this.y, this.width, this.height);
-                ctx.restore();
-
-                // Also draw an overlay on top
-                ctx.fillStyle = `rgba(255, 50, 50, ${(0.2 + (1 - healthPercent) * 0.3) * flash})`;
-                ctx.fillRect(this.x, this.y, this.width, this.height);
-            }
-        }
 
         // Draw damage effects (smoke, cracks, fire)
         if (this.isDamaged) {
@@ -6545,11 +7202,16 @@ class HarvesterDrone {
         this.deathBeepPlayed = false;
         this.beamSoundTimer = 0;
         this.orbPhase = 0;
+        this.coordinator = null; // Set externally when spawned by HarvesterCoordinator
     }
 
     update(dt) {
         if (!this.alive) return;
-        this.energyTimer -= dt;
+        const drainRate = techFlags.energyEfficiency ? 0.7 : 1.0;
+        this.energyTimer -= drainRate * dt;
+        if (techFlags.selfSustainingGrid) {
+            this.energyTimer = Math.min(this.maxEnergy, this.energyTimer + 0.2 * dt);
+        }
         this.legPhase += dt * 6;
 
         if (this.energyTimer <= 5) {
@@ -6592,14 +7254,19 @@ class HarvesterDrone {
                 break;
             case 'SEEKING': {
                 let closestTarget = null, closestDist = Infinity;
-                // bc1: Smart drones skip claimed targets more aggressively
-                const smart = techFlags.smartDrones;
-                const speedMult = smart ? 1.5 : 1;
                 for (const t of targets) {
                     if (!t.alive || t.beingAbducted) continue;
                     let claimed = false;
                     for (const d of activeDrones) {
                         if (d !== this && d.type === 'harvester' && d.target === t) { claimed = true; break; }
+                    }
+                    if (!claimed) {
+                        for (const coord of activeCoordinators) {
+                            if (claimed) break;
+                            for (const d of coord.subDrones) {
+                                if (d !== this && d.type === 'harvester' && d.target === t) { claimed = true; break; }
+                            }
+                        }
                     }
                     if (claimed) continue;
                     const dx = (t.x + t.width / 2) - this.x;
@@ -6609,14 +7276,12 @@ class HarvesterDrone {
                     this.target = closestTarget;
                     const dx = (closestTarget.x + closestTarget.width / 2) - this.x;
                     this.direction = dx > 0 ? 1 : -1;
-                    this.x += this.direction * this.walkSpeed * speedMult * dt;
+                    this.x += this.direction * this.walkSpeed * dt;
                     this.x = Math.max(20, Math.min(canvas.width - 20, this.x));
                     if (Math.abs(dx) <= this.collectRange) { this.state = 'COLLECTING'; this.collectProgress = 0; }
                 } else {
                     this.target = null;
-                    // Smart drones patrol faster with less idle time
-                    const patrolMult = smart ? 0.8 : 0.5;
-                    this.x += this.patrolDirection * this.walkSpeed * patrolMult * dt;
+                    this.x += this.patrolDirection * this.walkSpeed * 0.5 * dt;
                     if (this.x < 40) { this.x = 40; this.patrolDirection = 1; }
                     if (this.x > canvas.width - 40) { this.x = canvas.width - 40; this.patrolDirection = -1; }
                     this.direction = this.patrolDirection;
@@ -6648,8 +7313,6 @@ class HarvesterDrone {
                     // Target becomes orb - start orb flight phase
                     this.target.harvestShake = 0; this.target.harvestShrink = 0;
                     this.target.alive = false;
-                    this.collectedTargets.push(this.target);
-                    this.batchCount++;
                     // Spawn orb-to-harvester particles
                     const tcx = this.target.x + this.target.width / 2;
                     const tcy = this.target.y + this.target.height / 2;
@@ -6660,14 +7323,40 @@ class HarvesterDrone {
                             (this.y - tcy) * 2 + (Math.random() - 0.5) * 30,
                             'rgb(0, 255, 255)', 3, 0.4));
                     }
-                    this.target = null;
-                    this.collectProgress = 0; this.orbPhase = 0;
-                    if (this.batchCount >= this.batchSize) { this.state = 'DELIVERING'; this.deliverTimer = 0; SFX.droneDeliver && SFX.droneDeliver(); }
-                    else { this.state = 'SEEKING'; }
+
+                    if (this.coordinator) {
+                        // Coordinator mode: award immediately, transfer BM to coordinator
+                        const mi = Math.min(combo, CONFIG.COMBO_MULTIPLIERS.length - 1);
+                        const mul = CONFIG.COMBO_MULTIPLIERS[mi];
+                        const pts = Math.floor(this.target.points * mul);
+                        score += pts; waveStats.points += pts;
+                        harvestCount[this.target.type]++; harvestBounce[this.target.type] = 1.0;
+                        waveStats.targetsBeamed[this.target.type]++; quotaProgress++; combo++;
+                        createFloatingText(this.x, this.y - 30, `+${pts}`, '#0f0', { fontSize: 14 });
+                        if (ufo) { ufo.health = Math.min(CONFIG.UFO_START_HEALTH, ufo.health + CONFIG.HEAL_PER_ABDUCTION); }
+                        if (score > highScore) { highScore = score; localStorage.setItem('alienAbductoramaHighScore', highScore); }
+                        // Transfer 1 BM to coordinator buffer
+                        this.coordinator.addBioMatter(1);
+                        // Spawn pulse orb traveling from drone to coordinator
+                        this.coordinator.spawnBmPulse(this.x, this.y - 20, this.coordinator.x, this.coordinator.y, 'drone-to-coord');
+                        this.target = null;
+                        this.collectProgress = 0; this.orbPhase = 0;
+                        this.state = 'SEEKING'; // No batching, go straight back to seeking
+                    } else {
+                        // Raw drone mode: batch collection
+                        this.collectedTargets.push(this.target);
+                        this.batchCount++;
+                        this.target = null;
+                        this.collectProgress = 0; this.orbPhase = 0;
+                        if (this.batchCount >= this.batchSize) { this.state = 'DELIVERING'; this.deliverTimer = 0; SFX.droneDeliver && SFX.droneDeliver(); }
+                        else { this.state = 'SEEKING'; }
+                    }
                 }
                 break;
             }
             case 'DELIVERING': {
+                // Coordinator-managed drones should never enter DELIVERING; bounce back
+                if (this.coordinator) { this.state = 'SEEKING'; break; }
                 this.deliverTimer += dt;
                 if (this.deliverTimer >= 1.5) {
                     let totalPoints = 0;
@@ -6847,7 +7536,7 @@ class HarvesterDrone {
             ctx.fillStyle = '#333'; ctx.fillRect(bx, by, bw, bh);
             ctx.fillStyle = ep > 0.3 ? '#0ff' : ep > 0.15 ? '#ff0' : '#f00';
             ctx.fillRect(bx, by, bw * ep, bh);
-            if (this.state !== 'UNFOLDING' && this.state !== 'LANDING') {
+            if (this.state !== 'UNFOLDING' && this.state !== 'LANDING' && !this.coordinator) {
                 ctx.fillStyle = '#fff'; ctx.font = 'bold 12px monospace'; ctx.textAlign = 'center';
                 ctx.fillText(`${this.batchCount}/${this.batchSize}`, cx, by - 4);
             }
@@ -6876,7 +7565,11 @@ class HarvesterDrone {
         }
     }
 
-    takeDamage(amount) { this.energyTimer -= amount; if (this.energyTimer <= 0) this.die(); }
+    takeDamage(amount) {
+        if (techFlags.droneArmor) amount *= 0.6;
+        this.energyTimer -= amount;
+        if (this.energyTimer <= 0) this.die();
+    }
 }
 
 class BattleDrone {
@@ -6894,11 +7587,17 @@ class BattleDrone {
         this.type = 'battle'; this.sparkTimer = 0; this.legPhase = 0;
         this.deathBeepPlayed = false;
         this.shootSoundTimer = 0;
+        this.coordinator = null; // Set externally when spawned by AttackCoordinator
     }
 
     update(dt) {
         if (!this.alive) return;
-        this.energyTimer -= dt; this.legPhase += dt * 8;
+        const drainRate = techFlags.energyEfficiency ? 0.7 : 1.0;
+        this.energyTimer -= drainRate * dt;
+        if (techFlags.selfSustainingGrid) {
+            this.energyTimer = Math.min(this.maxEnergy, this.energyTimer + 0.2 * dt);
+        }
+        this.legPhase += dt * 8;
 
         if (this.energyTimer <= 5) {
             this.sparkTimer += dt;
@@ -6951,42 +7650,17 @@ class BattleDrone {
                 let ct = null, cd = Infinity;
                 const allEnemies = [...tanks, ...heavyTanks].filter(t => t.alive);
 
-                if (techFlags.hiveMind) {
-                    // bc5: Hive Mind - coordinate to attack different tanks
-                    const claimedTargets = new Set();
-                    for (const d of activeDrones) {
-                        if (d !== this && d.type === 'battle' && d.target && d.target.alive) {
-                            claimedTargets.add(d.target);
-                        }
-                    }
-                    // Prefer unclaimed targets
-                    for (const t of allEnemies) {
-                        if (claimedTargets.has(t)) continue;
-                        const dx = Math.abs((t.x + t.width / 2) - this.x);
-                        if (dx < cd) { cd = dx; ct = t; }
-                    }
-                    // Fallback to any target if all are claimed
-                    if (!ct) {
-                        for (const t of allEnemies) {
-                            const dx = Math.abs((t.x + t.width / 2) - this.x);
-                            if (dx < cd) { cd = dx; ct = t; }
-                        }
-                    }
-                } else {
-                    for (const t of allEnemies) {
-                        const dx = Math.abs((t.x + t.width / 2) - this.x);
-                        if (dx < cd) { cd = dx; ct = t; }
-                    }
+                for (const t of allEnemies) {
+                    const dx = Math.abs((t.x + t.width / 2) - this.x);
+                    if (dx < cd) { cd = dx; ct = t; }
                 }
 
-                // bc1: Smart drones move faster
-                const speedMult = techFlags.smartDrones ? 1.5 : 1;
                 if (ct) {
                     this.target = ct;
                     const dx = (ct.x + ct.width / 2) - this.x;
                     this.direction = dx > 0 ? 1 : -1;
                     if (Math.abs(dx) > this.attackRange) {
-                        this.x += this.direction * this.walkSpeed * speedMult * dt;
+                        this.x += this.direction * this.walkSpeed * dt;
                         this.x = Math.max(20, Math.min(canvas.width - 20, this.x));
                     } else { this.state = 'ATTACKING'; }
                 } else { this.target = null; this.state = 'PATROLLING'; }
@@ -7114,30 +7788,873 @@ class BattleDrone {
         }
     }
 
-    takeDamage(amount) { this.energyTimer -= amount; if (this.energyTimer <= 0) this.die(); }
+    takeDamage(amount) {
+        if (techFlags.droneArmor) amount *= 0.6;
+        this.energyTimer -= amount;
+        if (this.energyTimer <= 0) this.die();
+    }
+}
+
+// --- Coordinator classes ---
+
+class Coordinator {
+    constructor(x, y, type) {
+        this.x = x;
+        this.y = y;
+        this.type = type; // 'harvester' or 'attack'
+        this.alive = true;
+        this.state = 'DEPLOYING'; // DEPLOYING, ACTIVE, LOW_ENERGY, DYING
+
+        // Energy
+        this.maxEnergy = 15; // 15 second timer
+        this.energyTimer = this.maxEnergy;
+
+        // Hover target: ~40% from top of canvas
+        this.targetY = canvas.height * 0.40;
+        this.deploySpeed = 150; // pixels per second during deploy descent
+
+        // Lazy follow UFO
+        this.followLag = 0.5; // How slowly it follows (lower = laggier)
+
+        // Bobbing motion
+        this.bobPhase = Math.random() * Math.PI * 2;
+        this.bobSpeed = 1.5 + Math.random() * 0.5;
+        this.bobAmpY = 8 + Math.random() * 4;
+        this.bobAmpX = 4 + Math.random() * 2;
+
+        // Visual
+        this.spinAngle = Math.random() * Math.PI * 2;
+        this.spinSpeed = 1.2; // radians per second
+        this.glowPulse = 0;
+        this.width = 48; // 1.5x drone size roughly
+        this.height = 56; // slightly elongated vertically
+
+        // Shield (from DN3 Shield Transfer)
+        this.shieldCharge = techFlags.shieldTransfer ? 1 : 0;
+        this.shieldRegenTimer = 0;
+        this.shieldRegenTime = 30; // seconds to regen shield
+
+        // Sub-drones
+        this.subDrones = [];
+        this.maxSubDrones = techFlags.fleetExpansion ? 5 : 3;
+        this.redeployTimers = []; // timers for destroyed sub-drones awaiting redeploy
+        this.redeployDelay = techFlags.autonomousSwarm ? 0 : (techFlags.fleetResilience ? 1.5 : 3.0);
+
+        // Deploy animation
+        this.deployProgress = 0;
+        this.unfoldProgress = 0;
+
+        // Dying fall state
+        this.dyingTimer = 0;
+        this.dyingVy = 0;
+        this.dyingTilt = 0;
+        this.dyingTiltSpeed = 0;
+        this.dyingTiltDir = 0;
+        this.dyingSmokeTimer = 0;
+
+        // BM pulse orbs traveling along tether lines
+        this.bmPulses = []; // { fromX, fromY, toX, toY, progress, duration, type: 'drone-to-coord' | 'coord-to-ufo' }
+    }
+
+    spawnBmPulse(fromX, fromY, toX, toY, type) {
+        this.bmPulses.push({
+            fromX, fromY, toX, toY,
+            progress: 0,
+            duration: type === 'drone-to-coord' ? 0.4 : 0.5,
+            type
+        });
+    }
+
+    updateBmPulses(dt) {
+        for (let i = this.bmPulses.length - 1; i >= 0; i--) {
+            const p = this.bmPulses[i];
+            p.progress += dt / p.duration;
+            if (p.progress >= 1) {
+                // Pulse arrived — play sound and spawn a little flash
+                if (p.type === 'drone-to-coord') {
+                    SFX.droneDeliver && SFX.droneDeliver();
+                    // Small flash at coordinator
+                    particles.push(new Particle(this.x, this.y,
+                        0, 0, 'rgb(0, 255, 200)', 6, 0.25));
+                } else if (p.type === 'coord-to-ufo' && ufo) {
+                    SFX.droneOrbReceive && SFX.droneOrbReceive();
+                    // Small flash at UFO
+                    particles.push(new Particle(ufo.x, ufo.y + ufo.height / 2,
+                        0, 0, 'rgb(0, 255, 255)', 8, 0.3));
+                }
+                this.bmPulses.splice(i, 1);
+            }
+        }
+    }
+
+    update(dt) {
+        if (!this.alive) return;
+
+        this.updateBmPulses(dt);
+        this.spinAngle += this.spinSpeed * dt;
+        this.glowPulse += dt * 3;
+
+        switch (this.state) {
+            case 'DEPLOYING':
+                // Descend to hover altitude
+                this.y += this.deploySpeed * dt;
+                if (this.y >= this.targetY) {
+                    this.y = this.targetY;
+                    this.state = 'ACTIVE';
+                    this.spawnSubDrones();
+                }
+                break;
+
+            case 'ACTIVE':
+            case 'LOW_ENERGY':
+                // Bobbing motion
+                this.bobPhase += this.bobSpeed * dt;
+
+                // Lazy follow UFO horizontally with spacing offset
+                if (ufo) {
+                    // Offset so coordinators don't stack — harvester left, attack right
+                    const spacing = 70;
+                    const offsetX = this.type === 'harvester' ? -spacing : spacing;
+                    const targetX = ufo.x + offsetX + Math.sin(this.bobPhase * 0.7) * this.bobAmpX;
+                    const dx = targetX - this.x;
+                    this.x += dx * this.followLag * dt;
+                }
+
+                // Bob vertically around target altitude
+                this.y = this.targetY + Math.sin(this.bobPhase) * this.bobAmpY;
+
+                // Energy drain
+                let drainRate = 1.0; // 1 energy per second (15s total)
+                if (techFlags.energyEfficiency) drainRate *= 0.7; // 30% reduction
+                this.energyTimer -= drainRate * dt;
+
+                // Self-sustaining grid passive regen
+                if (techFlags.selfSustainingGrid) {
+                    this.energyTimer = Math.min(this.maxEnergy, this.energyTimer + 0.2 * dt);
+                }
+
+                // Low energy check
+                if (this.energyTimer <= this.maxEnergy * 0.25 && this.state !== 'LOW_ENERGY') {
+                    this.state = 'LOW_ENERGY';
+                }
+                if (this.energyTimer > this.maxEnergy * 0.25 && this.state === 'LOW_ENERGY') {
+                    this.state = 'ACTIVE'; // recovered
+                }
+
+                // Sinking when low energy (raise targetY so it drifts down)
+                if (this.state === 'LOW_ENERGY') {
+                    this.targetY += 15 * dt;
+                }
+
+                // Death at 0 energy
+                if (this.energyTimer <= 0) {
+                    this.state = 'DYING';
+                    this.energyTimer = 0;
+                }
+
+                // Shield regeneration
+                if (techFlags.shieldTransfer && this.shieldCharge <= 0) {
+                    this.shieldRegenTimer += dt;
+                    const regenTime = techFlags.fleetResilience ? 15 : 30;
+                    if (this.shieldRegenTimer >= regenTime) {
+                        this.shieldCharge = 1;
+                        this.shieldRegenTimer = 0;
+                    }
+                }
+
+                // Update sub-drones
+                this.updateSubDrones(dt);
+
+                // Handle redeploy timers
+                this.updateRedeployTimers(dt);
+
+                break;
+
+            case 'DYING':
+                this.dyingTimer += dt;
+
+                // Pick tilt direction once
+                if (this.dyingTiltDir === 0) {
+                    this.dyingTiltDir = Math.random() < 0.5 ? -1 : 1;
+                }
+
+                if (this.dyingTimer < 0.6) {
+                    // Phase 1: Sag — slow drift down, slight tilt beginning
+                    this.dyingVy += 40 * dt;
+                    this.dyingTiltSpeed += 0.3 * dt;
+                } else {
+                    // Phase 2: Full tumble — gravity, accelerating spin
+                    this.dyingVy += 800 * dt;
+                    this.dyingTiltSpeed += 8 * dt;
+                }
+
+                this.y += this.dyingVy * dt;
+                this.dyingTilt += this.dyingTiltDir * this.dyingTiltSpeed * dt;
+
+                // Smoke and spark trail
+                this.dyingSmokeTimer += dt;
+                if (this.dyingSmokeTimer >= 0.04) {
+                    this.dyingSmokeTimer = 0;
+                    // Smoke puff
+                    particles.push(new Particle(
+                        this.x + (Math.random() - 0.5) * 20,
+                        this.y + (Math.random() - 0.5) * 10,
+                        (Math.random() - 0.5) * 40,
+                        -30 - Math.random() * 40,
+                        `rgba(${80 + Math.random() * 60}, ${80 + Math.random() * 60}, ${80 + Math.random() * 60}, 1)`,
+                        4 + Math.random() * 4, 0.5 + Math.random() * 0.3
+                    ));
+                    // Sparks
+                    if (Math.random() < 0.5) {
+                        const isHarv = this.type === 'harvester';
+                        const sparkColor = isHarv ?
+                            `rgb(0, ${180 + Math.random() * 75}, ${80 + Math.random() * 70})` :
+                            `rgb(255, ${80 + Math.random() * 120}, ${Math.random() * 50})`;
+                        particles.push(new Particle(
+                            this.x + (Math.random() - 0.5) * 20,
+                            this.y + (Math.random() - 0.5) * 10,
+                            (Math.random() - 0.5) * 100,
+                            -50 - Math.random() * 80,
+                            sparkColor, 2, 0.3
+                        ));
+                    }
+                }
+
+                const dyingGroundY = canvas.height - 60;
+                if (this.y >= dyingGroundY) {
+                    this.explode();
+                }
+                break;
+        }
+    }
+
+    // Recharge energy from beam
+    rechargeEnergy(amount) {
+        this.energyTimer = Math.min(this.maxEnergy, this.energyTimer + amount);
+        if (this.state === 'LOW_ENERGY' && this.energyTimer > this.maxEnergy * 0.25) {
+            this.state = 'ACTIVE';
+            // Float back up to original hover altitude
+            this.targetY = canvas.height * 0.40;
+        }
+    }
+
+    takeDamage(amount) {
+        // Shield absorbs first hit
+        if (this.shieldCharge > 0) {
+            this.shieldCharge = 0;
+            this.shieldRegenTimer = 0;
+            createFloatingText(this.x, this.y - 30, 'SHIELD!', '#0ff');
+            return;
+        }
+
+        // Drone armor reduces damage
+        if (techFlags.droneArmor) amount *= 0.6;
+
+        this.energyTimer -= amount;
+        if (this.energyTimer <= 0) {
+            this.state = 'DYING';
+            this.energyTimer = 0;
+        }
+    }
+
+    explode() {
+        this.alive = false;
+        screenShake = 1.2;
+
+        // Kill all sub-drones
+        for (const drone of this.subDrones) {
+            if (drone.alive) drone.die();
+        }
+        this.subDrones = [];
+
+        // Damage nearby entities in larger blast radius
+        const blastRadius = 150;
+        // Damage tanks
+        for (const tank of [...tanks, ...heavyTanks]) {
+            if (!tank.alive) continue;
+            const dist = Math.hypot(tank.x + tank.width/2 - this.x, tank.y + tank.height/2 - this.y);
+            if (dist < blastRadius) {
+                tank.takeDamage(30);
+            }
+        }
+        // Damage targets
+        for (const target of targets) {
+            if (!target.alive) continue;
+            const dist = Math.hypot(target.x + target.width/2 - this.x, target.y + target.height/2 - this.y);
+            if (dist < blastRadius) {
+                target.blastAway(this.x, this.y);
+            }
+        }
+
+        const isHarv = this.type === 'harvester';
+
+        // Big central flash explosion
+        createExplosion(this.x, this.y, 'large');
+
+        // Secondary explosions around impact point
+        for (let i = 0; i < 4; i++) {
+            const delay = 50 + Math.random() * 200;
+            const ox = (Math.random() - 0.5) * 100;
+            const oy = (Math.random() - 0.5) * 60;
+            setTimeout(() => {
+                createExplosion(this.x + ox, this.y + oy, 'medium');
+                screenShake = Math.max(screenShake, 0.5);
+            }, delay);
+        }
+
+        // Ring 1: fast hot core particles
+        for (let i = 0; i < 25; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 200 + Math.random() * 250;
+            const color = isHarv ?
+                `rgb(${Math.random() * 50}, 255, ${120 + Math.random() * 135})` :
+                `rgb(255, ${150 + Math.random() * 105}, ${Math.random() * 80})`;
+            particles.push(new Particle(this.x, this.y,
+                Math.cos(angle) * speed, Math.sin(angle) * speed,
+                color, 4 + Math.random() * 3, 0.6 + Math.random() * 0.3));
+        }
+
+        // Ring 2: slower debris chunks
+        for (let i = 0; i < 20; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 60 + Math.random() * 120;
+            const gray = 40 + Math.random() * 80;
+            particles.push(new Particle(this.x, this.y,
+                Math.cos(angle) * speed, Math.sin(angle) * speed - 30,
+                `rgb(${gray}, ${gray}, ${gray})`, 3 + Math.random() * 4, 0.8 + Math.random() * 0.5));
+        }
+
+        // Ring 3: bright energy sparks
+        for (let i = 0; i < 15; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 300 + Math.random() * 200;
+            const color = isHarv ? '#0ff' : '#ff0';
+            particles.push(new Particle(this.x, this.y,
+                Math.cos(angle) * speed, Math.sin(angle) * speed,
+                color, 1.5 + Math.random(), 0.3 + Math.random() * 0.2));
+        }
+
+        // Ground dust cloud (explosion hits ground)
+        const groundY = canvas.height - 60;
+        for (let i = 0; i < 12; i++) {
+            const ox = (Math.random() - 0.5) * 140;
+            particles.push(new Particle(this.x + ox, groundY,
+                ox * 2, -20 - Math.random() * 40,
+                `rgba(139, 90, 43, 1)`, 5 + Math.random() * 4, 0.6 + Math.random() * 0.4));
+        }
+
+        SFX.explosion(true);
+    }
+
+    spawnSubDrones() {
+        // Override in subclasses
+    }
+
+    updateSubDrones(dt) {
+        for (const drone of this.subDrones) {
+            if (drone.alive) drone.update(dt);
+        }
+        // Check for dead sub-drones, start redeploy timer
+        this.subDrones = this.subDrones.filter(d => {
+            if (!d.alive) {
+                this.redeployTimers.push(this.redeployDelay);
+                return false;
+            }
+            return true;
+        });
+    }
+
+    updateRedeployTimers(dt) {
+        for (let i = this.redeployTimers.length - 1; i >= 0; i--) {
+            this.redeployTimers[i] -= dt;
+            if (this.redeployTimers[i] <= 0) {
+                this.redeployTimers.splice(i, 1);
+                if (this.subDrones.length < this.maxSubDrones) {
+                    this.spawnSingleSubDrone();
+                }
+            }
+        }
+    }
+
+    spawnSingleSubDrone() {
+        // Override in subclasses
+    }
+
+    render() {
+        if (!this.alive) return;
+
+        const cx = this.x;
+        const cy = this.y;
+        const energyPct = this.energyTimer / this.maxEnergy;
+
+        // Glow color based on type
+        const isHarvester = this.type === 'harvester';
+        const baseR = isHarvester ? 0 : 255;
+        const baseG = isHarvester ? 220 : 120;
+        const baseB = isHarvester ? 100 : 30;
+
+        // Glow intensity tied to energy
+        const glowIntensity = energyPct * (0.5 + Math.sin(this.glowPulse) * 0.2);
+
+        // Flicker when low energy
+        const flickerAlpha = this.state === 'LOW_ENERGY' ?
+            (Math.sin(Date.now() / 50) > 0 ? 0.3 : 0.8) : 1.0;
+
+        ctx.save();
+        ctx.translate(cx, cy);
+
+        // Dying tilt
+        if (this.state === 'DYING') {
+            ctx.rotate(this.dyingTilt);
+        }
+
+        // Deploy animation
+        if (this.state === 'DEPLOYING') {
+            ctx.globalAlpha = 0.7;
+        }
+
+        // Outer glow
+        ctx.globalAlpha *= glowIntensity * flickerAlpha * 0.3;
+        ctx.fillStyle = `rgb(${baseR}, ${baseG}, ${baseB})`;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, this.width * 0.8, this.height * 0.8, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Main body (ellipsoid, slightly elongated vertically)
+        ctx.globalAlpha = flickerAlpha;
+        ctx.fillStyle = '#333';
+        ctx.strokeStyle = `rgb(${baseR}, ${baseG}, ${baseB})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, this.width / 2, this.height / 2, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Inner detail - spinning ring
+        ctx.strokeStyle = `rgba(${baseR}, ${baseG}, ${baseB}, ${glowIntensity * flickerAlpha})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, this.width * 0.35, this.height * 0.2, this.spinAngle, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Center glow dot
+        ctx.fillStyle = `rgba(${baseR}, ${baseG}, ${baseB}, ${glowIntensity * flickerAlpha * 1.5})`;
+        ctx.beginPath();
+        ctx.arc(0, 0, 6, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Shield indicator
+        if (this.shieldCharge > 0) {
+            ctx.strokeStyle = `rgba(0, 200, 255, ${0.4 + Math.sin(this.glowPulse * 0.5) * 0.2})`;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.ellipse(0, 0, this.width * 0.65, this.height * 0.65, 0, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
+        ctx.restore();
+
+        // Energy bar above coordinator
+        if (this.state !== 'DEPLOYING') {
+            const bw = 40, bh = 4;
+            const bx = cx - bw / 2, by = cy - this.height / 2 - 10;
+            ctx.fillStyle = '#333';
+            ctx.fillRect(bx, by, bw, bh);
+            const barColor = energyPct > 0.5 ? (isHarvester ? '#0f8' : '#f80') :
+                             energyPct > 0.25 ? '#ff0' : '#f00';
+            ctx.fillStyle = barColor;
+            ctx.fillRect(bx, by, bw * energyPct, bh);
+        }
+
+        // Radio control signal line from UFO to coordinator
+        if (ufo && this.state !== 'DEPLOYING' && this.state !== 'DYING') {
+            const ux = ufo.x;
+            const uy = ufo.y + ufo.height / 2;
+            const dx = cx - ux;
+            const dy = cy - uy;
+            const lineLen = Math.sqrt(dx * dx + dy * dy);
+            if (lineLen > 1) {
+                const now = Date.now() / 1000;
+                const segments = 60;
+                const perpX = -dy / lineLen;
+                const perpY = dx / lineLen;
+
+                // Soft base line (dim, wide)
+                ctx.save();
+                ctx.globalAlpha = 0.08;
+                ctx.strokeStyle = `rgb(${baseR}, ${baseG}, ${baseB})`;
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.moveTo(ux, uy);
+                ctx.lineTo(cx, cy - this.height / 2);
+                ctx.stroke();
+                ctx.restore();
+
+                // FM radio signal wave — multiple layered frequencies
+                ctx.save();
+                ctx.lineCap = 'round';
+
+                // Layer 1: slow carrier wave
+                ctx.globalAlpha = 0.15;
+                ctx.strokeStyle = `rgb(${baseR}, ${baseG}, ${baseB})`;
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                for (let i = 0; i <= segments; i++) {
+                    const t = i / segments;
+                    const bx = ux + dx * t;
+                    const by = uy + (cy - this.height / 2 - uy) * t;
+                    // Carrier: slow sine
+                    const carrier = Math.sin(t * Math.PI * 4 + now * 2) * 6;
+                    // Modulator: faster chattery signal
+                    const mod = Math.sin(t * Math.PI * 12 + now * 7) * 3;
+                    // Noise burst: intermittent chatter
+                    const noise = Math.sin(t * 47 + now * 13) * Math.sin(t * 23 + now * 5) * 4;
+                    const offset = carrier + mod + noise;
+                    const px = bx + perpX * offset;
+                    const py = by + perpY * offset;
+                    if (i === 0) ctx.moveTo(px, py);
+                    else ctx.lineTo(px, py);
+                }
+                ctx.stroke();
+
+                // Layer 2: fast data bursts — brighter, thinner
+                ctx.globalAlpha = 0.25;
+                ctx.lineWidth = 0.8;
+                ctx.beginPath();
+                for (let i = 0; i <= segments; i++) {
+                    const t = i / segments;
+                    const bx = ux + dx * t;
+                    const by = uy + (cy - this.height / 2 - uy) * t;
+                    // High-freq data signal
+                    const data = Math.sin(t * Math.PI * 20 + now * 15) * 2;
+                    // FM modulation — frequency varies along the line
+                    const fm = Math.sin(t * Math.PI * 8 + now * 4 + Math.sin(now * 3 + t * 6) * 3) * 3.5;
+                    // Packet bursts — intermittent activity zones
+                    const burstEnv = Math.max(0, Math.sin(t * Math.PI * 3 + now * 1.5)) ** 3;
+                    const offset = (data + fm) * (0.3 + burstEnv * 0.7);
+                    const px = bx + perpX * offset;
+                    const py = by + perpY * offset;
+                    if (i === 0) ctx.moveTo(px, py);
+                    else ctx.lineTo(px, py);
+                }
+                ctx.stroke();
+
+                // Layer 3: bright pulsing data packets traveling down the line
+                ctx.globalAlpha = 0.4;
+                ctx.fillStyle = `rgb(${Math.min(255, baseR + 100)}, ${Math.min(255, baseG + 100)}, ${Math.min(255, baseB + 100)})`;
+                for (let p = 0; p < 3; p++) {
+                    const packetT = ((now * 1.2 + p * 0.33) % 1);
+                    const bx = ux + dx * packetT;
+                    const by = uy + (cy - this.height / 2 - uy) * packetT;
+                    const packetPulse = 0.5 + Math.sin(now * 10 + p * 2) * 0.5;
+                    const pr = 2 + packetPulse * 1.5;
+                    ctx.beginPath();
+                    ctx.arc(bx, by, pr, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                ctx.restore();
+            }
+        }
+
+        // Tether lines to sub-drones
+        for (const drone of this.subDrones) {
+            if (!drone.alive) continue;
+            ctx.strokeStyle = `rgba(${baseR}, ${baseG}, ${baseB}, 0.2)`;
+            ctx.lineWidth = 1;
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.moveTo(cx, cy + this.height / 2);
+            ctx.lineTo(drone.x, drone.y - 10);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        // Render BM pulse orbs along tether lines
+        for (const p of this.bmPulses) {
+            const t = p.progress;
+            // Lerp position along the line
+            let px, py;
+            if (p.type === 'drone-to-coord') {
+                px = p.fromX + (cx - p.fromX) * t;
+                py = p.fromY + ((cy + this.height / 2) - p.fromY) * t;
+            } else {
+                px = p.fromX + (p.toX - p.fromX) * t;
+                py = p.fromY + (p.toY - p.fromY) * t;
+            }
+
+            // Pulsing glow radius
+            const pulse = 1 + Math.sin(t * Math.PI * 4) * 0.3;
+            const radius = 4 * pulse;
+            const alpha = 0.8 - t * 0.3;
+
+            // Outer glow
+            ctx.save();
+            ctx.globalAlpha = alpha * 0.4;
+            ctx.fillStyle = isHarvester ? 'rgb(0, 255, 200)' : 'rgb(255, 150, 50)';
+            ctx.beginPath();
+            ctx.arc(px, py, radius * 2.5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Core circle
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = isHarvester ? 'rgb(150, 255, 230)' : 'rgb(255, 220, 150)';
+            ctx.beginPath();
+            ctx.arc(px, py, radius, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Bright center
+            ctx.globalAlpha = alpha * 1.2;
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(px, py, radius * 0.4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+
+        // Render sub-drones
+        for (const drone of this.subDrones) {
+            if (drone.alive) drone.render();
+        }
+    }
+}
+
+class HarvesterCoordinator extends Coordinator {
+    constructor(x, y) {
+        super(x, y, 'harvester');
+        this.bioMatterBuffer = 0; // Accumulated BM from sub-drones
+        this.streamTimer = 0; // Timer for streaming BM to UFO
+        this.streamInterval = 2.0; // Stream to UFO every 2 seconds
+        this.streamParticleTimer = 0; // Visual particle timer
+    }
+
+    addBioMatter(amount) {
+        this.bioMatterBuffer += amount;
+    }
+
+    update(dt) {
+        super.update(dt); // Call base Coordinator update
+
+        // Stream accumulated biomatter to UFO periodically
+        if (this.bioMatterBuffer > 0 && (this.state === 'ACTIVE' || this.state === 'LOW_ENERGY')) {
+            this.streamTimer += dt;
+            if (this.streamTimer >= this.streamInterval) {
+                this.streamTimer = 0;
+                const bmToSend = this.bioMatterBuffer;
+                this.bioMatterBuffer = 0;
+                bioMatter += bmToSend;
+                waveStats.bioMatterEarned += bmToSend;
+                waveStats.droneHarvests++;
+                createFloatingText(this.x, this.y - 40, `+${bmToSend} BM`, '#4f4', { fontSize: 18 });
+                // Spawn pulse orb traveling from coordinator to UFO (sound plays on arrival)
+                if (ufo) {
+                    this.spawnBmPulse(this.x, this.y - this.height / 2, ufo.x, ufo.y + ufo.height / 2, 'coord-to-ufo');
+                }
+            }
+        }
+
+        // Visual stream particles going up to UFO
+        if (this.bioMatterBuffer > 0 && ufo && (this.state === 'ACTIVE' || this.state === 'LOW_ENERGY')) {
+            this.streamParticleTimer += dt;
+            if (this.streamParticleTimer > 0.15) {
+                this.streamParticleTimer = 0;
+                const px = this.x + (Math.random() - 0.5) * 10;
+                const py = this.y - this.height / 2;
+                particles.push(new Particle(px, py,
+                    (ufo.x - px) * 0.5, (ufo.y - py) * 0.8,
+                    'rgb(0, 255, 200)', 3, 0.6));
+            }
+        }
+    }
+
+    render() {
+        super.render(); // Call base Coordinator render (includes tethers, energy bar, sub-drones)
+
+        // Biomatter stream beam from coordinator to UFO
+        if (this.bioMatterBuffer > 0 && ufo && (this.state === 'ACTIVE' || this.state === 'LOW_ENERGY')) {
+            const alpha = 0.15 + Math.sin(this.glowPulse * 2) * 0.05;
+            ctx.strokeStyle = `rgba(0, 255, 180, ${alpha})`;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(this.x, this.y - this.height / 2);
+            ctx.lineTo(ufo.x, ufo.y + ufo.height / 2);
+            ctx.stroke();
+
+            // Brighter inner beam
+            ctx.strokeStyle = `rgba(0, 255, 220, ${alpha * 1.5})`;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(this.x, this.y - this.height / 2);
+            ctx.lineTo(ufo.x, ufo.y + ufo.height / 2);
+            ctx.stroke();
+        }
+    }
+
+    spawnSubDrones() {
+        for (let i = 0; i < this.maxSubDrones; i++) {
+            this.spawnSingleSubDrone();
+        }
+    }
+
+    spawnSingleSubDrone() {
+        if (this.subDrones.length >= this.maxSubDrones) return;
+        const drone = new HarvesterDrone(this.x, this.y);
+        drone.coordinator = this;
+        this.subDrones.push(drone);
+    }
+}
+
+class AttackCoordinator extends Coordinator {
+    constructor(x, y) {
+        super(x, y, 'attack');
+        this.bombTimer = 0;       // Cooldown between bomb drops
+        this.bombInterval = 4.0;  // Drop a bomb every 4 seconds
+        this.missileTimer = 0;    // Cooldown between missile salvos
+        this.missileInterval = 8.0; // Fire missiles every 8 seconds
+    }
+
+    update(dt) {
+        super.update(dt);
+
+        if (this.state !== 'ACTIVE' && this.state !== 'LOW_ENERGY') return;
+
+        // Auto-fire weapons
+        this.bombTimer += dt;
+        this.missileTimer += dt;
+
+        // Auto-drop bombs at tank clusters
+        if (this.bombTimer >= this.bombInterval && playerInventory.bombs > 0) {
+            const target = this.findBombTarget();
+            if (target) {
+                this.autoBomb(target);
+                this.bombTimer = 0;
+            }
+        }
+
+        // Auto-fire missiles when full salvo ready
+        if (this.missileTimer >= this.missileInterval && missileUnlocked && missileAmmo >= missileMaxAmmo) {
+            const hasTanks = [...tanks, ...heavyTanks].some(t => t.alive);
+            if (hasTanks) {
+                this.autoMissile();
+                this.missileTimer = 0;
+            }
+        }
+    }
+
+    findBombTarget() {
+        const aliveTanks = [...tanks, ...heavyTanks].filter(t => t.alive);
+        if (aliveTanks.length === 0) return null;
+
+        // Score positions by number of tanks within blast radius
+        let bestTarget = null;
+        let bestScore = 0;
+        const blastRadius = CONFIG.BOMB_BLAST_TIERS[bombBlastTier] || 120;
+
+        for (const tank of aliveTanks) {
+            const tx = tank.x + tank.width / 2;
+            let score = 0;
+            for (const other of aliveTanks) {
+                const ox = other.x + other.width / 2;
+                if (Math.abs(tx - ox) < blastRadius) {
+                    score++;
+                    if (other.constructor.name === 'HeavyTank') score += 0.5;
+                }
+            }
+            if (score > bestScore) {
+                bestScore = score;
+                bestTarget = { x: tx, y: tank.y + tank.height / 2 };
+            }
+        }
+
+        return bestTarget;
+    }
+
+    autoBomb(target) {
+        playerInventory.bombs--;
+        if (playerInventory.bombs < playerInventory.maxBombs) {
+            playerInventory.bombRechargeTimers.push(CONFIG.BOMB_RECHARGE_TIME);
+        }
+        // Create bomb from coordinator position with velocity aimed at target
+        const dx = target.x - this.x;
+        const vx = dx * 0.3;
+        bombs.push(new Bomb(this.x, this.y, vx));
+        SFX.bombDrop && SFX.bombDrop();
+        createFloatingText(this.x, this.y + 30, 'AUTO BOMB!', '#ff8800');
+    }
+
+    autoMissile() {
+        fireMissileSwarm();
+        createFloatingText(this.x, this.y + 30, 'AUTO MISSILES!', '#f44');
+    }
+
+    render() {
+        super.render();
+
+        // Visual: weapon ready indicators
+        if (this.state === 'ACTIVE' || this.state === 'LOW_ENERGY') {
+            const cx = this.x;
+            const cy = this.y;
+
+            // Bomb ready indicator (small orange dot)
+            if (playerInventory.bombs > 0 && this.bombTimer >= this.bombInterval * 0.8) {
+                const readyAlpha = 0.4 + Math.sin(this.glowPulse * 3) * 0.3;
+                ctx.fillStyle = `rgba(255, 136, 0, ${readyAlpha})`;
+                ctx.beginPath();
+                ctx.arc(cx - 15, cy + this.height / 2 + 8, 4, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Missile ready indicator (small red dot)
+            if (missileUnlocked && missileAmmo >= missileMaxAmmo && this.missileTimer >= this.missileInterval * 0.8) {
+                const readyAlpha = 0.4 + Math.sin(this.glowPulse * 3) * 0.3;
+                ctx.fillStyle = `rgba(255, 50, 50, ${readyAlpha})`;
+                ctx.beginPath();
+                ctx.arc(cx + 15, cy + this.height / 2 + 8, 4, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+    }
+
+    spawnSubDrones() {
+        for (let i = 0; i < this.maxSubDrones; i++) {
+            this.spawnSingleSubDrone();
+        }
+    }
+
+    spawnSingleSubDrone() {
+        if (this.subDrones.length >= this.maxSubDrones) return;
+        const drone = new BattleDrone(this.x, this.y);
+        drone.coordinator = this;
+        this.subDrones.push(drone);
+    }
 }
 
 // --- Drone deployment functions ---
 
 function deployHarvesterDrone() {
     if (!harvesterUnlocked || !ufo) return;
+
+    // Deploy coordinator instead if tech is researched
+    if (techFlags.harvesterCoordinator) {
+        const maxCoords = techFlags.fleetExpansion ? 2 : 1;
+        const harvCoords = activeCoordinators.filter(c => c.type === 'harvester' && c.alive).length;
+        if (harvCoords >= maxCoords) { createFloatingText(ufo.x, ufo.y + 60, 'MAX COORDINATORS!', '#f44'); return; }
+        if (droneCooldownTimer > 0) { createFloatingText(ufo.x, ufo.y + 60, 'COOLDOWN!', '#ff0'); return; }
+        if (ufo.energy < CONFIG.DRONE_ENERGY_COST) { createFloatingText(ufo.x, ufo.y + 60, 'LOW ENERGY!', '#f44'); return; }
+        ufo.energy -= CONFIG.DRONE_ENERGY_COST;
+        const coord = new HarvesterCoordinator(ufo.x, ufo.y + ufo.height / 2);
+        activeCoordinators.push(coord);
+        droneCooldownTimer = DRONE_DEPLOY_COOLDOWN;
+        SFX.droneDeploy && SFX.droneDeploy('harvester');
+        createFloatingText(ufo.x, ufo.y + 50, 'HARVESTER COORD!', '#0ff');
+        return;
+    }
+
     if (activeDrones.length >= droneSlots) { createFloatingText(ufo.x, ufo.y + 60, 'NO DRONE SLOTS!', '#f44'); return; }
     if (droneCooldownTimer > 0) { createFloatingText(ufo.x, ufo.y + 60, 'COOLDOWN!', '#ff0'); return; }
     if (ufo.energy < CONFIG.DRONE_ENERGY_COST) { createFloatingText(ufo.x, ufo.y + 60, 'LOW ENERGY!', '#f44'); return; }
     ufo.energy -= CONFIG.DRONE_ENERGY_COST;
     const drone = new HarvesterDrone(ufo.x, ufo.y + ufo.height / 2);
-    // bc4: Harvest Protocol - apply boost to new harvesters
-    if (techFlags.harvestBoost) {
-        drone.collectTime *= 0.5;
-        drone.batchSize += 2;
-    }
-    if (techFlags.instantDeploy) {
-        // sn5: Guild Navigator - deploy instantly at ground level
-        drone.y = drone.groundY;
-        drone.vy = 0;
-        drone.state = 'SEEKING';
-        drone.unfoldProgress = 1;
-    }
     activeDrones.push(drone);
     droneCooldownTimer = DRONE_DEPLOY_COOLDOWN;
     SFX.droneDeploy && SFX.droneDeploy('harvester');
@@ -7146,18 +8663,28 @@ function deployHarvesterDrone() {
 
 function deployBattleDrone() {
     if (!battleDroneUnlocked || !ufo) return;
+
+    // Deploy coordinator instead if tech is researched
+    if (techFlags.attackCoordinator) {
+        const maxCoords = techFlags.fleetExpansion ? 2 : 1;
+        const atkCoords = activeCoordinators.filter(c => c.type === 'attack' && c.alive).length;
+        if (atkCoords >= maxCoords) { createFloatingText(ufo.x, ufo.y + 60, 'MAX COORDINATORS!', '#f44'); return; }
+        if (droneCooldownTimer > 0) { createFloatingText(ufo.x, ufo.y + 60, 'COOLDOWN!', '#ff0'); return; }
+        if (ufo.energy < CONFIG.DRONE_ENERGY_COST) { createFloatingText(ufo.x, ufo.y + 60, 'LOW ENERGY!', '#f44'); return; }
+        ufo.energy -= CONFIG.DRONE_ENERGY_COST;
+        const coord = new AttackCoordinator(ufo.x, ufo.y + ufo.height / 2);
+        activeCoordinators.push(coord);
+        droneCooldownTimer = DRONE_DEPLOY_COOLDOWN;
+        SFX.droneDeploy && SFX.droneDeploy('battle');
+        createFloatingText(ufo.x, ufo.y + 50, 'ATTACK COORD!', '#f44');
+        return;
+    }
+
     if (activeDrones.length >= droneSlots) { createFloatingText(ufo.x, ufo.y + 60, 'NO DRONE SLOTS!', '#f44'); return; }
     if (droneCooldownTimer > 0) { createFloatingText(ufo.x, ufo.y + 60, 'COOLDOWN!', '#ff0'); return; }
     if (ufo.energy < CONFIG.DRONE_ENERGY_COST) { createFloatingText(ufo.x, ufo.y + 60, 'LOW ENERGY!', '#f44'); return; }
     ufo.energy -= CONFIG.DRONE_ENERGY_COST;
     const drone = new BattleDrone(ufo.x, ufo.y + ufo.height / 2);
-    if (techFlags.instantDeploy) {
-        // sn5: Guild Navigator - deploy instantly at ground level
-        drone.y = drone.groundY;
-        drone.vy = 0;
-        drone.state = 'SEEKING';
-        drone.unfoldProgress = 1;
-    }
     activeDrones.push(drone);
     droneCooldownTimer = DRONE_DEPLOY_COOLDOWN;
     SFX.droneDeploy && SFX.droneDeploy('battle');
@@ -7174,6 +8701,46 @@ function updateDrones(dt) {
 
 function renderDrones() {
     for (const drone of activeDrones) drone.render();
+}
+
+// --- Coordinator update/render functions ---
+
+function updateCoordinators(dt) {
+    for (const coord of activeCoordinators) coord.update(dt);
+    activeCoordinators = activeCoordinators.filter(c => c.alive);
+
+    // DC5 Autonomous Swarm: auto-deploy coordinators
+    if (techFlags.autonomousSwarm && ufo && gameState === 'PLAYING') {
+        if (autoDeployCooldown > 0) {
+            autoDeployCooldown -= dt;
+        } else {
+            const maxCoords = techFlags.fleetExpansion ? 2 : 1;
+            if (techFlags.harvesterCoordinator && harvesterUnlocked) {
+                const harvCount = activeCoordinators.filter(c => c.type === 'harvester' && c.alive).length;
+                if (harvCount < maxCoords && ufo.energy >= CONFIG.DRONE_ENERGY_COST) {
+                    ufo.energy -= CONFIG.DRONE_ENERGY_COST;
+                    activeCoordinators.push(new HarvesterCoordinator(ufo.x, ufo.y + ufo.height / 2));
+                    autoDeployCooldown = 5;
+                    createFloatingText(ufo.x, ufo.y + 50, 'AUTO-DEPLOY!', '#0ff');
+                    return; // one deploy per tick
+                }
+            }
+            if (techFlags.attackCoordinator && battleDroneUnlocked) {
+                const atkCount = activeCoordinators.filter(c => c.type === 'attack' && c.alive).length;
+                if (atkCount < maxCoords && ufo.energy >= CONFIG.DRONE_ENERGY_COST) {
+                    ufo.energy -= CONFIG.DRONE_ENERGY_COST;
+                    activeCoordinators.push(new AttackCoordinator(ufo.x, ufo.y + ufo.height / 2));
+                    autoDeployCooldown = 5;
+                    createFloatingText(ufo.x, ufo.y + 50, 'AUTO-DEPLOY!', '#f44');
+                    return;
+                }
+            }
+        }
+    }
+}
+
+function renderCoordinators() {
+    for (const coord of activeCoordinators) coord.render();
 }
 
 // ============================================
@@ -7329,121 +8896,29 @@ let lastResearchCountdownSecond = -1; // Track blip sounds during final 5s of re
 
 // Apply a tech effect when research completes
 function applyTechEffect(nodeId) {
-    switch (nodeId) {
-        // === Quantum Core ===
-        case 'qc1': // Reactor Ignition - turret can recharge drones
-            techFlags.turretCanRechargeDrones = true;
+    switch(nodeId) {
+        case 'pg1': techFlags.beamConduit = true; break;
+        case 'pg2': techFlags.energyEfficiency = true; break;
+        case 'pg3': techFlags.powerBroadcast = true; break;
+        case 'pg4': techFlags.reactorAmplifier = true; break;
+        case 'pg5': techFlags.selfSustainingGrid = true; break;
+        case 'dc1':
+            techFlags.droneUplink = true;
+            droneSlots = Math.max(droneSlots, 3); // Expand from 2 to 3
             break;
-        case 'qc2': // Power Routing - auto energy balance
-            techFlags.autoEnergyBalance = true;
+        case 'dc2': techFlags.harvesterCoordinator = true; break;
+        case 'dc3': techFlags.attackCoordinator = true; break;
+        case 'dc4': techFlags.fleetExpansion = true; break;
+        case 'dc5': techFlags.autonomousSwarm = true; break;
+        case 'dn1':
+            techFlags.thrusterBoost = true;
+            // +30% speed applied in UFO movement code
             break;
-        case 'qc3': // Energy Broadcast Array - recharge all drones at once
-            techFlags.broadcastRecharge = true;
-            break;
-        case 'qc4': // Fusion Amplifier - double max energy + full broadcast
-            if (ufo) {
-                ufo.maxEnergy *= 2;
-                ufo.energy = ufo.maxEnergy;
-            }
-            techFlags.fullBroadcast = true;
-            break;
-        case 'qc5': // Quantum Fold Core - energy regen during beam
-            techFlags.beamEnergyRegen = true;
-            break;
-
-        // === Bio-Computer ===
-        case 'bc1': // Neural Bootstrap - smarter drones
-            techFlags.smartDrones = true;
-            break;
-        case 'bc2': // Threat Matrix - smart turret targeting
-            techFlags.smartTurret = true;
-            break;
-        case 'bc3': // Auto-Shield Matrix - auto shield regen
-            techFlags.autoShield = true;
-            autoShieldTimer = 45;
-            break;
-        case 'bc4': // Harvest Protocol - faster harvesting
-            techFlags.harvestBoost = true;
-            // Apply to existing harvesters
-            for (const drone of activeDrones) {
-                if (drone.type === 'harvester') {
-                    drone.collectTime *= 0.5;
-                    drone.batchSize += 2;
-                }
-            }
-            break;
-        case 'bc5': // Hive Mind - drones coordinate attacks
-            techFlags.hiveMind = true;
-            break;
-
-        // === Spice Navigator ===
-        case 'sn1': // Spice Inhalation - +30% UFO speed
-            techFlags.spiceSpeed = true;
-            break;
-        case 'sn2': // Dimensional Compression - smaller hitbox + flickering
-            techFlags.phaseShift = true;
-            break;
-        case 'sn3': // Prescient Jump - dash to safe zone
-            techFlags.prescientDash = true;
-            break;
-        case 'sn4': // Time Dilation - slow-mo at low health
-            techFlags.timeDilation = true;
-            break;
-        case 'sn5': // Guild Navigator - instant deploy
-            techFlags.instantDeploy = true;
-            break;
+        case 'dn2': techFlags.droneArmor = true; break;
+        case 'dn3': techFlags.shieldTransfer = true; break;
+        case 'dn4': techFlags.fleetResilience = true; break;
+        case 'dn5': techFlags.swarmShield = true; break;
     }
-}
-
-// Update auto-shield regeneration (bc3 effect)
-function updateAutoShield(dt) {
-    if (!techFlags.autoShield) return;
-    autoShieldTimer -= dt;
-    if (autoShieldTimer <= 0) {
-        autoShieldTimer = 45;
-        // Add 1 shield charge, up to max 6
-        if (!activePowerups.shield.active) {
-            activePowerups.shield.active = true;
-            activePowerups.shield.charges = 1;
-            activePowerups.shield.maxCharges = Math.max(activePowerups.shield.maxCharges, 1);
-        } else if (activePowerups.shield.charges < 6) {
-            activePowerups.shield.charges++;
-            activePowerups.shield.maxCharges = Math.max(activePowerups.shield.maxCharges, activePowerups.shield.charges);
-        }
-        if (ufo) {
-            createFloatingText(ufo.x, ufo.y - 40, 'AUTO-SHIELD +1', '#0af');
-        }
-    }
-}
-
-// Update time dilation effect (sn4)
-function updateTimeDilation(dt) {
-    if (timeDilationCooldown > 0) {
-        timeDilationCooldown -= dt;
-    }
-    if (timeDilationActive) {
-        timeDilationTimer -= dt;
-        if (timeDilationTimer <= 0) {
-            timeDilationActive = false;
-            timeDilationCooldown = 30;
-        }
-    }
-    // Trigger: health below 25% and not on cooldown
-    if (techFlags.timeDilation && ufo && !timeDilationActive && timeDilationCooldown <= 0) {
-        if (ufo.health > 0 && ufo.health < CONFIG.UFO_START_HEALTH * 0.25) {
-            timeDilationActive = true;
-            timeDilationTimer = 3;
-            if (ufo) {
-                createFloatingText(ufo.x, ufo.y - 60, 'TIME DILATION!', '#f0f', { fontSize: 24, duration: 2 });
-            }
-            screenShake = 0.3;
-        }
-    }
-}
-
-// Get time dilation multiplier for non-UFO entities
-function getTimeDilationScale() {
-    return timeDilationActive ? 0.5 : 1.0;
 }
 
 // ============================================
@@ -7463,6 +8938,14 @@ function spawnTanks() {
         tankCount = wave10Count + Math.floor((wave - 10) / 2);
     }
 
+    // Determine coordinator hunter chance based on wave
+    let coordHunterChance = 0;
+    if (wave >= 12) {
+        coordHunterChance = 0.65; // 65% for veteran waves
+    } else if (wave >= 8) {
+        coordHunterChance = 0.25; // 25% for strategic waves
+    }
+
     tanks = [];
     for (let i = 0; i < tankCount; i++) {
         // Spread tanks across the screen width
@@ -7472,7 +8955,11 @@ function spawnTanks() {
         const x = margin + (i / Math.max(1, tankCount - 1)) * availableWidth;
         // Alternate direction based on which half of screen they're on
         const direction = x < canvas.width / 2 ? 1 : -1;
-        tanks.push(new Tank(x, direction));
+        const tank = new Tank(x, direction);
+        if (coordHunterChance > 0 && Math.random() < coordHunterChance) {
+            tank.coordinatorHunter = true;
+        }
+        tanks.push(tank);
     }
 
     // Spawn heavy tanks starting at wave 5 (pushed from wave 3)
@@ -7488,7 +8975,11 @@ function spawnTanks() {
             // Spawn heavy tanks from opposite edges
             const direction = i % 2 === 0 ? 1 : -1;
             const x = direction === 1 ? -180 : canvas.width;
-            heavyTanks.push(new HeavyTank(x, direction));
+            const heavyTank = new HeavyTank(x, direction);
+            if (coordHunterChance > 0 && Math.random() < coordHunterChance) {
+                heavyTank.coordinatorHunter = true;
+            }
+            heavyTanks.push(heavyTank);
         }
     }
 }
@@ -7535,25 +9026,18 @@ function renderProjectiles() {
 function dropBomb() {
     if (!ufo || playerInventory.bombs <= 0) return;
 
+    notifyTutorialBomb();
+
     // Consume a bomb
     playerInventory.bombs--;
     if (playerInventory.bombs < playerInventory.maxBombs) {
         playerInventory.bombRechargeTimers.push(CONFIG.BOMB_RECHARGE_TIME);
     }
 
-    if (techFlags.instantDeploy) {
-        // sn5: Guild Navigator - instant explosion at ground level below UFO
-        const groundY = canvas.height - 60;
-        const instantBomb = new Bomb(ufo.x, groundY, 0);
-        instantBomb.explode();
-        SFX.bombDrop && SFX.bombDrop();
-        createFloatingText(ufo.x, ufo.y + 50, 'INSTANT BOMB!', '#ff8800');
-    } else {
-        // Create bomb at UFO position with UFO's horizontal velocity
-        bombs.push(new Bomb(ufo.x, ufo.y + ufo.height / 2, ufo.vx));
-        SFX.bombDrop && SFX.bombDrop();
-        createFloatingText(ufo.x, ufo.y + 50, 'BOMB!', '#ff8800');
-    }
+    // Create bomb at UFO position with UFO's horizontal velocity
+    bombs.push(new Bomb(ufo.x, ufo.y + ufo.height / 2, ufo.vx));
+    SFX.bombDrop && SFX.bombDrop();
+    createFloatingText(ufo.x, ufo.y + 50, 'BOMB!', '#ff8800');
 }
 
 function updateBombs(dt) {
@@ -7589,6 +9073,108 @@ function renderBombs() {
     for (const bomb of bombs) {
         bomb.render();
     }
+}
+
+// ============================================
+// WARP JUKE
+// ============================================
+
+function triggerWarpJuke(direction) {
+    // Check if we have enough beam energy to warp
+    if (!ufo || ufo.energy < CONFIG.WARP_JUKE_ENERGY_COST) return;
+
+    // Consume beam energy
+    ufo.energy -= CONFIG.WARP_JUKE_ENERGY_COST;
+
+    // Store old position for ghost trail
+    const oldX = ufo.x;
+    const oldY = ufo.y;
+
+    // Add ghost at current position
+    ufo.warpGhosts.push({
+        x: oldX,
+        y: oldY,
+        alpha: 1.0
+    });
+
+    // Calculate new position
+    if (techFlags.prescientDash) {
+        // sn3: Prescient Jump - find nearest safe position with no projectiles nearby
+        const candidates = [];
+        const step = 40;
+        for (let testX = ufo.width / 2; testX <= canvas.width - ufo.width / 2; testX += step) {
+            let minDist = Infinity;
+            for (const p of projectiles) {
+                if (!p.alive) continue;
+                const dx = p.x - testX;
+                const dy = p.y - ufo.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < minDist) minDist = dist;
+            }
+            candidates.push({ x: testX, safety: minDist });
+        }
+        // Pick the safest position that is somewhat in the desired direction
+        candidates.sort((a, b) => b.safety - a.safety);
+        const best = candidates.find(c => (c.x - ufo.x) * direction >= 0) || candidates[0];
+        if (best) {
+            ufo.x = best.x;
+        } else {
+            const warpDistance = CONFIG.WARP_JUKE_DISTANCE * direction;
+            ufo.x = Math.max(ufo.width / 2, Math.min(canvas.width - ufo.width / 2, ufo.x + warpDistance));
+        }
+    } else {
+        const warpDistance = CONFIG.WARP_JUKE_DISTANCE * direction;
+        ufo.x = Math.max(ufo.width / 2, Math.min(canvas.width - ufo.width / 2, ufo.x + warpDistance));
+    }
+
+    // Create warp effect particles
+    const steps = 10;
+    for (let i = 0; i < steps; i++) {
+        const t = i / steps;
+        const px = oldX + (ufo.x - oldX) * t;
+        const py = oldY + (ufo.y - oldY) * t + (Math.random() - 0.5) * 20;
+
+        // Chromatic aberration effect - red, green, blue offset particles
+        const colors = ['rgba(255, 100, 100, 0.8)', 'rgba(100, 255, 100, 0.8)', 'rgba(100, 100, 255, 0.8)'];
+        for (let j = 0; j < 3; j++) {
+            particles.push(new Particle(
+                px + (j - 1) * 10,
+                py,
+                (Math.random() - 0.5) * 50,
+                (Math.random() - 0.5) * 50,
+                colors[j],
+                3 + Math.random() * 3,
+                0.3 + Math.random() * 0.2
+            ));
+        }
+    }
+
+    // Burst particles at destination
+    for (let i = 0; i < 15; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 50 + Math.random() * 100;
+        particles.push(new Particle(
+            ufo.x + (Math.random() - 0.5) * 30,
+            ufo.y + (Math.random() - 0.5) * 30,
+            Math.cos(angle) * speed,
+            Math.sin(angle) * speed,
+            'rgba(0, 255, 255, 0.8)',
+            2 + Math.random() * 4,
+            0.2 + Math.random() * 0.2
+        ));
+    }
+
+    // Screen shake
+    screenShake = 0.2;
+
+    // Play warp sound
+    SFX.warpJuke && SFX.warpJuke();
+
+    // Visual feedback
+    createFloatingText(ufo.x, ufo.y - 60, 'WARP!', '#0ff');
+
+    // Tutorial notification
+    notifyTutorialWarpJuke();
 }
 
 // ============================================
@@ -7852,107 +9438,6 @@ function renderMissileCount(startX, startY) {
 }
 
 // ============================================
-// WARP JUKE SYSTEM
-// ============================================
-
-function triggerWarpJuke(direction) {
-    // Check if we have enough beam energy to warp
-    if (!ufo || ufo.energy < CONFIG.WARP_JUKE_ENERGY_COST) return;
-
-    // Consume beam energy
-    ufo.energy -= CONFIG.WARP_JUKE_ENERGY_COST;
-
-    // Store old position for ghost trail
-    const oldX = ufo.x;
-    const oldY = ufo.y;
-
-    // Add ghost at current position
-    ufo.warpGhosts.push({
-        x: oldX,
-        y: oldY,
-        alpha: 1.0
-    });
-
-    // Calculate new position
-    if (techFlags.prescientDash) {
-        // sn3: Prescient Jump - find nearest safe position with no projectiles nearby
-        const candidates = [];
-        const step = 40;
-        for (let testX = ufo.width / 2; testX <= canvas.width - ufo.width / 2; testX += step) {
-            let minDist = Infinity;
-            for (const p of projectiles) {
-                if (!p.alive) continue;
-                const dx = p.x - testX;
-                const dy = p.y - ufo.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist < minDist) minDist = dist;
-            }
-            candidates.push({ x: testX, safety: minDist });
-        }
-        // Pick the safest position that is somewhat in the desired direction
-        candidates.sort((a, b) => b.safety - a.safety);
-        // Prefer positions in the warp direction, take the safest among the top candidates
-        const best = candidates.find(c => (c.x - ufo.x) * direction >= 0) || candidates[0];
-        if (best) {
-            ufo.x = best.x;
-        } else {
-            const warpDistance = CONFIG.WARP_JUKE_DISTANCE * direction;
-            ufo.x = Math.max(ufo.width / 2, Math.min(canvas.width - ufo.width / 2, ufo.x + warpDistance));
-        }
-    } else {
-        const warpDistance = CONFIG.WARP_JUKE_DISTANCE * direction;
-        ufo.x = Math.max(ufo.width / 2, Math.min(canvas.width - ufo.width / 2, ufo.x + warpDistance));
-    }
-
-    // Create warp effect particles
-    // Trail particles from old position to new
-    const steps = 10;
-    for (let i = 0; i < steps; i++) {
-        const t = i / steps;
-        const px = oldX + (ufo.x - oldX) * t;
-        const py = oldY + (ufo.y - oldY) * t + (Math.random() - 0.5) * 20;
-
-        // Chromatic aberration effect - red, green, blue offset particles
-        const colors = ['rgba(255, 100, 100, 0.8)', 'rgba(100, 255, 100, 0.8)', 'rgba(100, 100, 255, 0.8)'];
-        for (let j = 0; j < 3; j++) {
-            particles.push(new Particle(
-                px + (j - 1) * 10,
-                py,
-                (Math.random() - 0.5) * 50,
-                (Math.random() - 0.5) * 50,
-                colors[j],
-                3 + Math.random() * 3,
-                0.3 + Math.random() * 0.2
-            ));
-        }
-    }
-
-    // Burst particles at destination
-    for (let i = 0; i < 15; i++) {
-        const angle = Math.random() * Math.PI * 2;
-        const speed = 50 + Math.random() * 100;
-        particles.push(new Particle(
-            ufo.x + (Math.random() - 0.5) * 30,
-            ufo.y + (Math.random() - 0.5) * 30,
-            Math.cos(angle) * speed,
-            Math.sin(angle) * speed,
-            'rgba(0, 255, 255, 0.8)',
-            2 + Math.random() * 4,
-            0.2 + Math.random() * 0.2
-        ));
-    }
-
-    // Screen shake
-    screenShake = 0.2;
-
-    // Play warp sound
-    SFX.warpJuke && SFX.warpJuke();
-
-    // Visual feedback
-    createFloatingText(ufo.x, ufo.y - 60, 'WARP!', '#0ff');
-}
-
-// ============================================
 // REVIVE SYSTEM
 // ============================================
 
@@ -7993,6 +9478,9 @@ function triggerRevive() {
 // ============================================
 
 function triggerGameOver() {
+    // Clean up tutorial if active
+    cleanupTutorial();
+
     // Freeze sprite animations
     animationPausedAt = Date.now();
 
@@ -8553,7 +10041,7 @@ function createCelebrationEffect() {
 // ============================================
 
 function startGame() {
-    clearTutorialTimeouts();
+    cleanupTutorial();
     animationPausedAt = null;
     gameState = 'PLAYING';
     gameStartTime = Date.now();
@@ -8606,15 +10094,8 @@ function startGame() {
         bombRechargeTimers: [],
         bombReadyBounceTimer: 0,
         bombReadyBounceIndex: -1,
-        energyRechargeBonus: 0,
-        turretDamageBonus: 0,
-        hasTurret: titleTurretUnlocked // Easter egg: free turret if unlocked on title screen
+        energyRechargeBonus: 0
     };
-
-    // Reset Easter egg state for next game
-    titleTurretUnlocked = false;
-    titleTurretFlashTimer = 0;
-    titleTurretTaps = [];
 
     // Clear active bombs
     bombs = [];
@@ -8643,26 +10124,22 @@ function startGame() {
 
     // Reset tech flags
     techFlags = {
-        turretCanRechargeDrones: false,
-        autoEnergyBalance: false,
-        broadcastRecharge: false,
-        fullBroadcast: false,
-        beamEnergyRegen: false,
-        smartDrones: false,
-        smartTurret: false,
-        autoShield: false,
-        harvestBoost: false,
-        hiveMind: false,
-        spiceSpeed: false,
-        phaseShift: false,
-        prescientDash: false,
-        timeDilation: false,
-        instantDeploy: false
+        beamConduit: false,
+        energyEfficiency: false,
+        powerBroadcast: false,
+        reactorAmplifier: false,
+        selfSustainingGrid: false,
+        droneUplink: false,
+        harvesterCoordinator: false,
+        attackCoordinator: false,
+        fleetExpansion: false,
+        autonomousSwarm: false,
+        thrusterBoost: false,
+        droneArmor: false,
+        shieldTransfer: false,
+        fleetResilience: false,
+        swarmShield: false
     };
-    autoShieldTimer = 0;
-    timeDilationActive = false;
-    timeDilationTimer = 0;
-    timeDilationCooldown = 0;
     researchFlashTimer = 0;
     lastResearchCountdownSecond = -1;
 
@@ -8676,19 +10153,23 @@ function startGame() {
     missileUnlocked = false;
 
     activeDrones = [];
+    activeCoordinators = [];
     droneSlots = 0;
     harvesterUnlocked = false;
     battleDroneUnlocked = false;
     droneCooldownTimer = 0;
+    autoDeployCooldown = 0;
 
     bombBlastTier = 0;
     bombDamageTier = 0;
     shopNewItems = new Set();
 
-    // Spawn initial tanks
-    spawnTanks();
+    // Spawn initial tanks (skip on wave 1 — tutorial handles tank entrance)
+    if (wave !== 1) {
+        spawnTanks();
+    }
 
-    scheduleTutorialHints();
+    initTutorial();
 }
 
 // ============================================
@@ -8822,18 +10303,6 @@ function renderUI() {
         const missilesWidth = (missileSize / 2 + spacing) * missileMaxAmmo - spacing;
         return labelWidth + labelGap + keyWidth + keyPadding + missilesWidth + missilePadding * 2;
     })();
-    const turretPanelWidth = (() => {
-        if (!playerInventory.hasTurret) return 0;
-        const iconSize = 22;
-        const turretPadding = 8;
-        const keyWidth = 20;
-        const keyPadding = 6;
-        const labelText = 'TURRET';
-        const labelGap = 8;
-        ctx.font = 'bold 10px monospace';
-        const labelWidth = ctx.measureText(labelText).width;
-        return labelWidth + labelGap + keyWidth + keyPadding + iconSize + turretPadding * 2;
-    })();
     const energyBonusWidth = playerInventory.maxEnergyBonus > 0 ? 110 : 0;
     const speedWidth = playerInventory.speedBonus > 0 ? 90 : 0;
     const rightHudWidth = Math.max(
@@ -8841,7 +10310,6 @@ function renderUI() {
         energyCellsWidth,
         bombPanelWidth,
         missilePanelWidth,
-        turretPanelWidth,
         energyBonusWidth,
         speedWidth
     );
@@ -8896,11 +10364,7 @@ function renderUI() {
     const missilePanelH = renderMissileCount(rightHudPanelX, missileStartY) || 0;
     let nextY = missileStartY + missilePanelH + 6;
 
-    // ========== TURRET INDICATOR (below missile count) ==========
-    renderTurretIndicator(rightHudPanelX, nextY);
-    nextY += 40;
-
-    // ========== ENERGY BONUS INDICATOR (below turret indicator) ==========
+    // ========== ENERGY BONUS INDICATOR (below missile count) ==========
     renderEnergyBonusIndicator(rightHudPanelX, nextY);
     nextY += 28;
 
@@ -9026,7 +10490,9 @@ function renderDroneStatus(startX, startY) {
     ctx.fillStyle = '#aaa';
     ctx.font = 'bold 10px monospace';
     ctx.textAlign = 'left';
-    ctx.fillText(`DRONES: ${activeDrones.length}/${droneSlots}`, startX + panelPadding, startY + panelPadding + 10);
+    const subDroneCount = activeCoordinators.reduce((sum, c) => sum + (c.subDrones ? c.subDrones.length : 0), 0);
+    const totalDrones = activeDrones.length + subDroneCount;
+    ctx.fillText(`DRONES: ${totalDrones}/${droneSlots}`, startX + panelPadding, startY + panelPadding + 10);
 
     // Each active drone
     for (let i = 0; i < activeDrones.length; i++) {
@@ -9265,120 +10731,6 @@ function renderBombCount(startX, startY) {
             ctx.stroke();
         }
     }
-
-}
-
-function renderTurretIndicator(startX, startY) {
-    // Only show turret indicator if player owns the turret
-    if (!ufo || !playerInventory.hasTurret) return;
-
-    const iconSize = 22;
-    const panelPadding = 8;
-    const keyWidth = 20;
-    const keyHeight = 18;
-    const keyPadding = 6;
-    const isActive = ufo.turretActive && ufo.turretTarget;
-    const labelText = 'TURRET';
-    const labelGap = 8;
-
-    // Calculate total width: label + key + icon
-    ctx.font = 'bold 10px monospace';
-    const labelWidth = ctx.measureText(labelText).width;
-    const panelWidth = labelWidth + labelGap + keyWidth + keyPadding + iconSize + panelPadding * 2;
-    const panelHeight = Math.max(iconSize, keyHeight) + panelPadding * 2;
-
-    // Panel background
-    ctx.fillStyle = isActive ? 'rgba(255, 100, 100, 0.5)' : 'rgba(0, 0, 0, 0.5)';
-    ctx.beginPath();
-    ctx.roundRect(startX, startY, panelWidth, panelHeight, 8);
-    ctx.fill();
-
-    // Active indicator with pulse
-    if (isActive) {
-        const pulse = Math.sin(Date.now() / 100) * 0.3 + 0.7;
-        ctx.strokeStyle = `rgba(255, 150, 150, ${pulse})`;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-    }
-
-    // Label text (left of key)
-    ctx.fillStyle = isActive ? '#ffb6b6' : '#bbb';
-    ctx.font = 'bold 10px monospace';
-    ctx.textAlign = 'left';
-    const labelX = startX + panelPadding;
-    ctx.fillText(labelText, labelX, startY + panelHeight / 2 + 4);
-
-    // Keyboard key badge for T/Z (after label)
-    const keyX = labelX + labelWidth + labelGap;
-    const keyY = startY + (panelHeight - keyHeight) / 2;
-
-    // Key background (raised look)
-    ctx.fillStyle = isActive ? '#664444' : '#444';
-    ctx.beginPath();
-    ctx.roundRect(keyX, keyY, keyWidth, keyHeight, 4);
-    ctx.fill();
-
-    // Key top surface
-    ctx.fillStyle = isActive ? '#886666' : '#666';
-    ctx.beginPath();
-    ctx.roundRect(keyX + 1, keyY + 1, keyWidth - 2, keyHeight - 4, 3);
-    ctx.fill();
-
-    // Key letter
-    ctx.fillStyle = isActive ? '#ffaaaa' : '#fff';
-    ctx.font = 'bold 11px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('T/Z', keyX + keyWidth / 2, keyY + keyHeight / 2 + 3);
-
-    // Draw turret icon (laser gun shape) - after the key
-    const iconX = keyX + keyWidth + keyPadding + iconSize / 2;
-    const iconY = startY + panelHeight / 2;
-    const iconColor = isActive ? '#ff6666' : '#888';
-    const beamColor = isActive ? '#ff4444' : '#666';
-
-    // Turret base (small rectangle)
-    ctx.fillStyle = iconColor;
-    ctx.beginPath();
-    ctx.roundRect(iconX - 5, iconY + 3, 10, 5, 2);
-    ctx.fill();
-
-    // Turret body (angled barrel)
-    ctx.save();
-    ctx.translate(iconX, iconY + 1);
-    ctx.rotate(-Math.PI / 6); // Angle upward
-
-    // Barrel
-    ctx.fillStyle = iconColor;
-    ctx.beginPath();
-    ctx.roundRect(-3, -10, 6, 12, 2);
-    ctx.fill();
-
-    // Barrel tip / emitter
-    ctx.fillStyle = beamColor;
-    ctx.beginPath();
-    ctx.roundRect(-2, -12, 4, 3, 1);
-    ctx.fill();
-
-    // Laser beam (when active)
-    if (isActive) {
-        const beamPulse = Math.sin(Date.now() / 50) * 0.3 + 0.7;
-        ctx.strokeStyle = `rgba(255, 100, 100, ${beamPulse})`;
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(0, -12);
-        ctx.lineTo(0, -18);
-        ctx.stroke();
-
-        // Beam glow
-        ctx.strokeStyle = `rgba(255, 200, 200, ${beamPulse * 0.5})`;
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(0, -12);
-        ctx.lineTo(0, -16);
-        ctx.stroke();
-    }
-
-    ctx.restore();
 
 }
 
@@ -10564,39 +11916,6 @@ function renderTitleScreen() {
         case 'feedback':
             renderFeedbackTabContent();
             break;
-    }
-
-    // Easter egg: Turret unlock visual feedback - red bar at top
-    if (titleTurretUnlocked && titleTurretFlashTimer > 0) {
-        // Update flash timer
-        titleTurretFlashTimer -= 1/60; // Approximate dt
-
-        const barHeight = 36;
-        const fadeStart = 1.5; // Start fading in the last 1.5 seconds
-        const alpha = titleTurretFlashTimer < fadeStart ? titleTurretFlashTimer / fadeStart : 1;
-        const flashIntensity = Math.sin(Date.now() / 80) * 0.3 + 0.7;
-
-        ctx.save();
-
-        // Red bar background
-        ctx.fillStyle = `rgba(180, 30, 30, ${alpha * 0.9})`;
-        ctx.fillRect(0, 0, canvas.width, barHeight);
-
-        // Bottom border glow
-        ctx.strokeStyle = `rgba(255, 100, 100, ${alpha * flashIntensity})`;
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(0, barHeight);
-        ctx.lineTo(canvas.width, barHeight);
-        ctx.stroke();
-
-        // Text
-        ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
-        ctx.font = 'bold 16px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText('TURRET UNLOCKED! Press T or Z to fire during game', canvas.width / 2, barHeight / 2 + 5);
-
-        ctx.restore();
     }
 
     // Press SPACE to start (at bottom) - with flashing effect
@@ -12359,7 +13678,7 @@ function getContextualShopGuidance() {
     const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
     const missedQuota = quotaTarget > 0 && quotaProgress < quotaTarget;
     const barelyMetQuota = quotaTarget > 0 && quotaProgress >= quotaTarget && quotaProgress < Math.ceil(quotaTarget * 1.2);
-    const hasNoUpgrades = !harvesterUnlocked && !battleDroneUnlocked && !playerInventory.hasTurret && playerInventory.bombs <= 0 && techTree.researched.size === 0;
+    const hasNoUpgrades = !harvesterUnlocked && !battleDroneUnlocked && playerInventory.bombs <= 0 && techTree.researched.size === 0;
 
     // Absolutely nothing purchased and we're past wave 1 - maximum nagging
     if (hasNoUpgrades && wave >= 2) return pick(guidance.noUpgradesAtAll);
@@ -12367,8 +13686,6 @@ function getContextualShopGuidance() {
     if (missedQuota && wave >= 2) return pick(guidance.quotaFailed);
     // No harvester by wave 2+ - this is the "stop doing it manually" moment
     if (!harvesterUnlocked && wave >= 2) return pick(guidance.noHarvester);
-    // No turret by wave 3+ - tanks are becoming a problem
-    if (!playerInventory.hasTurret && wave >= 3) return pick(guidance.noTurret);
     // No revive charges - existential threat
     if (playerInventory.energyCells <= 0 && wave >= 2) return pick(guidance.noShields);
     // Has biomatter but no queued research
@@ -12378,8 +13695,8 @@ function getContextualShopGuidance() {
     }
     // Barely met quota - gentle nudge about upgrading
     if (barelyMetQuota) return pick(guidance.quotaBarely);
-    // Has harvester but could use more slots
-    if (harvesterUnlocked && droneSlots < 3 && wave >= 3) return pick(guidance.moreHarvesters);
+    // Has harvester but could use more slots - suggest Drone Uplink research
+    if (harvesterUnlocked && droneSlots < 3 && wave >= 3 && !techTree.researched.includes('dc1')) return pick(guidance.moreHarvesters);
     // No bombs by wave 4+
     if (playerInventory.bombs <= 0 && wave >= 4) return pick(guidance.noBombs);
 
@@ -12733,15 +14050,6 @@ function updateWaveTransition(dt) {
         lastTimerWarningSecond = -1; // Reset timer warning
         gameState = 'PLAYING';
 
-        if (turretHintPending) {
-            createFloatingText(canvas.width / 2, canvas.height * 0.35, 'LASER TURRET READY: PRESS T OR Z', '#ffaaaa', {
-                lifetime: 2.8,
-                vy: -10,
-                fontSize: 22
-            });
-            turretHintPending = false;
-        }
-
         // Spawn tanks for new wave
         spawnTanks();
 
@@ -12886,7 +14194,7 @@ function updateShop(dt) {
 // Get items for the active shop tab
 function getShopTabItems(tab) {
     const maintenance = ['repair', 'shield_single', 'revive_cell'];
-    const weapons = ['bomb_single', 'bomb_blast', 'bomb_damage', 'missile_swarm', 'missile_capacity', 'missile_damage', 'laser_turret', 'turret_damage', 'multi_turret', 'harvester_drone', 'battle_drone'];
+    const weapons = ['bomb_single', 'bomb_blast', 'bomb_damage', 'missile_swarm', 'missile_capacity', 'missile_damage', 'harvester_drone', 'battle_drone'];
     const systems = ['speed_cell', 'max_energy', 'energy_recharge'];
 
     let ids;
@@ -12899,15 +14207,12 @@ function getShopTabItems(tab) {
 
 // Check if a shop item is owned/maxed
 function getShopItemStatus(item) {
-    if (item.effect === 'turret' && playerInventory.hasTurret) return 'owned';
     if (item.effect === 'missileSwarm' && missileUnlocked) return 'owned';
-    if (item.effect === 'harvesterDrone' && droneSlots >= CONFIG.DRONE_MAX_SLOTS) return 'maxed';
-    if (item.effect === 'battleDrone' && droneSlots >= CONFIG.DRONE_MAX_SLOTS) return 'maxed';
+    if (item.effect === 'harvesterDrone' && harvesterUnlocked) return 'owned';
+    if (item.effect === 'battleDrone' && battleDroneUnlocked) return 'owned';
     if (item.effect === 'bombBlast' && bombBlastTier >= CONFIG.BOMB_BLAST_TIERS.length - 1) return 'maxed';
     if (item.effect === 'bombDamage' && bombDamageTier >= CONFIG.BOMB_DAMAGE_TIERS.length - 1) return 'maxed';
-    if (item.effect === 'multiTurret' && (playerInventory.turretBeamCount || 1) >= CONFIG.TURRET_MULTI_BEAM_MAX) return 'maxed';
     if (item.effect === 'bombCapacity' && playerInventory.maxBombs >= CONFIG.BOMB_MAX_COUNT) return 'maxed';
-    if (item.requiresTurret && !playerInventory.hasTurret && !shopCart.includes('laser_turret')) return 'locked';
     if (item.requiresMissile && !missileUnlocked && !shopCart.includes('missile_swarm')) return 'locked';
     return 'available';
 }
@@ -13282,13 +14587,13 @@ function renderShop() {
         renderShopIcon(item.id, leftContentLeft + 22, iy + itemCardH / 2, iconSize,
             (status === 'owned' || status === 'maxed') ? '#0a0' : (status === 'locked' ? '#555' : item.color));
 
-        // Item name (with drone slot count if applicable)
+        // Item name
         ctx.fillStyle = (status === 'owned' || status === 'maxed') ? '#0f0' : (status === 'locked' ? '#555' : '#fff');
         ctx.font = `bold ${Math.min(13, leftW * 0.03)}px monospace`;
         ctx.textAlign = 'left';
         let displayName = item.name;
-        if (item.effect === 'harvesterDrone' || item.effect === 'battleDrone') {
-            displayName += ` [${droneSlots}/${CONFIG.DRONE_MAX_SLOTS}]`;
+        if ((item.effect === 'harvesterDrone' || item.effect === 'battleDrone') && (status === 'owned' || status === 'maxed')) {
+            displayName += ' [UNLOCKED]';
         }
         ctx.fillText(displayName, leftContentLeft + 42, iy + itemCardH / 2 - 4);
 
@@ -13608,8 +14913,8 @@ function renderShop() {
     }
 
     // Track config
-    const trackNames = ['quantumCore', 'bioComputer', 'spiceNavigator'];
-    const trackLabels = ['QUANTUM CORE', 'BIO-COMPUTER', 'SPICE NAVIGATOR'];
+    const trackNames = ['powerGrid', 'droneCommand', 'defenseNetwork'];
+    const trackLabels = ['POWER GRID', 'DRONE COMMAND', 'DEFENSE NETWORK'];
     const trackColors = ['#0ff', '#0f0', '#f80'];
     const treeTopY = topY + titleH + 38 + guidancePanelH;
     const treeBottomPad = 10;
@@ -14295,42 +15600,6 @@ function renderShopIcon(itemId, x, y, size, color) {
             ctx.fill();
             break;
 
-        case 'laser_turret':
-            // Turret/laser icon
-            ctx.fillStyle = color;
-            // Base
-            ctx.beginPath();
-            ctx.roundRect(-12 * s, 8 * s, 24 * s, 10 * s, 3 * s);
-            ctx.fill();
-            // Barrel
-            ctx.save();
-            ctx.rotate(-Math.PI / 6);
-            ctx.fillRect(-4 * s, -25 * s, 8 * s, 28 * s);
-            ctx.restore();
-            // Beam
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 2 * s;
-            ctx.beginPath();
-            ctx.moveTo(-8 * s, -18 * s);
-            ctx.lineTo(-15 * s, -28 * s);
-            ctx.stroke();
-            break;
-
-        case 'turret_damage':
-            // Power bolt icon
-            ctx.fillStyle = color;
-            ctx.beginPath();
-            ctx.moveTo(-6 * s, -18 * s);
-            ctx.lineTo(6 * s, -18 * s);
-            ctx.lineTo(0 * s, -2 * s);
-            ctx.lineTo(10 * s, -2 * s);
-            ctx.lineTo(-4 * s, 18 * s);
-            ctx.lineTo(-2 * s, 4 * s);
-            ctx.lineTo(-12 * s, 4 * s);
-            ctx.closePath();
-            ctx.fill();
-            break;
-
         case 'missile_swarm':
             // Missile icon - small rocket shape
             ctx.fillStyle = color;
@@ -14412,22 +15681,6 @@ function renderShopIcon(itemId, x, y, size, color) {
             }
             break;
 
-        case 'multi_turret':
-            // Multiple beam lines from base
-            ctx.fillStyle = color;
-            ctx.beginPath();
-            ctx.roundRect(-10 * s, 8 * s, 20 * s, 8 * s, 3 * s);
-            ctx.fill();
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 2 * s;
-            for (let b = -1; b <= 1; b++) {
-                ctx.beginPath();
-                ctx.moveTo(0, 8 * s);
-                ctx.lineTo(b * 12 * s, -18 * s);
-                ctx.stroke();
-            }
-            break;
-
         case 'harvester_drone':
             // Small drone shape with tractor beam
             ctx.fillStyle = color;
@@ -14479,25 +15732,6 @@ function addToCart(gridIndex) {
     const item = CONFIG.SHOP_ITEMS[bounds.itemIndex];
     if (!item) return;
 
-    // Check if turret already owned
-    if (item.effect === 'turret' && playerInventory.hasTurret) {
-        SFX.error && SFX.error();
-        createFloatingText(canvas.width / 2, 300, 'ALREADY OWNED!', '#f44');
-        return;
-    }
-    if (item.requiresTurret && !playerInventory.hasTurret) {
-        SFX.error && SFX.error();
-        createFloatingText(canvas.width / 2, 300, 'REQUIRES TURRET!', '#f44');
-        return;
-    }
-
-    // Check if turret already in cart
-    if (item.effect === 'turret' && shopCart.includes(item.id)) {
-        SFX.error && SFX.error();
-        createFloatingText(canvas.width / 2, 300, 'ALREADY IN CART!', '#f44');
-        return;
-    }
-
     // Check if missile swarm already owned or in cart
     if (item.effect === 'missileSwarm' && missileUnlocked) {
         SFX.error && SFX.error();
@@ -14515,10 +15749,15 @@ function addToCart(gridIndex) {
         return;
     }
 
-    // Check drone slots maxed
-    if ((item.effect === 'harvesterDrone' || item.effect === 'battleDrone') && droneSlots >= CONFIG.DRONE_MAX_SLOTS) {
+    // Check drone already unlocked
+    if (item.effect === 'harvesterDrone' && harvesterUnlocked) {
         SFX.error && SFX.error();
-        createFloatingText(canvas.width / 2, 300, 'DRONE SLOTS MAXED!', '#f44');
+        createFloatingText(canvas.width / 2, 300, 'ALREADY OWNED!', '#f44');
+        return;
+    }
+    if (item.effect === 'battleDrone' && battleDroneUnlocked) {
+        SFX.error && SFX.error();
+        createFloatingText(canvas.width / 2, 300, 'ALREADY OWNED!', '#f44');
         return;
     }
 
@@ -14538,9 +15777,6 @@ function addToCart(gridIndex) {
     shopCart.push(item.id);
 
     // Mark dependent items as newly available
-    if (item.id === 'laser_turret') {
-        CONFIG.SHOP_ITEMS.filter(i => i.requiresTurret).forEach(i => shopNewItems.add(i.id));
-    }
     if (item.id === 'missile_swarm') {
         CONFIG.SHOP_ITEMS.filter(i => i.requiresMissile).forEach(i => shopNewItems.add(i.id));
     }
@@ -14555,22 +15791,13 @@ function shopAddToCart(itemId) {
     if (!item) return;
 
     // Check one-time items already owned
-    const isOwned = (item.effect === 'turret' && playerInventory.hasTurret) ||
-                    (item.effect === 'missileSwarm' && missileUnlocked);
+    const isOwned = (item.effect === 'missileSwarm' && missileUnlocked) ||
+                    (item.effect === 'harvesterDrone' && harvesterUnlocked) ||
+                    (item.effect === 'battleDrone' && battleDroneUnlocked);
     if (isOwned) {
         SFX.error && SFX.error();
         createFloatingText(canvas.width / 2, 300, 'ALREADY OWNED!', '#f44');
         return;
-    }
-
-    // Check maxed upgrades
-    if (item.effect === 'harvesterDrone' || item.effect === 'battleDrone') {
-        const dronesInCart = shopCart.filter(id => id === 'harvester_drone' || id === 'battle_drone').length;
-        if (droneSlots + dronesInCart >= CONFIG.DRONE_MAX_SLOTS) {
-            SFX.error && SFX.error();
-            createFloatingText(canvas.width / 2, 300, 'DRONE SLOTS MAXED!', '#f44');
-            return;
-        }
     }
     if (item.effect === 'bombBlast' && bombBlastTier >= CONFIG.BOMB_BLAST_TIERS.length - 1) {
         SFX.error && SFX.error();
@@ -14582,11 +15809,6 @@ function shopAddToCart(itemId) {
         createFloatingText(canvas.width / 2, 300, 'MAXED OUT!', '#f44');
         return;
     }
-    if (item.effect === 'multiTurret' && (playerInventory.turretBeamCount || 1) >= CONFIG.TURRET_MULTI_BEAM_MAX) {
-        SFX.error && SFX.error();
-        createFloatingText(canvas.width / 2, 300, 'MAXED OUT!', '#f44');
-        return;
-    }
     if (item.effect === 'bombCapacity' && playerInventory.maxBombs >= CONFIG.BOMB_MAX_COUNT) {
         SFX.error && SFX.error();
         createFloatingText(canvas.width / 2, 300, 'MAXED OUT!', '#f44');
@@ -14594,11 +15816,6 @@ function shopAddToCart(itemId) {
     }
 
     // Check requirements
-    if (item.requiresTurret && !playerInventory.hasTurret && !shopCart.includes('laser_turret')) {
-        SFX.error && SFX.error();
-        createFloatingText(canvas.width / 2, 300, 'REQUIRES TURRET!', '#f44');
-        return;
-    }
     if (item.requiresMissile && !missileUnlocked && !shopCart.includes('missile_swarm')) {
         SFX.error && SFX.error();
         createFloatingText(canvas.width / 2, 300, 'REQUIRES MISSILES!', '#f44');
@@ -14606,7 +15823,7 @@ function shopAddToCart(itemId) {
     }
 
     // One-time items already in cart
-    const oneTimeEffects = ['turret', 'missileSwarm'];
+    const oneTimeEffects = ['missileSwarm', 'harvesterDrone', 'battleDrone'];
     if (oneTimeEffects.includes(item.effect) && shopCart.includes(item.id)) {
         SFX.error && SFX.error();
         createFloatingText(canvas.width / 2, 300, 'ALREADY IN CART!', '#f44');
@@ -14627,9 +15844,6 @@ function shopAddToCart(itemId) {
     shopCart.push(item.id);
 
     // Mark dependent items as newly available
-    if (item.id === 'laser_turret') {
-        CONFIG.SHOP_ITEMS.filter(i => i.requiresTurret).forEach(i => shopNewItems.add(i.id));
-    }
     if (item.id === 'missile_swarm') {
         CONFIG.SHOP_ITEMS.filter(i => i.requiresMissile).forEach(i => shopNewItems.add(i.id));
     }
@@ -14735,20 +15949,13 @@ function applyShopItemEffect(item) {
                 playerInventory.bombRechargeTimers.splice(playerInventory.maxBombs - playerInventory.bombs);
             }
             break;
-        case 'turret':
-            playerInventory.hasTurret = true;
-            turretHintPending = true;
-            break;
-        case 'turretDamage':
-            playerInventory.turretDamageBonus += item.value;
-            break;
         case 'harvesterDrone':
             harvesterUnlocked = true;
-            droneSlots = Math.min(CONFIG.DRONE_MAX_SLOTS, droneSlots + 1);
+            if (droneSlots <= 0) droneSlots = 2;
             break;
         case 'battleDrone':
             battleDroneUnlocked = true;
-            droneSlots = Math.min(CONFIG.DRONE_MAX_SLOTS, droneSlots + 1);
+            if (droneSlots <= 0) droneSlots = 2;
             break;
         case 'missileSwarm':
             missileUnlocked = true;
@@ -14770,32 +15977,20 @@ function applyShopItemEffect(item) {
         case 'bombDamage':
             bombDamageTier = Math.min(CONFIG.BOMB_DAMAGE_TIERS.length - 1, bombDamageTier + 1);
             break;
-        case 'multiTurret':
-            playerInventory.turretBeamCount = Math.min(
-                CONFIG.TURRET_MULTI_BEAM_MAX,
-                (playerInventory.turretBeamCount || 1) + 1
-            );
-            break;
     }
 }
 
 function purchaseShopItem() {
     const item = CONFIG.SHOP_ITEMS[selectedShopItem];
 
-    // Check if turret is already owned
-    if (item.effect === 'turret' && playerInventory.hasTurret) {
+    if (item.effect === 'harvesterDrone' && harvesterUnlocked) {
         SFX.error && SFX.error();
         createFloatingText(canvas.width / 2, 200, 'ALREADY OWNED!', '#f44');
         return false;
     }
-    if (item.requiresTurret && !playerInventory.hasTurret) {
+    if (item.effect === 'battleDrone' && battleDroneUnlocked) {
         SFX.error && SFX.error();
-        createFloatingText(canvas.width / 2, 200, 'REQUIRES TURRET!', '#f44');
-        return false;
-    }
-    if ((item.effect === 'harvesterDrone' || item.effect === 'battleDrone') && droneSlots >= CONFIG.DRONE_MAX_SLOTS) {
-        SFX.error && SFX.error();
-        createFloatingText(canvas.width / 2, 200, 'DRONE SLOTS MAXED!', '#f44');
+        createFloatingText(canvas.width / 2, 200, 'ALREADY OWNED!', '#f44');
         return false;
     }
     if (item.effect === 'missileSwarm' && missileUnlocked) {
@@ -14910,41 +16105,39 @@ function update(dt) {
         ufo.update(dt);
     }
 
-    // sn4: Time Dilation - scale dt for non-UFO entities
-    const worldDt = dt * getTimeDilationScale();
-
     // Update target spawning
-    updateTargetSpawning(worldDt);
+    updateTargetSpawning(dt);
 
     // Update targets
     const beamX = ufo ? ufo.x : 0;
     const beamActive = ufo ? ufo.beamActive : false;
     for (const target of targets) {
-        target.update(worldDt, beamActive, beamX);
+        target.update(dt, beamActive, beamX);
     }
 
     // Remove dead targets
     targets = targets.filter(t => t.alive);
 
     // Update tanks
-    updateTanks(worldDt);
+    updateTanks(dt);
 
     // Update projectiles
-    updateProjectiles(worldDt);
+    updateProjectiles(dt);
 
     // Update bombs
-    updateBombs(worldDt);
+    updateBombs(dt);
 
     // Update drones
     updateDrones(dt);
+
+    // Update coordinators
+    updateCoordinators(dt);
 
     // Update missiles
     updateMissiles(dt);
 
     // Update tech tree research
     updateResearch(dt);
-    updateAutoShield(dt);
-    updateTimeDilation(dt);
 
     // Update research flash timer
     if (researchFlashTimer > 0) {
@@ -14956,6 +16149,11 @@ function update(dt) {
 
     // Update floating texts
     updateFloatingTexts(dt);
+
+    // Update tutorial state machine (wave 1 only)
+    if (tutorialState && tutorialState.phase !== 'COMPLETE') {
+        updateTutorial(dt);
+    }
 
     // Update powerups
     updatePowerupSpawning(dt);
@@ -14978,6 +16176,9 @@ function update(dt) {
     }
 
     if (waveTimer <= 0) {
+        // Clean up tutorial on wave end
+        cleanupTutorial();
+
         // Wave complete - transition to next wave
         // Stop beam sound if beam is active
         if (ufo && ufo.beamActive) {
@@ -15020,6 +16221,21 @@ function update(dt) {
             }
         }
         activeDrones = [];
+
+        // === Lost deliveries from coordinator sub-drones at wave end ===
+        for (const coord of activeCoordinators) {
+            for (const drone of coord.subDrones) {
+                if (drone.collectedTargets && drone.collectedTargets.length > 0) {
+                    const bmLost = CONFIG.BIO_MATTER_RATES.harvester_batch || 2;
+                    waveStats.lostDeliveries += drone.collectedTargets.length;
+                    waveStats.lostBioMatter += bmLost;
+                    createFloatingText(drone.x, drone.y - 30, `-${bmLost} BM LOST`, '#f80', { fontSize: 18 });
+                    drone.collectedTargets = [];
+                    drone.batchCount = 0;
+                }
+            }
+        }
+        activeCoordinators = [];
 
         // === EXPANSION: Quota check at wave end ===
         const quotaExceeded = quotaTarget > 0 && quotaProgress >= Math.ceil(quotaTarget * (1 + CONFIG.QUOTA_EXCEED_THRESHOLD));
@@ -15100,6 +16316,9 @@ function render() {
     // Render missiles
     renderMissiles();
 
+    // Render coordinators (above drones in altitude, render first)
+    renderCoordinators();
+
     // Render drones (after targets/tanks, before UFO)
     renderDrones();
 
@@ -15122,6 +16341,10 @@ function render() {
     // Render active powerup indicators
     renderActivePowerups();
 
+    // Render tutorial hints (wave 1 only, above UI, below full-screen overlays)
+    if (tutorialState && tutorialState.phase !== 'COMPLETE') {
+        renderTutorialHints();
+    }
 
     // Timer critical warning (last 5 seconds)
     if (waveTimer <= 5 && waveTimer > 0) {
@@ -15148,12 +16371,6 @@ function render() {
         ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
 
-    // Time dilation visual overlay
-    if (timeDilationActive) {
-        const pulse = Math.sin(Date.now() * 0.005) * 0.1 + 0.15;
-        ctx.fillStyle = `rgba(180, 0, 255, ${pulse})`;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-    }
 }
 
 // Fetch leaderboard and feedback on page load
