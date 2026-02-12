@@ -77,7 +77,7 @@ const CONFIG = {
     BOMB_EXPLOSION_RADIUS: 120,     // Blast radius
     BOMB_EXPLOSION_DAMAGE: 50,      // Damage to tanks in blast radius
     BOMB_START_COUNT: 1,            // Starting bomb count per game
-    BOMB_MAX_COUNT: 6,              // Maximum bombs player can hold
+    BOMB_MAX_COUNT: 9,              // Maximum bombs player can hold
     BOMB_RECHARGE_TIME: 12,         // Seconds to recharge one bomb
 
     // Warp Juke
@@ -3354,6 +3354,7 @@ class Target {
 
                 // Restore energy proportional to points
                 const energyRestored = Math.floor(this.points * CONFIG.ENERGY_RESTORE_RATIO);
+                trackEnergyDelta(energyRestored, true);
                 ufo.energy = Math.min(ufo.maxEnergy, ufo.energy + energyRestored);
 
                 // Create floating score text
@@ -4733,6 +4734,7 @@ class UFO {
 
                 // Drain UFO energy
                 if (!activePowerups.energy_surge.active) {
+                    trackEnergyDelta(CONFIG.ENERGY_DRAIN_RATE * dt, false);
                     this.energy -= CONFIG.ENERGY_DRAIN_RATE * dt;
                 }
                 this.energy = Math.min(this.energy, this.maxEnergy);
@@ -4768,6 +4770,7 @@ class UFO {
                 }
                 this.beamActive = true;
                 if (!activePowerups.energy_surge.active) {
+                    trackEnergyDelta(CONFIG.ENERGY_DRAIN_RATE * dt, false);
                     this.energy -= CONFIG.ENERGY_DRAIN_RATE * dt;
                 }
                 this.energy = Math.min(this.energy, this.maxEnergy);
@@ -4897,6 +4900,7 @@ class UFO {
 
             // Energy recharge when not beaming
         const rechargeRate = CONFIG.ENERGY_RECHARGE_RATE * (1 + playerInventory.energyRechargeBonus);
+        trackEnergyDelta(rechargeRate * dt, true);
         this.energy = Math.min(this.maxEnergy, this.energy + rechargeRate * dt);
         }
 
@@ -5736,6 +5740,7 @@ class Tank {
 
                 // Restore energy proportional to points
                 const energyRestored = Math.floor(CONFIG.TANK_POINTS * CONFIG.ENERGY_RESTORE_RATIO);
+                trackEnergyDelta(energyRestored, true);
                 ufo.energy = Math.min(ufo.maxEnergy, ufo.energy + energyRestored);
 
                 createFloatingText(this.x, this.y, `+${pointsEarned}`, '#0f0');
@@ -7807,6 +7812,7 @@ class HeavyTank {
 
                 // Restore energy proportional to points
                 const energyRestored = Math.floor(this.points * CONFIG.ENERGY_RESTORE_RATIO);
+                trackEnergyDelta(energyRestored, true);
                 ufo.energy = Math.min(ufo.maxEnergy, ufo.energy + energyRestored);
 
                 createFloatingText(this.x + this.width / 2, this.y, `+${pointsEarned}`, '#0f0');
@@ -10032,6 +10038,7 @@ function deployHarvesterDrone() {
         if (harvCoords >= maxCoords) { createFloatingText(ufo.x, ufo.y + 60, 'MAX COORDINATORS!', '#f44'); return; }
         if (droneCooldownTimer > 0) { createFloatingText(ufo.x, ufo.y + 60, 'COOLDOWN!', '#ff0'); return; }
         if (ufo.energy < CONFIG.DRONE_ENERGY_COST) { createFloatingText(ufo.x, ufo.y + 60, 'LOW ENERGY!', '#f44'); return; }
+        trackEnergyDelta(CONFIG.DRONE_ENERGY_COST, false);
         ufo.energy -= CONFIG.DRONE_ENERGY_COST;
         const coord = new HarvesterCoordinator(ufo.x, ufo.y + ufo.height / 2);
         activeCoordinators.push(coord);
@@ -10049,6 +10056,7 @@ function deployHarvesterDrone() {
     if (activeDrones.length >= droneSlots) { createFloatingText(ufo.x, ufo.y + 60, 'NO DRONE SLOTS!', '#f44'); return; }
     if (droneCooldownTimer > 0) { createFloatingText(ufo.x, ufo.y + 60, 'COOLDOWN!', '#ff0'); return; }
     if (ufo.energy < CONFIG.DRONE_ENERGY_COST) { createFloatingText(ufo.x, ufo.y + 60, 'LOW ENERGY!', '#f44'); return; }
+    trackEnergyDelta(CONFIG.DRONE_ENERGY_COST, false);
     ufo.energy -= CONFIG.DRONE_ENERGY_COST;
     const drone = new HarvesterDrone(ufo.x, ufo.y + ufo.height / 2);
     activeDrones.push(drone);
@@ -10067,6 +10075,7 @@ function deployBattleDrone() {
         if (atkCoords >= maxCoords) { createFloatingText(ufo.x, ufo.y + 60, 'MAX COORDINATORS!', '#f44'); return; }
         if (droneCooldownTimer > 0) { createFloatingText(ufo.x, ufo.y + 60, 'COOLDOWN!', '#ff0'); return; }
         if (ufo.energy < CONFIG.DRONE_ENERGY_COST) { createFloatingText(ufo.x, ufo.y + 60, 'LOW ENERGY!', '#f44'); return; }
+        trackEnergyDelta(CONFIG.DRONE_ENERGY_COST, false);
         ufo.energy -= CONFIG.DRONE_ENERGY_COST;
         const coord = new AttackCoordinator(ufo.x, ufo.y + ufo.height / 2);
         activeCoordinators.push(coord);
@@ -10084,6 +10093,7 @@ function deployBattleDrone() {
     if (activeDrones.length >= droneSlots) { createFloatingText(ufo.x, ufo.y + 60, 'NO DRONE SLOTS!', '#f44'); return; }
     if (droneCooldownTimer > 0) { createFloatingText(ufo.x, ufo.y + 60, 'COOLDOWN!', '#ff0'); return; }
     if (ufo.energy < CONFIG.DRONE_ENERGY_COST) { createFloatingText(ufo.x, ufo.y + 60, 'LOW ENERGY!', '#f44'); return; }
+    trackEnergyDelta(CONFIG.DRONE_ENERGY_COST, false);
     ufo.energy -= CONFIG.DRONE_ENERGY_COST;
     const drone = new BattleDrone(ufo.x, ufo.y + ufo.height / 2);
     activeDrones.push(drone);
@@ -10120,6 +10130,7 @@ function updateCoordinators(dt) {
             if (techFlags.harvesterCoordinator && harvesterUnlocked) {
                 const harvCount = activeCoordinators.filter(c => c.type === 'harvester' && c.alive).length;
                 if (harvCount < maxCoords && ufo.energy >= CONFIG.DRONE_ENERGY_COST) {
+                    trackEnergyDelta(CONFIG.DRONE_ENERGY_COST, false);
                     ufo.energy -= CONFIG.DRONE_ENERGY_COST;
                     activeCoordinators.push(new HarvesterCoordinator(ufo.x, ufo.y + ufo.height / 2));
                     createFloatingText(ufo.x, ufo.y + 50, 'AUTO-DEPLOY!', '#0ff');
@@ -10129,6 +10140,7 @@ function updateCoordinators(dt) {
             if (techFlags.attackCoordinator && battleDroneUnlocked) {
                 const atkCount = activeCoordinators.filter(c => c.type === 'attack' && c.alive).length;
                 if (atkCount < maxCoords && ufo.energy >= CONFIG.DRONE_ENERGY_COST) {
+                    trackEnergyDelta(CONFIG.DRONE_ENERGY_COST, false);
                     ufo.energy -= CONFIG.DRONE_ENERGY_COST;
                     activeCoordinators.push(new AttackCoordinator(ufo.x, ufo.y + ufo.height / 2));
                     createFloatingText(ufo.x, ufo.y + 50, 'AUTO-DEPLOY!', '#f44');
@@ -10485,6 +10497,7 @@ function triggerWarpJuke(direction) {
     if (!ufo || ufo.energy < CONFIG.WARP_JUKE_ENERGY_COST) return;
 
     // Consume beam energy
+    trackEnergyDelta(CONFIG.WARP_JUKE_ENERGY_COST, false);
     ufo.energy -= CONFIG.WARP_JUKE_ENERGY_COST;
 
     // Store old position for ghost trail
@@ -10596,6 +10609,7 @@ function fireMissileGroup() {
     }
 
     // Deduct energy
+    trackEnergyDelta(CONFIG.MISSILE_GROUP_ENERGY_COST, false);
     ufo.energy -= CONFIG.MISSILE_GROUP_ENERGY_COST;
 
     // Mark group as fired
@@ -11885,6 +11899,14 @@ function startGame() {
         maxCooldown: 40,
         triggeredThisWave: false
     };
+    energyTimeSeries = {
+        buffer: new Float32Array(180),
+        intakeBuffer: new Float32Array(180),
+        outputBuffer: new Float32Array(180),
+        writeIndex: 0, sampleTimer: 0, sampleInterval: 1/6,
+        frameIntake: 0, frameOutput: 0,
+        peakValue: 100, smoothPeak: 100
+    };
 
     techTree = {
         researched: new Set(),
@@ -12361,6 +12383,97 @@ function renderNGEBlinkLight(x, y, color = '#0f0', rate = 500) {
     }
 }
 
+// Unified indicator renderer with multiple shapes and blink modes
+function renderNGEIndicator(x, y, shape, color, mode, opts = {}) {
+    const rate = opts.rate || 600;
+    const phaseOffset = opts.phaseOffset || 0;
+    const now = Date.now() + phaseOffset;
+
+    // Determine on/off state based on mode
+    let isOn = true;
+    switch (mode) {
+        case 'steady':
+            isOn = Math.floor(now / rate) % 2 === 0;
+            break;
+        case 'double': {
+            const cycle = now % 820;
+            isOn = (cycle < 80) || (cycle >= 140 && cycle < 220);
+            break;
+        }
+        case 'cascade': {
+            const ci = opts.cascadeIndex || 0;
+            const ct = opts.cascadeTotal || 3;
+            const cascadeCycle = (now + ci * 100) % (ct * 100 + 600);
+            isOn = cascadeCycle < 200;
+            break;
+        }
+        case 'reactive': {
+            const rv = opts.reactiveValue || 0;
+            const thresholds = opts.reactiveThresholds || [];
+            let rRate = rate;
+            let matchedColor = null;
+            for (const t of thresholds) {
+                if (rv >= t.threshold) { rRate = t.rate; matchedColor = t.color; break; }
+            }
+            if (matchedColor) color = matchedColor;
+            isOn = rRate === 0 ? true : Math.floor(now / rRate) % 2 === 0;
+            break;
+        }
+        case 'random': {
+            const seed = (x * 7 + y * 13) | 0;
+            const randomPeriod = 200 + (seed % 600);
+            isOn = Math.floor(now / randomPeriod) % 2 === 0;
+            break;
+        }
+    }
+
+    // Set style
+    const glowIntensity = opts.glowIntensity || 4;
+    if (isOn) {
+        ctx.fillStyle = color;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = glowIntensity;
+    } else {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+        ctx.shadowBlur = 0;
+    }
+
+    // Draw shape
+    switch (shape) {
+        case 'square':
+            ctx.fillRect(x, y, 4, 4);
+            break;
+        case 'diamond':
+            ctx.beginPath();
+            ctx.moveTo(x + 2.5, y);
+            ctx.lineTo(x + 5, y + 2.5);
+            ctx.lineTo(x + 2.5, y + 5);
+            ctx.lineTo(x, y + 2.5);
+            ctx.closePath();
+            ctx.fill();
+            break;
+        case 'triangle':
+            ctx.beginPath();
+            ctx.moveTo(x + 2.5, y);
+            ctx.lineTo(x + 5, y + 4);
+            ctx.lineTo(x, y + 4);
+            ctx.closePath();
+            ctx.fill();
+            break;
+        case 'circle':
+            ctx.beginPath();
+            ctx.arc(x + 2, y + 2, 2, 0, Math.PI * 2);
+            ctx.fill();
+            break;
+        case 'cross':
+            ctx.fillRect(x, y + 1, 5, 1);
+            ctx.fillRect(x + 2, y, 1, 3);
+            break;
+    }
+
+    ctx.shadowBlur = 0;
+}
+
 // Energy flow animated line between two points
 function renderEnergyFlowLine(fromX, fromY, toX, toY, color = '#0ff', active = false) {
     ctx.save();
@@ -12468,6 +12581,47 @@ let missionCommanderState = {
     maxCooldown: 40,
     triggeredThisWave: false
 };
+
+let energyTimeSeries = {
+    buffer: new Float32Array(180),
+    intakeBuffer: new Float32Array(180),
+    outputBuffer: new Float32Array(180),
+    writeIndex: 0,
+    sampleTimer: 0,
+    sampleInterval: 1/6,  // ~166ms = 6 samples/sec, 30s history
+    frameIntake: 0,
+    frameOutput: 0,
+    peakValue: 100,
+    smoothPeak: 100
+};
+
+function trackEnergyDelta(amount, isIntake) {
+    if (isIntake) energyTimeSeries.frameIntake += amount;
+    else energyTimeSeries.frameOutput += amount;
+}
+
+function updateEnergyTimeSeries(dt) {
+    if (!ufo) return;
+    energyTimeSeries.sampleTimer += dt;
+    if (energyTimeSeries.sampleTimer >= energyTimeSeries.sampleInterval) {
+        energyTimeSeries.sampleTimer -= energyTimeSeries.sampleInterval;
+        const idx = energyTimeSeries.writeIndex;
+        energyTimeSeries.buffer[idx] = ufo.energy;
+        energyTimeSeries.intakeBuffer[idx] = energyTimeSeries.frameIntake;
+        energyTimeSeries.outputBuffer[idx] = energyTimeSeries.frameOutput;
+        energyTimeSeries.frameIntake = 0;
+        energyTimeSeries.frameOutput = 0;
+        energyTimeSeries.writeIndex = (idx + 1) % 180;
+
+        // Auto-scale Y axis
+        let peak = ufo.maxEnergy;
+        for (let i = 0; i < 180; i++) {
+            peak = Math.max(peak, energyTimeSeries.intakeBuffer[i], energyTimeSeries.outputBuffer[i]);
+        }
+        energyTimeSeries.peakValue = peak;
+        energyTimeSeries.smoothPeak += (peak - energyTimeSeries.smoothPeak) * 0.05;
+    }
+}
 
 const MISSION_COMMANDER_DIALOGUES = {
     quotaBehind: [
@@ -13145,9 +13299,8 @@ function renderWeaponsZone(zone) {
     const missileNumCols = missileGroupCount > 6 ? 3 : (missileGroupCount > 3 ? 2 : 1);
     const missileRowsPerCol = Math.ceil(missileGroupCount / missileNumCols);
 
-    // Dynamic columns based on available width
-    const bombCols = playerInventory.maxBombs > 0
-        ? Math.max(1, Math.floor(availableGridW / (bombSize + bombSpacing))) : 0;
+    // Fixed 3-column grid for bombs
+    const bombCols = 3;
 
     // Calculate panel height dynamically from actual content
     let panelH = 22; // header
@@ -13170,7 +13323,7 @@ function renderWeaponsZone(zone) {
         const maxBombs = playerInventory.maxBombs;
         const rechargeTimers = playerInventory.bombRechargeTimers || [];
 
-        renderNGELabel(x + pad, curY, 'ORD.B', '#f80');
+        renderNGELabel(x + pad, curY, 'BOMBS', '#f80');
         renderNGEKeyBadge(x + pad + 44, curY - 10, 'Z');
         curY += 4;
 
@@ -13219,8 +13372,8 @@ function renderWeaponsZone(zone) {
 
     // Missiles section (grouped layout)
     if (missileUnlocked && missileGroupCount > 0) {
-        renderNGELabel(x + pad, curY, 'ORD.M', '#f40');
-        renderNGEKeyBadge(x + pad + 44, curY - 10, 'X');
+        renderNGELabel(x + pad, curY, 'MISSILES', '#f40');
+        renderNGEKeyBadge(x + pad + 68, curY - 10, 'X');
 
         // SALVO RDY indicator
         const allGroupsReady = missileGroups.every(g => g.ready);
@@ -13688,6 +13841,11 @@ function updateHUDAnimations(dt) {
         if (hudAnimState.energyPulseY > canvas.height) {
             hudAnimState.energyPulseActive = false;
         }
+    }
+
+    // Energy time series sampling
+    if (gameState === 'PLAYING') {
+        updateEnergyTimeSeries(dt);
     }
 
     // Update boot sequence
@@ -18071,6 +18229,13 @@ function updateWaveTransition(dt) {
         waveTimer = CONFIG.WAVE_DURATION;
         lastTimerWarningSecond = -1; // Reset timer warning
         gameState = 'PLAYING';
+        // Reset commander state so it doesn't carry over from previous wave
+        missionCommanderState.visible = false;
+        missionCommanderState.dialogue = '';
+        missionCommanderState.typewriterIndex = 0;
+        missionCommanderState.typewriterTimer = 0;
+        missionCommanderState.displayTimer = 0;
+        missionCommanderState.cooldownTimer = 15;
         initHUDBoot();
 
         // Reset auto-deploy cooldown so coordinators deploy immediately
