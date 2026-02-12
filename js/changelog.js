@@ -13,7 +13,7 @@ const CHANGELOG = [
     "timestamp": 1770920075786
   },
   {
-    "message": "Evangelion HUD: CRT boot sequence, commander comms, fleet tree",
+    "message": "New HUD: CRT boot sequence, commander comms, fleet tree",
     "timestamp": 1770920072991
   },
   {
