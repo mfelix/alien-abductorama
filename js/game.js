@@ -3338,6 +3338,7 @@ class Target {
                 harvestCount[this.type]++;
                 harvestBounce[this.type] = 1.0;
                 waveStats.targetsBeamed[this.type]++;
+                pushOpsLogEvent(`+${this.points} BIOMATTER`, '#0f0', { type: 'biomatter' });
                 // Award points
                 const multiplierIndex = Math.min(combo, CONFIG.COMBO_MULTIPLIERS.length - 1);
                 const multiplier = CONFIG.COMBO_MULTIPLIERS[multiplierIndex];
@@ -6166,6 +6167,7 @@ class Projectile {
 
                 ufo.health -= finalDamage;
                 waveStats.hitsTaken++;
+                pushOpsLogEvent(`SHIELD HIT -${Math.round(finalDamage)} HP`, '#f44', { type: 'shieldHit' });
 
                 // Create small explosion at hit point
                 createExplosion(this.x, this.y, 'small');
@@ -7016,6 +7018,7 @@ class Missile {
         if (this.targetTank.health <= 0) {
             this.targetTank.alive = false;
             score += CONFIG.TANK_POINTS;
+            pushOpsLogEvent(`TANK.ELIM +${CONFIG.TANK_POINTS}`, '#f80', { type: 'tankMissile' });
             createExplosion(this.targetTank.x + (this.targetTank.width || 0) / 2,
                             this.targetTank.y + (this.targetTank.height || 0) / 2, 'medium');
             createFloatingText(
@@ -10042,6 +10045,7 @@ function deployHarvesterDrone() {
         ufo.energy -= CONFIG.DRONE_ENERGY_COST;
         const coord = new HarvesterCoordinator(ufo.x, ufo.y + ufo.height / 2);
         activeCoordinators.push(coord);
+        pushOpsLogEvent('H.COORD DEPLOYED', '#48f', { type: 'coordDeploy' });
         droneCooldownTimer = DRONE_DEPLOY_COOLDOWN;
         SFX.droneDeploy && SFX.droneDeploy('harvester');
         createFloatingText(ufo.x, ufo.y + 50, 'HARVESTER COORD!', '#0ff');
@@ -10060,6 +10064,7 @@ function deployHarvesterDrone() {
     ufo.energy -= CONFIG.DRONE_ENERGY_COST;
     const drone = new HarvesterDrone(ufo.x, ufo.y + ufo.height / 2);
     activeDrones.push(drone);
+    pushOpsLogEvent('HARVESTER DEPLOYED', '#48f', { type: 'droneDeploy' });
     droneCooldownTimer = DRONE_DEPLOY_COOLDOWN;
     SFX.droneDeploy && SFX.droneDeploy('harvester');
     createFloatingText(ufo.x, ufo.y + 50, 'HARVESTER!', '#0ff');
@@ -10079,6 +10084,7 @@ function deployBattleDrone() {
         ufo.energy -= CONFIG.DRONE_ENERGY_COST;
         const coord = new AttackCoordinator(ufo.x, ufo.y + ufo.height / 2);
         activeCoordinators.push(coord);
+        pushOpsLogEvent('A.COORD DEPLOYED', '#48f', { type: 'coordDeploy' });
         droneCooldownTimer = DRONE_DEPLOY_COOLDOWN;
         SFX.droneDeploy && SFX.droneDeploy('battle');
         createFloatingText(ufo.x, ufo.y + 50, 'ATTACK COORD!', '#f44');
@@ -10097,6 +10103,7 @@ function deployBattleDrone() {
     ufo.energy -= CONFIG.DRONE_ENERGY_COST;
     const drone = new BattleDrone(ufo.x, ufo.y + ufo.height / 2);
     activeDrones.push(drone);
+    pushOpsLogEvent('BATTLE DRONE DEPLOYED', '#48f', { type: 'droneDeploy' });
     droneCooldownTimer = DRONE_DEPLOY_COOLDOWN;
     SFX.droneDeploy && SFX.droneDeploy('battle');
     createFloatingText(ufo.x, ufo.y + 50, 'BATTLE DRONE!', '#f44');
@@ -10289,6 +10296,7 @@ function completeResearch(nodeId) {
     applyTechEffect(nodeId);
 
     const node = getTechNode(nodeId);
+    pushOpsLogEvent(`RSRCH: ${node.name.toUpperCase()}`, '#0ff', { type: 'research', skipThrottle: true });
     // Show floating text notification
     if (ufo) {
         createFloatingText(canvas.width / 2, canvas.height / 3, 'RESEARCH COMPLETE', '#0f0', { fontSize: 28, duration: 3 });
@@ -10443,6 +10451,7 @@ function dropBomb() {
 
     // Consume a bomb
     playerInventory.bombs--;
+    pushOpsLogEvent('ORD.B DEPLOYED', '#f80', { type: 'bombUse' });
     if (playerInventory.bombs < playerInventory.maxBombs) {
         playerInventory.bombRechargeTimers.push(CONFIG.BOMB_RECHARGE_TIME);
     }
@@ -10611,6 +10620,8 @@ function fireMissileGroup() {
     // Deduct energy
     trackEnergyDelta(CONFIG.MISSILE_GROUP_ENERGY_COST, false);
     ufo.energy -= CONFIG.MISSILE_GROUP_ENERGY_COST;
+
+    pushOpsLogEvent('MISSILE SALVO AWAY', '#f40', { type: 'missileUse' });
 
     // Mark group as fired
     group.ready = false;
@@ -11879,11 +11890,21 @@ function startGame() {
         fleetPanelVisible: false,
         fleetPanelSlide: 0,
         commanderPanelSlide: 0,
+        diagPanelVisible: false,
+        diagPanelSlide: 0,
+        opsLogPanelVisible: false,
+        opsLogPanelSlide: 0,
         energyFlowPhase: 0,
         scanlineOffset: 0,
         energyPulseTimer: 0,
         energyPulseActive: false,
         energyPulseY: 0
+    };
+    diagnosticsState = {
+        scrollOffset: 0, scrollDirection: 1, scrollPauseTimer: 0
+    };
+    opsLogState = {
+        events: [], maxEvents: 20, throttle: {}, throttleWindow: 500
     };
     missionCommanderState = {
         visible: false,
@@ -12521,6 +12542,10 @@ let hudAnimState = {
     fleetPanelVisible: false,
     fleetPanelSlide: 0,
     commanderPanelSlide: 0,
+    diagPanelVisible: false,
+    diagPanelSlide: 0,
+    opsLogPanelVisible: false,
+    opsLogPanelSlide: 0,
     energyFlowPhase: 0,
     scanlineOffset: 0,
     energyPulseTimer: 0,
@@ -12539,7 +12564,9 @@ let hudBootState = {
         systems:   { active: false, startTime: 0.3,  duration: 1.0, progress: 0, phase: 'waiting' },
         weapons:   { active: false, startTime: 0.6,  duration: 1.4, progress: 0, phase: 'waiting' },
         fleet:     { active: false, startTime: 0.9,  duration: 1.4, progress: 0, phase: 'waiting' },
-        commander: { active: false, startTime: 1.2,  duration: 1.0, progress: 0, phase: 'waiting' }
+        commander: { active: false, startTime: 1.2,  duration: 1.0, progress: 0, phase: 'waiting' },
+        diagnostics: { active: false, startTime: 0.45, duration: 1.3, progress: 0, phase: 'waiting' },
+        opslog:    { active: false, startTime: 1.1,  duration: 1.0, progress: 0, phase: 'waiting' }
     },
 
     techSnapshot: {
@@ -12563,7 +12590,9 @@ let hudBootState = {
         systems: [],
         weapons: [],
         fleet: [],
-        commander: []
+        commander: [],
+        diagnostics: [],
+        opslog: []
     }
 };
 
@@ -12594,6 +12623,41 @@ let energyTimeSeries = {
     peakValue: 100,
     smoothPeak: 100
 };
+
+let diagnosticsState = {
+    scrollOffset: 0,
+    scrollDirection: 1,
+    scrollPauseTimer: 0
+};
+
+let opsLogState = {
+    events: [],
+    maxEvents: 20,
+    throttle: {},
+    throttleWindow: 500
+};
+
+function pushOpsLogEvent(text, color, opts = {}) {
+    const now = Date.now();
+    const type = opts.type || text;
+    if (!opts.skipThrottle && opsLogState.throttle[type] && now - opsLogState.throttle[type] < opsLogState.throttleWindow) {
+        return;
+    }
+    opsLogState.throttle[type] = now;
+    opsLogState.events.push({ text, color, age: 0, bold: opts.bold || false, timestamp: now });
+    if (opsLogState.events.length > opsLogState.maxEvents) {
+        opsLogState.events.shift();
+    }
+}
+
+function updateOpsLog(dt) {
+    for (let i = opsLogState.events.length - 1; i >= 0; i--) {
+        opsLogState.events[i].age += dt;
+        if (opsLogState.events[i].age > 15) {
+            opsLogState.events.splice(i, 1);
+        }
+    }
+}
 
 function trackEnergyDelta(amount, isIntake) {
     if (isIntake) energyTimeSeries.frameIntake += amount;
@@ -12700,7 +12764,9 @@ function getHUDLayout() {
         systemsZone: { x: canvas.width - rightW - margin, y: margin, w: rightW, h: 90 },
         weaponsZone: { x: margin, y: 140, w: leftW, h: 200 },
         fleetZone: { x: canvas.width - rightW - margin, y: 108, w: rightW, h: 300 },
-        commanderZone: { x: margin, y: canvas.height - 110, w: Math.min(260, canvas.width * 0.22), h: 100 }
+        commanderZone: { x: margin, y: canvas.height - 110, w: Math.min(260, canvas.width * 0.22), h: 100 },
+        diagnosticsZone: { x: margin, y: canvas.height - 330, w: leftW, h: 100 },
+        opsLogZone: { x: margin, y: canvas.height - 220, w: Math.min(240, canvas.width * 0.20), h: 100 }
     };
 }
 
@@ -12889,6 +12955,46 @@ function renderHUDFrame() {
         }
         if (booting && hudBootState.panels.fleet.active && hudBootState.panels.fleet.phase !== 'waiting') {
             renderPanelBootOverlay(layout.fleetZone, layout.fleetZone.h, '#48f', 'FLEET.CMD', hudBootState.panels.fleet, hudBootState.bootLines.fleet);
+        }
+        ctx.restore();
+    }
+
+    // Diagnostics zone: visible after Beam Conduit (pg1) research
+    if (techFlags.beamConduit) {
+        hudAnimState.diagPanelVisible = true;
+    }
+    if (hudAnimState.diagPanelVisible && canvas.height >= 500) {
+        if (hudAnimState.diagPanelSlide < 1) {
+            hudAnimState.diagPanelSlide = Math.min(1, hudAnimState.diagPanelSlide + 0.04);
+        }
+        ctx.save();
+        const diagSlideOffset = (1 - easeOutCubic(hudAnimState.diagPanelSlide)) * -layout.diagnosticsZone.w;
+        ctx.translate(diagSlideOffset, 0);
+        if (panelReady('diagnostics')) {
+            renderDiagnosticsZone(layout.diagnosticsZone);
+        }
+        if (booting && hudBootState.panels.diagnostics && hudBootState.panels.diagnostics.active && hudBootState.panels.diagnostics.phase !== 'waiting') {
+            renderPanelBootOverlay(layout.diagnosticsZone, layout.diagnosticsZone.h, '#0af', 'DIAG.SYS', hudBootState.panels.diagnostics, hudBootState.bootLines.diagnostics);
+        }
+        ctx.restore();
+    }
+
+    // OPS.LOG zone: visible after wave 1
+    if (wave >= 2) {
+        hudAnimState.opsLogPanelVisible = true;
+    }
+    if (hudAnimState.opsLogPanelVisible && canvas.height >= 500) {
+        if (hudAnimState.opsLogPanelSlide < 1) {
+            hudAnimState.opsLogPanelSlide = Math.min(1, hudAnimState.opsLogPanelSlide + 0.04);
+        }
+        ctx.save();
+        const opsSlideOffset = (1 - easeOutCubic(hudAnimState.opsLogPanelSlide)) * -layout.opsLogZone.w;
+        ctx.translate(opsSlideOffset, 0);
+        if (panelReady('opslog')) {
+            renderOpsLogZone(layout.opsLogZone);
+        }
+        if (booting && hudBootState.panels.opslog && hudBootState.panels.opslog.active && hudBootState.panels.opslog.phase !== 'waiting') {
+            renderPanelBootOverlay(layout.opsLogZone, layout.opsLogZone.h, '#8af', 'OPS.LOG', hudBootState.panels.opslog, hudBootState.bootLines.opslog);
         }
         ctx.restore();
     }
@@ -13904,6 +14010,186 @@ function renderCommanderZone(zone) {
     }
 }
 
+function renderDiagnosticsZone(zone) {
+    const { x, y, w, h } = zone;
+    const pad = 6;
+    const lineH = 12;
+
+    renderNGEPanel(x, y, w, h, { color: '#0af', cutCorners: ['tl'], alpha: 0.5 });
+
+    // Header
+    ctx.fillStyle = '#0af';
+    ctx.font = 'bold 9px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('DIAG.SYS', x + 6, y + 11);
+
+    // Blink lights
+    renderNGEIndicator(x + w - 18, y + 4, 'square', '#0af', 'steady', { rate: 700 });
+    renderNGEIndicator(x + w - 10, y + 4, 'square', '#0af', 'steady', { rate: 700, phaseOffset: 350 });
+
+    // Build diagnostic lines dynamically
+    const lines = [];
+
+    if (ufo) {
+        const energyPct = ufo.energy / ufo.maxEnergy;
+        const energyStatus = energyPct > 0.25 ? 'nominal' : (energyPct > 0.1 ? 'caution' : 'critical');
+        lines.push({ label: 'NRG.MAIN', value: `${Math.ceil(ufo.energy)}/${ufo.maxEnergy}`, status: energyStatus });
+    }
+
+    // Beam status
+    const beamStatus = ufo ? (ufo.beamActive ? 'ACTIVE' : (ufo.energy < CONFIG.ENERGY_MIN_TO_FIRE ? 'DEPLETED' : 'IDLE')) : 'OFFLINE';
+    const beamSt = beamStatus === 'DEPLETED' ? 'critical' : 'nominal';
+    lines.push({ label: 'BEAM.SYS', value: beamStatus, status: beamSt });
+
+    // Shield
+    const shldVal = ufo ? ufo.health : finalHealth;
+    const shldPct = shldVal / CONFIG.UFO_START_HEALTH;
+    lines.push({ label: 'SHLD.INTG', value: `${Math.ceil(shldVal)}/${CONFIG.UFO_START_HEALTH}`, status: shldPct > 0.25 ? 'nominal' : 'critical' });
+
+    // Drones
+    if (harvesterUnlocked) {
+        const aliveH = activeDrones.filter(d => d.type === 'harvester' && d.alive).length +
+            activeCoordinators.filter(c => c.type === 'harvester').reduce((s, c) => s + (c.subDrones ? c.subDrones.filter(d => d.alive).length : 0), 0);
+        const totalH = activeDrones.filter(d => d.type === 'harvester').length +
+            activeCoordinators.filter(c => c.type === 'harvester').reduce((s, c) => s + (c.subDrones ? c.subDrones.length : 0), 0);
+        lines.push({ label: 'DRN.HARV', value: `${aliveH}/${totalH} ACTIVE`, status: aliveH === totalH ? 'nominal' : 'caution' });
+    }
+
+    if (battleDroneUnlocked) {
+        const aliveB = activeDrones.filter(d => d.type === 'battle' && d.alive).length +
+            activeCoordinators.filter(c => c.type === 'attack').reduce((s, c) => s + (c.subDrones ? c.subDrones.filter(d => d.alive).length : 0), 0);
+        const totalB = activeDrones.filter(d => d.type === 'battle').length +
+            activeCoordinators.filter(c => c.type === 'attack').reduce((s, c) => s + (c.subDrones ? c.subDrones.length : 0), 0);
+        lines.push({ label: 'DRN.ATTK', value: `${aliveB}/${totalB} ACTIVE`, status: aliveB === totalB ? 'nominal' : 'caution' });
+    }
+
+    for (const coord of activeCoordinators) {
+        if (!coord.alive || coord.state === 'DYING') continue;
+        const cLabel = coord.type === 'harvester' ? 'COORD.H' : 'COORD.A';
+        const cPct = coord.energyTimer / coord.maxEnergy;
+        lines.push({ label: cLabel, value: `NRG ${Math.round(cPct * 100)}%`, status: cPct > 0.25 ? 'nominal' : 'critical' });
+    }
+
+    if (missileUnlocked && missileGroupCount > 0) {
+        const ready = missileGroups.filter(g => g.ready).length;
+        lines.push({ label: 'ORD.MSL', value: `${ready}/${missileGroupCount} RDY`, status: ready > 0 ? 'nominal' : 'caution' });
+    }
+
+    if (playerInventory.maxBombs > 0) {
+        lines.push({ label: 'ORD.BMB', value: `${playerInventory.bombs}/${playerInventory.maxBombs}`, status: playerInventory.bombs > 0 ? 'nominal' : 'caution' });
+    }
+
+    // Threat counter
+    const tankCount = tanks ? tanks.filter(t => t.alive).length : 0;
+    const thrStatus = tankCount > 5 ? 'critical' : (tankCount > 3 ? 'caution' : 'nominal');
+    lines.push({ label: 'THR.PROX', value: `${tankCount} HOSTILE`, status: thrStatus });
+
+    // Render lines with scroll
+    const startY = y + 20;
+    const viewH = h - 24;
+    const totalLineH = lines.length * lineH;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x + 2, startY, w - 4, viewH);
+    ctx.clip();
+
+    let scrollY = 0;
+    if (totalLineH > viewH) {
+        diagnosticsState.scrollPauseTimer -= 1/60;
+        if (diagnosticsState.scrollPauseTimer <= 0) {
+            diagnosticsState.scrollOffset += diagnosticsState.scrollDirection * 0.4;
+            const maxScroll = totalLineH - viewH;
+            if (diagnosticsState.scrollOffset >= maxScroll) {
+                diagnosticsState.scrollOffset = maxScroll;
+                diagnosticsState.scrollDirection = -1;
+                diagnosticsState.scrollPauseTimer = 2;
+            } else if (diagnosticsState.scrollOffset <= 0) {
+                diagnosticsState.scrollOffset = 0;
+                diagnosticsState.scrollDirection = 1;
+                diagnosticsState.scrollPauseTimer = 2;
+            }
+        }
+        scrollY = diagnosticsState.scrollOffset;
+    }
+
+    for (let i = 0; i < lines.length; i++) {
+        const ly = startY + i * lineH - scrollY;
+        if (ly < startY - lineH || ly > startY + viewH) continue;
+
+        const line = lines[i];
+        ctx.font = '9px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = line.status === 'critical' ? '#f44' : '#8af';
+        ctx.fillText(line.label, x + pad, ly + 9);
+        ctx.fillStyle = line.status === 'critical' ? '#f44' : '#ccc';
+        ctx.textAlign = 'right';
+        ctx.fillText(line.value, x + w - pad - 12, ly + 9);
+        ctx.textAlign = 'left';
+
+        // Status dot
+        renderNGEStatusDot(x + w - pad - 4, ly + 6, line.status, 2);
+    }
+
+    ctx.restore();
+}
+
+function renderOpsLogZone(zone) {
+    const { x, y, w, h } = zone;
+    const pad = 6;
+    const lineH = 12;
+    const maxVisibleLines = 6;
+
+    renderNGEPanel(x, y, w, h, { color: '#8af', cutCorners: ['bl'], alpha: 0.45 });
+
+    // Header
+    ctx.fillStyle = '#8af';
+    ctx.font = 'bold 9px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('OPS.LOG', x + 6, y + 11);
+
+    // Blink lights (alternating pair)
+    renderNGEIndicator(x + w - 18, y + 4, 'square', '#8af', 'steady', { rate: 500 });
+    renderNGEIndicator(x + w - 10, y + 4, 'square', '#8af', 'steady', { rate: 500, phaseOffset: 250 });
+
+    // Render events (newest at bottom)
+    const startY = y + 20;
+    const events = opsLogState.events;
+    const visibleStart = Math.max(0, events.length - maxVisibleLines);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x + 2, startY, w - 4, h - 24);
+    ctx.clip();
+
+    for (let i = visibleStart; i < events.length; i++) {
+        const ev = events[i];
+        const lineIdx = i - visibleStart;
+        const ly = startY + lineIdx * lineH;
+
+        const alpha = Math.max(0.15, 1 - (ev.age / 15));
+        const isNew = ev.age < 0.3;
+
+        ctx.font = ev.bold ? 'bold 9px monospace' : '9px monospace';
+
+        // Prefix
+        ctx.fillStyle = `rgba(85, 85, 85, ${alpha})`;
+        ctx.textAlign = 'left';
+        ctx.fillText('> ', x + pad, ly + 9);
+
+        // Text
+        if (isNew) {
+            ctx.shadowColor = ev.color;
+            ctx.shadowBlur = 4;
+        }
+        ctx.fillStyle = `rgba(${hexToRgb(ev.color)}, ${alpha})`;
+        ctx.fillText(ev.text, x + pad + 12, ly + 9);
+        ctx.shadowBlur = 0;
+    }
+
+    ctx.restore();
+}
+
 // Tech readout chip definitions
 const TECH_CHIP_DEFS = [
     { id: 'pg1', text: 'PG1 CONDUIT', width: 58, track: 'powerGrid' },
@@ -14131,9 +14417,10 @@ function updateHUDAnimations(dt) {
         }
     }
 
-    // Energy time series sampling
+    // Energy time series sampling + ops log aging
     if (gameState === 'PLAYING') {
         updateEnergyTimeSeries(dt);
+        updateOpsLog(dt);
     }
 
     // Update boot sequence
@@ -14147,6 +14434,7 @@ function initHUDBoot() {
     hudBootState.timer = 0;
     hudBootState.duration = 3.5;
     hudBootState._allOnlinePlayed = false;
+    pushOpsLogEvent(`-- WAVE ${wave} --`, '#fff', { type: 'waveStart', bold: true, skipThrottle: true });
 
     // Snapshot current tech state
     hudBootState.techSnapshot = {
@@ -14177,9 +14465,11 @@ function initHUDBoot() {
     p.fleet.active = hasFleet;
 
     p.commander.active = wave >= 2;
+    p.diagnostics.active = techFlags.beamConduit;
+    p.opslog.active = wave >= 2;
 
     // Reset all panel states and restore default stagger times
-    const defaultStartTimes = { status: 0.0, mission: 0.15, systems: 0.3, weapons: 0.6, fleet: 0.9, commander: 1.2 };
+    const defaultStartTimes = { status: 0.0, mission: 0.15, systems: 0.3, diagnostics: 0.45, weapons: 0.6, fleet: 0.9, opslog: 1.1, commander: 1.2 };
     for (const key of Object.keys(p)) {
         p[key].progress = 0;
         p[key].phase = 'waiting';
@@ -14193,6 +14483,8 @@ function initHUDBoot() {
     hudAnimState.weaponsPanelSlide = 0;
     hudAnimState.fleetPanelSlide = 0;
     hudAnimState.commanderPanelSlide = 0;
+    hudAnimState.diagPanelSlide = 0;
+    hudAnimState.opsLogPanelSlide = 0;
 }
 
 function updateHUDBoot(dt) {
@@ -14331,6 +14623,31 @@ function generateBootLines() {
         ];
     } else {
         lines.commander = [];
+    }
+
+    // DIAGNOSTICS panel (if active)
+    if (hudBootState.panels.diagnostics && hudBootState.panels.diagnostics.active) {
+        lines.diagnostics = [
+            `>> INIT DIAG.SYS`,
+            `[OK] SCANNING ACTIVE MODULES`,
+            `[OK] LINKING TELEMETRY FEEDS`,
+            `[OK] SUBSYSTEM MONITOR ONLINE`,
+            `>> DIAG.SYS READY`
+        ];
+    } else {
+        lines.diagnostics = [];
+    }
+
+    // OPS.LOG panel (if active)
+    if (hudBootState.panels.opslog && hudBootState.panels.opslog.active) {
+        lines.opslog = [
+            `>> INIT OPS.LOG`,
+            `[OK] EVENT BUFFER ALLOC`,
+            `[OK] LOG STREAM ACTIVE`,
+            `>> OPS.LOG ONLINE`
+        ];
+    } else {
+        lines.opslog = [];
     }
 }
 
