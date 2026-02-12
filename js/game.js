@@ -1419,26 +1419,26 @@ const SFX = {
     // Missile Swarm SFX
     missileLockOn: () => {
         if (!audioCtx) return;
-        // "boop-boop" lock-on sequence
-        [800, 1200].forEach((freq, i) => {
+        // Soft "pip-pip" lock-on sequence
+        [520, 780].forEach((freq, i) => {
             setTimeout(() => {
                 const osc = audioCtx.createOscillator();
                 const gain = audioCtx.createGain();
                 osc.connect(gain);
                 gain.connect(audioCtx.destination);
-                osc.type = 'square';
+                osc.type = 'triangle';
                 osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-                gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.08);
+                gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.05);
                 osc.start();
-                osc.stop(audioCtx.currentTime + 0.08);
-            }, i * 100);
+                osc.stop(audioCtx.currentTime + 0.05);
+            }, i * 70);
         });
     },
 
     missileLaunch: () => {
         if (!audioCtx) return;
-        // Whooshing launch sound
+        // Brief soft whoosh
         const osc = audioCtx.createOscillator();
         const noise = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
@@ -1450,31 +1450,31 @@ const SFX = {
         gain.connect(audioCtx.destination);
 
         osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(150, audioCtx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(600, audioCtx.currentTime + 0.15);
-        osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.3);
+        osc.frequency.setValueAtTime(120, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(400, audioCtx.currentTime + 0.08);
+        osc.frequency.exponentialRampToValueAtTime(80, audioCtx.currentTime + 0.18);
 
         noise.type = 'sawtooth';
-        noise.frequency.setValueAtTime(50, audioCtx.currentTime);
-        noise.frequency.exponentialRampToValueAtTime(300, audioCtx.currentTime + 0.15);
+        noise.frequency.setValueAtTime(40, audioCtx.currentTime);
+        noise.frequency.exponentialRampToValueAtTime(200, audioCtx.currentTime + 0.08);
 
         filter.type = 'bandpass';
-        filter.frequency.setValueAtTime(400, audioCtx.currentTime);
-        filter.Q.setValueAtTime(1, audioCtx.currentTime);
+        filter.frequency.setValueAtTime(300, audioCtx.currentTime);
+        filter.Q.setValueAtTime(0.8, audioCtx.currentTime);
 
-        gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+        gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.18);
 
         osc.start();
         noise.start();
-        osc.stop(audioCtx.currentTime + 0.3);
-        noise.stop(audioCtx.currentTime + 0.3);
+        osc.stop(audioCtx.currentTime + 0.18);
+        noise.stop(audioCtx.currentTime + 0.18);
     },
 
     missileReady: () => {
         if (!audioCtx) return;
-        // Rising chime indicating missiles recharged
-        [600, 800, 1000].forEach((freq, i) => {
+        // Soft brief rising chime indicating missiles recharged
+        [440, 550, 660].forEach((freq, i) => {
             setTimeout(() => {
                 const osc = audioCtx.createOscillator();
                 const gain = audioCtx.createGain();
@@ -1482,11 +1482,11 @@ const SFX = {
                 gain.connect(audioCtx.destination);
                 osc.type = 'sine';
                 osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-                gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.12);
+                gain.gain.setValueAtTime(0.06, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.07);
                 osc.start();
-                osc.stop(audioCtx.currentTime + 0.12);
-            }, i * 60);
+                osc.stop(audioCtx.currentTime + 0.07);
+            }, i * 45);
         });
     },
 
@@ -1497,11 +1497,11 @@ const SFX = {
         osc.connect(gain);
         gain.connect(audioCtx.destination);
         osc.type = 'sine';
-        osc.frequency.setValueAtTime(1200, audioCtx.currentTime);
-        gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.06);
+        osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.04);
         osc.start();
-        osc.stop(audioCtx.currentTime + 0.06);
+        osc.stop(audioCtx.currentTime + 0.04);
     },
 
     researchComplete: () => {
@@ -1685,63 +1685,64 @@ const SFX = {
 
     droneDeliver: () => {
         if (!audioCtx) return;
-        // R2D2-style happy ascending warble - orbs launching!
+        // Glitchy blip-blip: two quick digital chirps
         const t = audioCtx.currentTime;
-        const baseFreq = 400 + Math.random() * 200;
-        const notes = 3 + Math.floor(Math.random() * 2);
-        for (let i = 0; i < notes; i++) {
-            const noteT = t + i * (0.06 + Math.random() * 0.03);
-            const freq = baseFreq + i * (80 + Math.random() * 60);
-            const dur = 0.06 + Math.random() * 0.04;
+        for (let i = 0; i < 2; i++) {
+            const noteT = t + i * 0.06;
+            const freq = 600 + i * 300 + Math.random() * 100;
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
             osc.connect(gain);
             gain.connect(audioCtx.destination);
-            osc.type = Math.random() > 0.5 ? 'sine' : 'triangle';
+            osc.type = 'square';
             osc.frequency.setValueAtTime(freq, noteT);
-            osc.frequency.exponentialRampToValueAtTime(freq * (1.05 + Math.random() * 0.1), noteT + dur);
-            osc.detune.setValueAtTime((Math.random() - 0.5) * 20, noteT);
-            gain.gain.setValueAtTime(0.04, noteT);
-            gain.gain.exponentialRampToValueAtTime(0.01, noteT + dur);
+            osc.frequency.exponentialRampToValueAtTime(freq * 1.3, noteT + 0.04);
+            gain.gain.setValueAtTime(0.1, noteT);
+            gain.gain.exponentialRampToValueAtTime(0.01, noteT + 0.05);
             osc.start(noteT);
-            osc.stop(noteT + dur);
+            osc.stop(noteT + 0.05);
         }
     },
 
     droneOrbReceive: () => {
         if (!audioCtx) return;
-        // Satisfying sci-fi "deposit" chime - orbs absorbed by UFO
+        // Glitchy digital "ka-ching" — biomatter received
         const t = audioCtx.currentTime;
-        // Bright shimmer chord
-        const freqs = [800, 1200, 1600];
+        // Quick ascending glitch triplet
+        const freqs = [700, 1100, 1500];
         for (let i = 0; i < freqs.length; i++) {
-            const noteT = t + i * 0.04;
-            const freq = freqs[i] + Math.random() * 50;
+            const noteT = t + i * 0.035;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.type = i < 2 ? 'square' : 'sine';
+            osc.frequency.setValueAtTime(freqs[i], noteT);
+            osc.frequency.exponentialRampToValueAtTime(freqs[i] * 0.9, noteT + 0.04);
+            gain.gain.setValueAtTime(0.12, noteT);
+            gain.gain.exponentialRampToValueAtTime(0.01, noteT + 0.06);
+            osc.start(noteT);
+            osc.stop(noteT + 0.06);
+        }
+    },
+
+    dronePickup: () => {
+        if (!audioCtx) return;
+        // Softer, briefer version of abductionComplete jingle for drone harvests
+        const t = audioCtx.currentTime;
+        [400, 500, 600, 800].forEach((freq, i) => {
+            const noteT = t + i * 0.06;
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
             osc.connect(gain);
             gain.connect(audioCtx.destination);
             osc.type = 'sine';
             osc.frequency.setValueAtTime(freq, noteT);
-            osc.frequency.exponentialRampToValueAtTime(freq * 1.02, noteT + 0.15);
-            gain.gain.setValueAtTime(0.05, noteT);
-            gain.gain.linearRampToValueAtTime(0.03, noteT + 0.05);
-            gain.gain.exponentialRampToValueAtTime(0.001, noteT + 0.2);
+            gain.gain.setValueAtTime(0.15, noteT);
+            gain.gain.exponentialRampToValueAtTime(0.01, noteT + 0.1);
             osc.start(noteT);
-            osc.stop(noteT + 0.2);
-        }
-        // Low resonant thud for weight
-        const thud = audioCtx.createOscillator();
-        const thudGain = audioCtx.createGain();
-        thud.connect(thudGain);
-        thudGain.connect(audioCtx.destination);
-        thud.type = 'sine';
-        thud.frequency.setValueAtTime(120, t);
-        thud.frequency.exponentialRampToValueAtTime(60, t + 0.12);
-        thudGain.gain.setValueAtTime(0.06, t);
-        thudGain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
-        thud.start(t);
-        thud.stop(t + 0.15);
+            osc.stop(noteT + 0.1);
+        });
     },
 
     droneDestroy: (type) => {
@@ -8245,6 +8246,7 @@ class HarvesterDrone {
                     // Target becomes orb - start orb flight phase
                     this.target.harvestShake = 0; this.target.harvestShrink = 0;
                     this.target.alive = false;
+                    playTargetSound(this.target.type, 0.08);
                     // Spawn orb-to-harvester particles
                     const tcx = this.target.x + this.target.width / 2;
                     const tcy = this.target.y + this.target.height / 2;
@@ -9692,8 +9694,8 @@ class AttackCoordinator extends Coordinator {
         this.bombTimer = 0;       // Cooldown between bomb drops
         this.bombInterval = 4.0;  // Drop a bomb every 4 seconds
         this.missileTimer = 0;    // Cooldown between missile salvos
-        this.missileInterval = 2.5; // Offensive auto-fire every 2.5 seconds
-        this.reactiveInterval = 0.5; // Reactive defense: fire as fast as groups recharge
+        this.missileInterval = 5.0; // Offensive auto-fire every 5 seconds
+        this.reactiveInterval = 1.0; // Reactive defense: tempered point-defense
         this.missileLaunchFlash = 0; // Remaining flash duration on launch
         this.reactiveMode = false;  // True when incoming threats detected
     }
@@ -9790,19 +9792,13 @@ class AttackCoordinator extends Coordinator {
     }
 
     autoMissile() {
-        // Fire ALL ready groups in a burst — the missileInterval is a cooldown between bursts
-        let groupsFired = 0;
-        while (missileGroups.some(g => g.ready) && ufo && ufo.energy >= CONFIG.MISSILE_GROUP_ENERGY_COST) {
+        // Fire ONE ready group per call — conserve energy for player manual salvos
+        if (missileGroups.some(g => g.ready) && ufo && ufo.energy >= CONFIG.MISSILE_GROUP_ENERGY_COST) {
             fireMissileGroup();
-            groupsFired++;
-        }
-        if (groupsFired > 0) {
             if (this.reactiveMode) {
-                const label = groupsFired > 1 ? `INTERCEPT x${groupsFired}!` : 'INTERCEPT!';
-                createFloatingText(this.x, this.y + 30, label, '#ffcc00');
+                createFloatingText(this.x, this.y + 30, 'INTERCEPT!', '#ffcc00');
             } else {
-                const label = groupsFired > 1 ? `AUTO SALVO x${groupsFired}!` : 'AUTO MISSILES!';
-                createFloatingText(this.x, this.y + 30, label, '#f44');
+                createFloatingText(this.x, this.y + 30, 'AUTO MISSILES!', '#f44');
             }
         }
     }
@@ -12674,7 +12670,7 @@ function renderMissionZone(zone) {
         const barH = 26;
         const barY = y;
 
-        renderNGEPanel(x, barY, w, barH, { color: '#0a0', cutCorners: ['tr'], alpha: 0.7 });
+        renderNGEPanel(x, barY, w, barH, { color: '#0a0', cutCorners: [], alpha: 0.7 });
 
         const progress = Math.min(1, quotaProgress / quotaTarget);
         const waveElapsed = CONFIG.WAVE_DURATION - waveTimer;
@@ -12737,7 +12733,7 @@ function renderMissionZone(zone) {
             const pulse = Math.sin(Date.now() / 80) * 0.3 + 0.7;
             ctx.strokeStyle = `rgba(0, 255, 0, ${pulse})`;
             ctx.lineWidth = 2;
-            ctx.strokeRect(x - 1, barY - 1, w + 2, barH + 2);
+            ctx.strokeRect(x, barY - 1, w, barH + 2);
         }
     }
 
@@ -13012,7 +13008,7 @@ function renderWeaponsZone(zone) {
 
         // Up to 3-column grid layout for missile groups
         const mColW = groupLabelW + CONFIG.MISSILE_GROUP_SIZE * (missileW + missileSpacing);
-        const mGridStartX = x + pad + 20;
+        const mGridStartX = gridStartX;
 
         for (let gi = 0; gi < missileGroupCount; gi++) {
             const group = missileGroups[gi];
@@ -13350,10 +13346,12 @@ function renderEnergyFlows(layout) {
     const ufoY = ufo.y - 20;
 
     // Flow to fleet zone (drone power)
+    // Always draw as inactive (subtle) — the bright active state created a
+    // distracting dashed line across the viewport toward the sidebar when beaming.
+    // Beam-active feedback is already provided by in-beam sparkles and glow.
     if (hudAnimState.fleetPanelVisible) {
         const fz = layout.fleetZone;
-        const active = ufo.beamActive || false;
-        renderEnergyFlowLine(ufoX + 60, ufoY, fz.x, fz.y + fz.h / 2, '#48f', active);
+        renderEnergyFlowLine(ufoX + 60, ufoY, fz.x, fz.y + fz.h / 2, '#48f', false);
     }
 
     // Flow to weapons zone (ordnance power)
@@ -18376,7 +18374,7 @@ function renderShop() {
                 // Active research: bright glow + tinted background
                 ctx.shadowColor = trackColors[t];
                 ctx.shadowBlur = 12;
-                ctx.fillStyle = 'rgba(30, 35, 60, 0.98)';
+                ctx.fillStyle = 'rgb(30, 35, 60)';
                 ctx.beginPath();
                 ctx.roundRect(rx, ry, nodeW, nodeH, nodeR);
                 ctx.fill();
@@ -18396,7 +18394,7 @@ function renderShop() {
                 ctx.globalAlpha = 1;
             } else if (isInQueue) {
                 // Queued: slightly tinted background, solid border
-                ctx.fillStyle = 'rgba(28, 32, 55, 0.96)';
+                ctx.fillStyle = 'rgb(28, 32, 55)';
                 ctx.beginPath();
                 ctx.roundRect(rx, ry, nodeW, nodeH, nodeR);
                 ctx.fill();
@@ -18415,7 +18413,7 @@ function renderShop() {
                 const pulseAmp = 0.12 + urgency * 0.4; // pulse harder
                 const pulse = Math.sin(Date.now() / baseSpeed) * pulseAmp + (1 - pulseAmp);
                 ctx.globalAlpha = pulse;
-                ctx.fillStyle = urgency > 0.3 ? `rgba(25, 28, 50, ${0.95 - urgency * 0.3})` : 'rgba(25, 28, 50, 0.95)';
+                ctx.fillStyle = 'rgb(25, 28, 50)';
                 ctx.beginPath();
                 ctx.roundRect(rx, ry, nodeW, nodeH, nodeR);
                 ctx.fill();
@@ -18433,7 +18431,7 @@ function renderShop() {
                 }
                 ctx.globalAlpha = 1;
             } else {
-                ctx.fillStyle = 'rgba(28, 30, 48, 0.92)';
+                ctx.fillStyle = 'rgb(28, 30, 48)';
                 ctx.beginPath();
                 ctx.roundRect(rx, ry, nodeW, nodeH, nodeR);
                 ctx.fill();
@@ -18628,14 +18626,14 @@ function renderShop() {
 
     if (waveHistory.length > 0) {
         let maxScore = 0;
-        let maxBM = 0;
-        let cumulativeBM = 0;
-        const bmCumulative = [];
+        // Find unified scale for quota bars and lines
+        let maxQuotaScale = 0;
         for (let i = 0; i < waveHistory.length; i++) {
-            cumulativeBM += waveHistory[i].bioMatterEarned;
-            bmCumulative.push(cumulativeBM);
             if (waveHistory[i].score > maxScore) maxScore = waveHistory[i].score;
-            if (cumulativeBM > maxBM) maxBM = cumulativeBM;
+            const qt = waveHistory[i].quotaTarget || 0;
+            const qp = waveHistory[i].quotaProgress || 0;
+            if (qt > maxQuotaScale) maxQuotaScale = qt;
+            if (qp > maxQuotaScale) maxQuotaScale = qp;
         }
 
         const numWaves = waveHistory.length;
@@ -18645,30 +18643,25 @@ function renderShop() {
         const totalBarsW = numWaves * barWidth + (numWaves - 1) * barGap;
         const barsStartX = graphX + 4 + Math.max(0, (barAreaW - totalBarsW) / 2);
 
-        // Find max quota target for scaling the quota line consistently
-        let maxQuota = 0;
-        for (let i = 0; i < numWaves; i++) {
-            const qt = waveHistory[i].quotaTarget || 0;
-            if (qt > maxQuota) maxQuota = qt;
-        }
-
         for (let i = 0; i < numWaves; i++) {
             const bx = barsStartX + i * (barWidth + barGap);
             const halfBar = barWidth / 2;
 
+            // BLUE SCORE BAR (left half) - scaled against maxScore
             const scoreH = maxScore > 0 ? (waveHistory[i].score / maxScore) * (graphH - 4) : 0;
             ctx.fillStyle = 'rgba(0, 180, 255, 0.5)';
             ctx.fillRect(bx, graphBaseY - scoreH, halfBar - 1, scoreH);
 
-            const bmH = maxBM > 0 ? (bmCumulative[i] / maxBM) * (graphH - 4) : 0;
-            ctx.fillStyle = 'rgba(0, 200, 0, 0.5)';
-            ctx.fillRect(bx + halfBar, graphBaseY - bmH, halfBar - 1, bmH);
-
-            // Quota line - horizontal dash at quota target level
-            const qt = waveHistory[i].quotaTarget || 0;
+            // GREEN BEAMED BAR (right half) - quotaProgress on same scale as quota line
             const qp = waveHistory[i].quotaProgress || 0;
-            if (qt > 0 && maxQuota > 0) {
-                const quotaY = graphBaseY - (qt / maxQuota) * (graphH - 4);
+            const beamedH = maxQuotaScale > 0 ? (qp / maxQuotaScale) * (graphH - 4) : 0;
+            ctx.fillStyle = 'rgba(0, 200, 0, 0.5)';
+            ctx.fillRect(bx + halfBar, graphBaseY - beamedH, halfBar - 1, beamedH);
+
+            // Quota line - horizontal dash at quota target level (same scale as green bar)
+            const qt = waveHistory[i].quotaTarget || 0;
+            if (qt > 0 && maxQuotaScale > 0) {
+                const quotaY = graphBaseY - (qt / maxQuotaScale) * (graphH - 4);
                 const metQuota = qp >= qt;
                 ctx.strokeStyle = metQuota ? 'rgba(255, 255, 0, 0.8)' : 'rgba(255, 60, 60, 0.8)';
                 ctx.lineWidth = 1.5;
@@ -18696,7 +18689,7 @@ function renderShop() {
         ctx.fillStyle = 'rgba(0, 180, 255, 0.7)';
         ctx.fillText('SCORE', graphX + graphW - 2, graphY + 9);
         ctx.fillStyle = 'rgba(0, 200, 0, 0.7)';
-        ctx.fillText('BIO', graphX + graphW - 2, graphY + 19);
+        ctx.fillText('BEAMED', graphX + graphW - 2, graphY + 19);
         ctx.fillStyle = 'rgba(255, 255, 0, 0.7)';
         ctx.fillText('QUOTA', graphX + graphW - 2, graphY + 29);
     } else {
