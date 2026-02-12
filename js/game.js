@@ -416,6 +416,7 @@ const CONFIG = {
 // ============================================
 const TUTORIAL_CONFIG = {
     // Timing
+    BOOT_WAIT: 5.0,                  // Seconds after wave start before tutorial begins (boot sequence + breathing room)
     MOVE_HINT_DELAY: 0.5,            // Seconds before move hint appears
     BEAM_HINT_DELAY: 0.3,            // Delay after move dismissal before beam hint
     BEAM_HINT_FALLBACK_TIME: 4.0,    // Show beam hint after this time even if move not done
@@ -1892,6 +1893,138 @@ const SFX = {
             chirp.start(t);
             chirp.stop(t + duration * 0.5);
         }
+    },
+
+    // HUD boot panel start - short CRT click/blip (square wave, 800Hz -> 200Hz, 50ms)
+    // TNG-style panel activation: clean two-note ascending "boo-beep"
+    bootPanelStart: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        // First tone: warm low note
+        const osc1 = audioCtx.createOscillator();
+        const gain1 = audioCtx.createGain();
+        osc1.connect(gain1);
+        gain1.connect(audioCtx.destination);
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(440, t);
+        gain1.gain.setValueAtTime(0.07, t);
+        gain1.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+        osc1.start(t);
+        osc1.stop(t + 0.08);
+        // Second tone: ascending major third
+        const osc2 = audioCtx.createOscillator();
+        const gain2 = audioCtx.createGain();
+        osc2.connect(gain2);
+        gain2.connect(audioCtx.destination);
+        osc2.type = 'sine';
+        osc2.frequency.setValueAtTime(554, t + 0.06);
+        gain2.gain.setValueAtTime(0.0001, t);
+        gain2.gain.setValueAtTime(0.06, t + 0.06);
+        gain2.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+        osc2.start(t + 0.06);
+        osc2.stop(t + 0.15);
+    },
+
+    // TNG-style system online: ascending three-note confirmation "bwee-boo-beep"
+    bootPanelOnline: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const notes = [523, 659, 784]; // C5, E5, G5 - major triad ascending
+        const dur = 0.07;
+        for (let i = 0; i < 3; i++) {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(notes[i], t + i * 0.06);
+            gain.gain.setValueAtTime(0.0001, t);
+            gain.gain.setValueAtTime(0.06, t + i * 0.06);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.06 + dur + 0.04);
+            osc.start(t + i * 0.06);
+            osc.stop(t + i * 0.06 + dur + 0.04);
+        }
+    },
+
+    // TNG-style data processing blip: soft clean sine bloop at random pleasant pitches
+    bootDataChatter: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        // Random note from a pentatonic-ish set for pleasant variety
+        const pitches = [660, 784, 880, 988, 1047, 1175];
+        const freq = pitches[Math.floor(Math.random() * pitches.length)];
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, t);
+        gain.gain.setValueAtTime(0.035, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+        osc.start(t);
+        osc.stop(t + 0.06);
+    },
+
+    // Quick descending two-note "boop-bop" when something is not found (skip)
+    bootMissileSkip: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+
+        // First note: 600Hz, 50ms
+        const osc1 = audioCtx.createOscillator();
+        const gain1 = audioCtx.createGain();
+        osc1.connect(gain1);
+        gain1.connect(audioCtx.destination);
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(600, t);
+        gain1.gain.setValueAtTime(0.04, t);
+        gain1.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+        osc1.start(t);
+        osc1.stop(t + 0.05);
+
+        // Second note: 400Hz (lower), 50ms, starting 40ms after the first
+        const osc2 = audioCtx.createOscillator();
+        const gain2 = audioCtx.createGain();
+        osc2.connect(gain2);
+        gain2.connect(audioCtx.destination);
+        osc2.type = 'sine';
+        osc2.frequency.setValueAtTime(400, t + 0.04);
+        gain2.gain.setValueAtTime(0.04, t + 0.04);
+        gain2.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+        osc2.start(t + 0.04);
+        osc2.stop(t + 0.09);
+    },
+
+    // Positive confirmation chime: two-tone "bong-BING" doorbell-like sound
+    bootAllOnline: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+
+        // First tone: low, warm sine wave (E4 = 330Hz)
+        const osc1 = audioCtx.createOscillator();
+        const gain1 = audioCtx.createGain();
+        osc1.connect(gain1);
+        gain1.connect(audioCtx.destination);
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(330, t);
+        gain1.gain.setValueAtTime(0.07, t);
+        gain1.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+        osc1.start(t);
+        osc1.stop(t + 0.12);
+
+        // Brief gap: 60ms silence between notes
+        // Then second tone: high, bright sine wave (E5 = 660Hz, an octave up)
+        const t2 = t + 0.18;  // 120ms + 60ms gap
+        const osc2 = audioCtx.createOscillator();
+        const gain2 = audioCtx.createGain();
+        osc2.connect(gain2);
+        gain2.connect(audioCtx.destination);
+        osc2.type = 'sine';
+        osc2.frequency.setValueAtTime(660, t2);
+        gain2.gain.setValueAtTime(0.08, t2);
+        gain2.gain.exponentialRampToValueAtTime(0.001, t2 + 0.5);  // 200ms attack + 300ms decay
+        osc2.start(t2);
+        osc2.stop(t2 + 0.5);
     },
 
     // Research countdown blip - escalating pitch as time runs out
@@ -3575,6 +3708,8 @@ function initTutorial() {
     }
     tutorialState = {
         phase: 'MOVE_BEAM',
+        bootWaiting: true,         // Wait for boot sequence + breathing room before starting
+        bootWaitTimer: 0,          // Timer for the boot wait period
         moveCompleted: false,
         beamCompleted: false,
         warpCompleted: false,
@@ -3653,6 +3788,17 @@ function startTutorialDismiss(type) {
 function updateTutorial(dt) {
     if (!tutorialState || tutorialState.phase === 'COMPLETE') return;
 
+    // Wait for boot sequence to finish before starting tutorial
+    if (tutorialState.bootWaiting) {
+        tutorialState.bootWaitTimer += dt;
+        if (tutorialState.bootWaitTimer >= TUTORIAL_CONFIG.BOOT_WAIT) {
+            tutorialState.bootWaiting = false;
+            tutorialState.phaseTimer = 0;
+            triggerTutorialCommander('welcome');
+        }
+        return;
+    }
+
     tutorialState.phaseTimer += dt;
 
     // Handle dismissal animations
@@ -3708,15 +3854,31 @@ function updateTutorial(dt) {
                 tutorialState.beamHintShown = true;
                 tutorialState.hintVisible = true;
                 tutorialState.hintTimer = 0;
+                triggerTutorialCommander('beamTargets');
+                // Boot the mission panel now (deferred from initial boot on wave 1)
+                if (wave === 1) {
+                    hudBootState.panels.mission.active = true;
+                    hudBootState.panels.mission.phase = 'waiting';
+                    hudBootState.panels.mission.progress = 0;
+                    hudBootState.panels.mission.startTime = hudBootState.timer; // start from current time
+                    hudBootState.panels.mission._lastDiagLine = -1;
+                    // Re-enter booting phase if boot was complete
+                    if (hudBootState.phase === 'complete') {
+                        hudBootState.phase = 'booting';
+                        hudBootState.duration = hudBootState.timer + hudBootState.panels.mission.duration + 0.5;
+                    }
+                }
             } else if (tutorialState.phase === 'WARP_JUKE') {
                 tutorialState.hintVisible = true;
                 tutorialState.hintTimer = 0;
             } else if (tutorialState.phase === 'BOMB') {
                 tutorialState.hintVisible = true;
                 tutorialState.hintTimer = 0;
+                triggerTutorialCommander('useBombs');
             } else if (tutorialState.phase === 'CELEBRATION') {
                 tutorialState.completionActive = true;
                 tutorialState.completionTimer = 0;
+                triggerTutorialCommander('complete');
                 // Celebration particles
                 const cx = canvas.width / 2;
                 const cy = canvas.height * 0.40;
@@ -3786,6 +3948,19 @@ function updateTutorialMoveBeam(dt) {
         ts.beamHintShown = true;
         ts.hintVisible = true;
         ts.hintTimer = 0;
+        // Boot the mission panel now (deferred from initial boot on wave 1)
+        if (wave === 1) {
+            hudBootState.panels.mission.active = true;
+            hudBootState.panels.mission.phase = 'waiting';
+            hudBootState.panels.mission.progress = 0;
+            hudBootState.panels.mission.startTime = hudBootState.timer; // start from current time
+            hudBootState.panels.mission._lastDiagLine = -1;
+            // Re-enter booting phase if boot was complete
+            if (hudBootState.phase === 'complete') {
+                hudBootState.phase = 'booting';
+                hudBootState.duration = hudBootState.timer + hudBootState.panels.mission.duration + 0.5;
+            }
+        }
     }
 
     // Beam hint visible - check for beam lock completion
@@ -3811,6 +3986,7 @@ function startTankEntrance() {
     ts.hintTimer = 0;
     ts.tankWarningPhase = 'warning';
     ts.tankWarningTimer = 0;
+    triggerTutorialCommander('tankIncoming');
 }
 
 function updateTutorialWarpJuke(dt) {
@@ -3946,11 +4122,6 @@ function renderCoordChargeHint() {
 
     renderHintPanel(panelX, panelY, panelW, panelH);
 
-    // Pulsing glow
-    const glowBlur = 8 + Math.sin(t * 4) * 6;
-    ctx.shadowColor = TUTORIAL_CONFIG.COLORS.coordinator_charge;
-    ctx.shadowBlur = glowBlur;
-
     // [SPACE] key badge + text
     const keyW = 60;
     const textLabel = 'RECHARGE COORDINATOR';
@@ -3978,7 +4149,6 @@ function renderCoordChargeHint() {
     ctx.lineTo(panelX + 5, arrowY);
     ctx.stroke();
 
-    ctx.shadowBlur = 0;
     ctx.restore();
 }
 
@@ -4072,11 +4242,6 @@ function renderMoveHint(cx, cy, t) {
     const panelH = 50;
     renderHintPanel(cx, cy, panelW, panelH);
 
-    // Pulsing glow
-    const glowBlur = 8 + Math.sin(t * 4) * 6;
-    ctx.shadowColor = TUTORIAL_CONFIG.COLORS.movement;
-    ctx.shadowBlur = glowBlur;
-
     // Key badges: [<] [>]
     const keyY = cy - 11;
     const keyW = 28;
@@ -4097,19 +4262,12 @@ function renderMoveHint(cx, cy, t) {
     ctx.font = 'bold 22px monospace';
     ctx.textAlign = 'left';
     ctx.fillText(textLabel, startX + totalKeysW + 12, cy + 7);
-
-    ctx.shadowBlur = 0;
 }
 
 function renderBeamHint(cx, cy, t) {
     const panelW = 320;
     const panelH = 60;
     renderHintPanel(cx, cy, panelW, panelH);
-
-    // Pulsing glow
-    const glowBlur = 8 + Math.sin(t * 4) * 6;
-    ctx.shadowColor = TUTORIAL_CONFIG.COLORS.beam;
-    ctx.shadowBlur = glowBlur;
 
     // [SPACE] key badge
     const keyW = 60;
@@ -4142,19 +4300,12 @@ function renderBeamHint(cx, cy, t) {
         ctx.lineTo(chevX + 6, chevronY);
         ctx.stroke();
     }
-
-    ctx.shadowBlur = 0;
 }
 
 function renderWarpJukeHint(cx, cy, t) {
     const panelW = 340;
     const panelH = 50;
     renderHintPanel(cx, cy, panelW, panelH);
-
-    // Pulsing glow
-    const glowBlur = 8 + Math.sin(t * 5) * 6;
-    ctx.shadowColor = TUTORIAL_CONFIG.COLORS.warp_juke;
-    ctx.shadowBlur = glowBlur;
 
     // Two arrow key badges with jitter effect
     const textLabel = 'DOUBLE-TAP TO DODGE!';
@@ -4178,8 +4329,6 @@ function renderWarpJukeHint(cx, cy, t) {
     ctx.font = 'bold 20px monospace';
     ctx.textAlign = 'left';
     ctx.fillText(textLabel, startX + keyW + keyGap + keyW + 14, cy + 7);
-
-    ctx.shadowBlur = 0;
 }
 
 function renderBombHint(cx, cy, t) {
@@ -4187,13 +4336,8 @@ function renderBombHint(cx, cy, t) {
     const panelH = 50;
     renderHintPanel(cx, cy, panelW, panelH);
 
-    // Pulsing glow
-    const glowBlur = 8 + Math.sin(t * 4) * 6;
-    ctx.shadowColor = TUTORIAL_CONFIG.COLORS.bomb;
-    ctx.shadowBlur = glowBlur;
-
-    // [B] key badge
-    const keyW = 28;
+    // [Z/B] key badge
+    const keyW = 40;
     const keyH = 22;
     const textLabel = 'DROP A BOMB!';
     ctx.font = 'bold 22px monospace';
@@ -4204,7 +4348,7 @@ function renderBombHint(cx, cy, t) {
     const startX = cx - totalW / 2;
     const keyY = cy - 11;
 
-    renderKeyBadge(startX, keyY, 'B', keyW, keyH);
+    renderKeyBadge(startX, keyY, 'Z/B', keyW, keyH);
 
     // "DROP A BOMB!" text
     ctx.fillStyle = TUTORIAL_CONFIG.COLORS.bomb;
@@ -4229,8 +4373,6 @@ function renderBombHint(cx, cy, t) {
     ctx.beginPath();
     ctx.arc(bombX, bombY - 12, 3 + sparkIntensity * 2, 0, Math.PI * 2);
     ctx.fill();
-
-    ctx.shadowBlur = 0;
 }
 
 function renderTankWarning() {
@@ -4401,17 +4543,11 @@ function renderTutorialCompletion() {
     ctx.roundRect(-panelW / 2, -panelH / 2, panelW, panelH, 10);
     ctx.stroke();
 
-    // Rainbow glow
-    const hue = (Date.now() / 5) % 360;
-    ctx.shadowColor = `hsl(${hue}, 100%, 50%)`;
-    ctx.shadowBlur = 15;
-
     // "ALL SYSTEMS GO!" text
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 32px monospace';
     ctx.textAlign = 'center';
     ctx.fillText('ALL SYSTEMS GO!', 0, 12);
-    ctx.shadowBlur = 0;
 
     ctx.restore();
 }
@@ -11804,6 +11940,7 @@ function startGame() {
         spawnTanks();
     }
 
+    initHUDBoot();
     initTutorial();
 }
 
@@ -12278,6 +12415,45 @@ let hudAnimState = {
     energyPulseY: 0
 };
 
+let hudBootState = {
+    phase: 'idle',       // 'idle' | 'booting' | 'complete'
+    timer: 0,
+    duration: 3.5,
+
+    panels: {
+        status:    { active: false, startTime: 0.0,  duration: 1.2, progress: 0, phase: 'waiting' },
+        mission:   { active: false, startTime: 0.15, duration: 1.0, progress: 0, phase: 'waiting' },
+        systems:   { active: false, startTime: 0.3,  duration: 1.0, progress: 0, phase: 'waiting' },
+        weapons:   { active: false, startTime: 0.6,  duration: 1.4, progress: 0, phase: 'waiting' },
+        fleet:     { active: false, startTime: 0.9,  duration: 1.4, progress: 0, phase: 'waiting' },
+        commander: { active: false, startTime: 1.2,  duration: 1.0, progress: 0, phase: 'waiting' }
+    },
+
+    techSnapshot: {
+        hasBombs: false,
+        hasMissiles: false,
+        missileGroupCount: 0,
+        hasHarvesters: false,
+        hasBattleDrones: false,
+        droneSlots: 0,
+        hasCoordinators: false,
+        wave: 1,
+        quotaTarget: 0,
+        maxHealth: 0,
+        hasEnergyCells: false,
+        techResearched: []
+    },
+
+    bootLines: {
+        status: [],
+        mission: [],
+        systems: [],
+        weapons: [],
+        fleet: [],
+        commander: []
+    }
+};
+
 let missionCommanderState = {
     visible: false,
     dialogue: '',
@@ -12343,6 +12519,14 @@ const MISSION_COMMANDER_DIALOGUES = {
         "Just checking in. Don't mind me.",
         "I've filed seventeen reports on you today.",
     ]
+};
+
+const TUTORIAL_COMMANDER_DIALOGUES = {
+    welcome: "Welcome aboard! We need BIOMATTER. Follow instructions. HIT YOUR QUOTA.",
+    beamTargets: "Those are biomatter. BEAM THEM UP! Every one counts.",
+    tankIncoming: "HOSTILE! DODGE it or you're SCRAP!",
+    useBombs: "Nice moves! DROP A BOMB on that pest!",
+    complete: "Not bad! Hit quota EVERY wave or you're FIRED. GO!"
 };
 
 // ============================================
@@ -12439,11 +12623,24 @@ function renderHUDEnergyPulse(layout) {
 
 function renderHUDFrame() {
     const layout = getHUDLayout();
+    const booting = hudBootState.phase === 'booting';
 
     // Always render these zones
     renderStatusZone(layout.statusZone);
-    renderMissionZone(layout.missionZone);
+    if (booting && hudBootState.panels.status.phase !== 'waiting') {
+        renderPanelBootOverlay(layout.statusZone, 120, '#0ff', 'SYS.STATUS', hudBootState.panels.status, hudBootState.bootLines.status);
+    }
+    const missionVisible = wave !== 1 || !tutorialState || tutorialState.beamHintShown;
+    if (missionVisible) {
+        renderMissionZone(layout.missionZone);
+    }
+    if (missionVisible && booting && hudBootState.panels.mission.phase !== 'waiting') {
+        renderPanelBootOverlay(layout.missionZone, 110, '#0a0', 'MISSION.CTL', hudBootState.panels.mission, hudBootState.bootLines.mission);
+    }
     renderSystemsZone(layout.systemsZone);
+    if (booting && hudBootState.panels.systems.phase !== 'waiting') {
+        renderPanelBootOverlay(layout.systemsZone, 88, '#f80', 'SYS.INTG', hudBootState.panels.systems, hudBootState.bootLines.systems);
+    }
 
     // Weapons zone: slide in when weapons are unlocked
     const hasWeapons = playerInventory.maxBombs > 0 || missileUnlocked;
@@ -12459,6 +12656,9 @@ function renderHUDFrame() {
         const slideOffset = (1 - easeOutCubic(hudAnimState.weaponsPanelSlide)) * -layout.weaponsZone.w;
         ctx.translate(slideOffset, 0);
         weaponsPanelH = renderWeaponsZone(layout.weaponsZone) || layout.weaponsZone.h;
+        if (booting && hudBootState.panels.weapons.active && hudBootState.panels.weapons.phase !== 'waiting') {
+            renderPanelBootOverlay(layout.weaponsZone, layout.weaponsZone.h, '#f44', 'ORD.SYS', hudBootState.panels.weapons, hudBootState.bootLines.weapons);
+        }
         ctx.restore();
     }
 
@@ -12508,11 +12708,15 @@ function renderHUDFrame() {
         const slideOffset = (1 - easeOutCubic(hudAnimState.fleetPanelSlide)) * layout.fleetZone.w;
         ctx.translate(slideOffset, 0);
         renderFleetZone(layout.fleetZone);
+        if (booting && hudBootState.panels.fleet.active && hudBootState.panels.fleet.phase !== 'waiting') {
+            renderPanelBootOverlay(layout.fleetZone, layout.fleetZone.h, '#48f', 'FLEET.CMD', hudBootState.panels.fleet, hudBootState.bootLines.fleet);
+        }
         ctx.restore();
     }
 
     // Commander zone: slide in when active
-    if (missionCommanderState.visible && wave >= 2) {
+    const commanderBooting = booting && hudBootState.panels.commander.active && hudBootState.panels.commander.phase !== 'waiting';
+    if (missionCommanderState.visible && (wave >= 2 || tutorialState)) {
         if (hudAnimState.commanderPanelSlide < 1) {
             hudAnimState.commanderPanelSlide = Math.min(1, hudAnimState.commanderPanelSlide + 0.05);
         }
@@ -12520,7 +12724,13 @@ function renderHUDFrame() {
         const slideOffset = (1 - easeOutCubic(hudAnimState.commanderPanelSlide)) * -layout.commanderZone.w;
         ctx.translate(slideOffset, 0);
         renderCommanderZone(layout.commanderZone);
+        if (commanderBooting) {
+            renderPanelBootOverlay(layout.commanderZone, layout.commanderZone.h, '#0f0', 'COMMS.SYS', hudBootState.panels.commander, hudBootState.bootLines.commander);
+        }
         ctx.restore();
+    } else if (commanderBooting) {
+        // Commander not visible yet but boot overlay should still render
+        renderPanelBootOverlay(layout.commanderZone, layout.commanderZone.h, '#0f0', 'COMMS.SYS', hudBootState.panels.commander, hudBootState.bootLines.commander);
     } else {
         if (hudAnimState.commanderPanelSlide > 0) {
             hudAnimState.commanderPanelSlide = Math.max(0, hudAnimState.commanderPanelSlide - 0.05);
@@ -13364,9 +13574,9 @@ function renderEnergyFlows(layout) {
 
 // Commander in-mission update
 function updateMissionCommander(dt) {
-    if (gameState !== 'PLAYING' || wave < 2) return;
+    if (gameState !== 'PLAYING') return;
 
-    // Update typewriter
+    // Update typewriter (works during wave 1 tutorial too)
     if (missionCommanderState.visible && missionCommanderState.dialogue) {
         missionCommanderState.typewriterTimer += dt;
         missionCommanderState.typewriterIndex = Math.min(
@@ -13387,8 +13597,8 @@ function updateMissionCommander(dt) {
         }
     }
 
-    // Cooldown
-    if (!missionCommanderState.visible) {
+    // Cooldown and auto-trigger (wave 2+ only)
+    if (wave >= 2 && !missionCommanderState.visible) {
         missionCommanderState.cooldownTimer -= dt;
         if (missionCommanderState.cooldownTimer <= 0) {
             triggerMissionCommander();
@@ -13428,6 +13638,20 @@ function triggerMissionCommander(category = null) {
         Math.random() * (missionCommanderState.maxCooldown - missionCommanderState.minCooldown);
 }
 
+function triggerTutorialCommander(phase) {
+    const dialogue = TUTORIAL_COMMANDER_DIALOGUES[phase];
+    if (!dialogue) return;
+
+    missionCommanderState.visible = true;
+    missionCommanderState.dialogue = dialogue;
+    missionCommanderState.typewriterIndex = 0;
+    missionCommanderState.typewriterTimer = 0;
+    missionCommanderState.displayTimer = 0;
+    missionCommanderState.displayDuration = phase === 'welcome' || phase === 'complete' ? 10 : 7;
+    missionCommanderState.emotion = phase === 'tankIncoming' ? 'angry' :
+                                     phase === 'complete' ? 'pleased' : 'neutral';
+}
+
 // Update HUD animations each frame
 function updateHUDAnimations(dt) {
     hudAnimState.energyFlowPhase += dt;
@@ -13444,6 +13668,453 @@ function updateHUDAnimations(dt) {
         hudAnimState.energyPulseY += dt * 220; // pixels per second sweep speed
         if (hudAnimState.energyPulseY > canvas.height) {
             hudAnimState.energyPulseActive = false;
+        }
+    }
+
+    // Update boot sequence
+    if (hudBootState.phase === 'booting') {
+        updateHUDBoot(dt);
+    }
+}
+
+function initHUDBoot() {
+    hudBootState.phase = 'booting';
+    hudBootState.timer = 0;
+    hudBootState._allOnlinePlayed = false;
+
+    // Snapshot current tech state
+    hudBootState.techSnapshot = {
+        hasBombs: playerInventory.maxBombs > 0,
+        hasMissiles: missileUnlocked,
+        missileGroupCount: missileGroupCount,
+        hasHarvesters: harvesterUnlocked,
+        hasBattleDrones: battleDroneUnlocked,
+        droneSlots: droneSlots,
+        hasCoordinators: activeCoordinators.length > 0,
+        wave: wave,
+        quotaTarget: quotaTarget,
+        maxHealth: CONFIG.UFO_START_HEALTH,
+        hasEnergyCells: playerInventory.energyCells > 0,
+        techResearched: [...techTree.researched]
+    };
+
+    // Activate relevant panels
+    const p = hudBootState.panels;
+    p.status.active = true;
+    p.mission.active = wave !== 1;  // deferred on wave 1 — boots when beam tutorial starts
+    p.systems.active = true;
+
+    const hasWeapons = hudBootState.techSnapshot.hasBombs || hudBootState.techSnapshot.hasMissiles;
+    p.weapons.active = hasWeapons;
+
+    const hasFleet = hudBootState.techSnapshot.hasHarvesters || hudBootState.techSnapshot.hasBattleDrones || hudBootState.techSnapshot.hasCoordinators;
+    p.fleet.active = hasFleet;
+
+    p.commander.active = wave >= 2;
+
+    // Reset all panel states
+    for (const key of Object.keys(p)) {
+        p[key].progress = 0;
+        p[key].phase = 'waiting';
+    }
+
+    // Generate boot text lines for each active panel
+    generateBootLines();
+
+    // Reset panel slide animations to 0 so they re-slide during boot
+    hudAnimState.weaponsPanelSlide = 0;
+    hudAnimState.fleetPanelSlide = 0;
+    hudAnimState.commanderPanelSlide = 0;
+}
+
+function updateHUDBoot(dt) {
+    hudBootState.timer += dt;
+
+    const p = hudBootState.panels;
+    let allOnline = true;
+
+    for (const [key, panel] of Object.entries(p)) {
+        if (!panel.active) continue;
+
+        const elapsed = hudBootState.timer - panel.startTime;
+        if (elapsed < 0) {
+            allOnline = false;
+            continue;
+        }
+
+        if (panel.phase === 'waiting') {
+            panel.phase = 'booting';
+            panel._lastDiagLine = -1;
+            SFX.bootPanelStart && SFX.bootPanelStart();
+        }
+
+        panel.progress = Math.min(1, elapsed / panel.duration);
+
+        // Play data chatter when a new diagnostic line becomes visible
+        if (panel.phase === 'booting' && hudBootState.bootLines[key]) {
+            const visibleLine = Math.floor(panel.progress * hudBootState.bootLines[key].length);
+            if (visibleLine > (panel._lastDiagLine || -1)) {
+                panel._lastDiagLine = visibleLine;
+                const lineText = hudBootState.bootLines[key][visibleLine] || '';
+                if (lineText.startsWith('[SKIP]')) {
+                    SFX.bootMissileSkip && SFX.bootMissileSkip();
+                } else {
+                    SFX.bootDataChatter && SFX.bootDataChatter();
+                }
+            }
+        }
+
+        if (panel.progress >= 1 && panel.phase === 'booting') {
+            panel.phase = 'online';
+            SFX.bootPanelOnline && SFX.bootPanelOnline();
+        }
+
+        if (panel.phase !== 'online') {
+            allOnline = false;
+        }
+    }
+
+    // Play confirmation chord once when all panels come online
+    if (allOnline && !hudBootState._allOnlinePlayed) {
+        hudBootState._allOnlinePlayed = true;
+        SFX.bootAllOnline && SFX.bootAllOnline();
+    }
+
+    if (hudBootState.timer >= hudBootState.duration) {
+        hudBootState.phase = 'complete';
+    }
+}
+
+function generateBootLines() {
+    const snap = hudBootState.techSnapshot;
+    const lines = hudBootState.bootLines;
+
+    // STATUS panel
+    lines.status = [
+        `>> INIT SYS.STATUS v${snap.wave}.0`,
+        `WAVE ${snap.wave} DEPLOYMENT`,
+        `[OK] SCORE TELEMETRY ONLINE`,
+        `[OK] COMBO TRACKER LINKED`,
+        snap.techResearched.length > 0 ?
+            `[OK] BIO.MATTER MONITOR (${snap.techResearched.length} TECH)` :
+            `[OK] BIO.MATTER MONITOR`,
+        `>> STATUS NOMINAL`
+    ];
+
+    // MISSION panel
+    lines.mission = [
+        `>> INIT MISSION.CTL`,
+        `TARGET QUOTA: ${snap.quotaTarget}`,
+        `[OK] HARVEST SENSORS CALIBRATED`,
+        `[OK] QUOTA TRACKING ACTIVE`,
+        `>> MISSION PARAMETERS SET`
+    ];
+
+    // SYSTEMS panel
+    lines.systems = [
+        `>> INIT SYS.INTEGRITY`,
+        `HULL: ${snap.maxHealth} HP`,
+        snap.hasEnergyCells ? `[OK] REVIVE CELLS: CHARGED` : `[SKIP] NO REVIVE CELLS`,
+        `[OK] SHIELD MONITOR ONLINE`,
+        `>> INTEGRITY CHECK PASS`
+    ];
+
+    // WEAPONS panel (if active)
+    if (hudBootState.panels.weapons.active) {
+        lines.weapons = [`>> INIT ORD.SYS`];
+        if (snap.hasBombs) {
+            lines.weapons.push(`[OK] ORD.BOMB ARMED`);
+        }
+        // Always check for missiles, show different text based on availability
+        lines.weapons.push(`SCANNING MISSILE.SYS...`);
+        if (snap.hasMissiles) {
+            lines.weapons.push(`[OK] MISSILE GROUPS: ${snap.missileGroupCount}`);
+            lines.weapons.push(`LOADING SALVO PATTERNS...`);
+        } else {
+            lines.weapons.push(`[SKIP] MISSILE.SYS NOT FOUND`);
+        }
+        lines.weapons.push(`[OK] ORDNANCE SYSTEMS HOT`);
+        lines.weapons.push(`>> WEAPONS FREE`);
+    } else {
+        lines.weapons = [];
+    }
+
+    // FLEET panel (if active)
+    if (hudBootState.panels.fleet.active) {
+        lines.fleet = [`>> INIT FLEET.CMD`];
+        lines.fleet.push(`DRONE SLOTS: ${snap.droneSlots}`);
+        if (snap.hasHarvesters) lines.fleet.push(`[OK] HARVESTER UPLINK`);
+        if (snap.hasBattleDrones) lines.fleet.push(`[OK] BATTLE DRONE UPLINK`);
+        if (snap.hasCoordinators) lines.fleet.push(`[OK] COORDINATOR NET`);
+        lines.fleet.push(`[OK] FLEET TELEMETRY`);
+        lines.fleet.push(`>> FLEET STANDING BY`);
+    } else {
+        lines.fleet = [];
+    }
+
+    // COMMANDER panel (if active)
+    if (hudBootState.panels.commander.active) {
+        lines.commander = [
+            `>> INIT COMMS.SYS`,
+            `FREQ: 147.30 MHz`,
+            `[OK] ENCRYPTION HANDSHAKE`,
+            `[OK] COMMANDER LINK`,
+            `>> AWAITING TRANSMISSION`
+        ];
+    } else {
+        lines.commander = [];
+    }
+}
+
+// ============================================
+// BOOT RENDERING (Panel Overlays + Global Effects)
+// ============================================
+
+function renderPanelBootOverlay(zone, h, color, label, panelState, bootLines) {
+    if (panelState.phase === 'waiting') return;
+
+    const { x, y, w } = zone;
+    const progress = panelState.progress;
+
+    // Online phase: brief flash then nothing
+    if (panelState.phase === 'online') {
+        if (hudBootState.timer - (panelState.startTime + panelState.duration) < 0.2) {
+            const flashAlpha = 0.15 * (1 - (hudBootState.timer - panelState.startTime - panelState.duration) / 0.2);
+            if (flashAlpha > 0) {
+                ctx.fillStyle = `rgba(${hexToRgb(color)}, ${flashAlpha})`;
+                ctx.fillRect(x, y, w, h);
+            }
+        }
+        return;
+    }
+
+    // Booting phase: full overlay
+    ctx.save();
+
+    // Dark background that fades as progress increases
+    const bgAlpha = 0.9 * (1 - progress * 0.8);
+    ctx.fillStyle = `rgba(0, 0, 0, ${bgAlpha})`;
+    ctx.fillRect(x, y, w, h);
+
+    // Panel border with alpha based on progress
+    const borderAlpha = 0.3 + progress * 0.5;
+    ctx.strokeStyle = `rgba(${hexToRgb(color)}, ${borderAlpha})`;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x, y, w, h);
+
+    // Border trace effect (progress 0 - 0.3)
+    if (progress < 0.3) {
+        const traceT = progress / 0.3; // 0..1 within trace phase
+        const perimeter = 2 * (w + h);
+        const tracePos = traceT * perimeter;
+
+        // Compute x,y position along border perimeter (clockwise from top-left)
+        let tx, ty;
+        if (tracePos < w) {
+            tx = x + tracePos; ty = y;
+        } else if (tracePos < w + h) {
+            tx = x + w; ty = y + (tracePos - w);
+        } else if (tracePos < 2 * w + h) {
+            tx = x + w - (tracePos - w - h); ty = y + h;
+        } else {
+            tx = x; ty = y + h - (tracePos - 2 * w - h);
+        }
+
+        // Glowing dot
+        ctx.beginPath();
+        ctx.arc(tx, ty, 4, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 10;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Short gradient trail behind the dot
+        const trailLen = Math.min(60, tracePos);
+        if (trailLen > 2) {
+            const trailStartPos = Math.max(0, tracePos - trailLen);
+            let tsx, tsy;
+            if (trailStartPos < w) {
+                tsx = x + trailStartPos; tsy = y;
+            } else if (trailStartPos < w + h) {
+                tsx = x + w; tsy = y + (trailStartPos - w);
+            } else if (trailStartPos < 2 * w + h) {
+                tsx = x + w - (trailStartPos - w - h); tsy = y + h;
+            } else {
+                tsx = x; tsy = y + h - (trailStartPos - 2 * w - h);
+            }
+            ctx.beginPath();
+            ctx.moveTo(tsx, tsy);
+            // Draw through intermediate corners if trail wraps a corner
+            ctx.lineTo(tx, ty);
+            ctx.strokeStyle = `rgba(${hexToRgb(color)}, 0.4)`;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+    }
+
+    // Clip to panel bounds for text rendering
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x + 2, y + 2, w - 4, h - 4);
+    ctx.clip();
+
+    // Label typewriter effect (first 20% of boot)
+    if (progress < 0.2) {
+        const charCount = Math.floor((progress / 0.2) * label.length);
+        const labelText = label.substring(0, charCount);
+        ctx.font = 'bold 10px monospace';
+        ctx.fillStyle = color;
+        ctx.textAlign = 'left';
+        ctx.fillText(labelText, x + 4, y + 12);
+    } else {
+        ctx.font = 'bold 10px monospace';
+        ctx.fillStyle = color;
+        ctx.textAlign = 'left';
+        ctx.fillText(label, x + 4, y + 12);
+    }
+
+    // Diagnostic text lines
+    if (bootLines && bootLines.length > 0) {
+        const lineH = 11;
+        const textStartY = y + 24;
+        const visibleLines = Math.floor(progress * bootLines.length);
+
+        ctx.font = '9px monospace';
+        ctx.textAlign = 'left';
+
+        for (let i = 0; i <= visibleLines && i < bootLines.length; i++) {
+            const isCurrent = (i === visibleLines);
+            const lineAlpha = isCurrent ?
+                (progress * bootLines.length - i) :
+                Math.min(1, 0.5 + (i / bootLines.length) * 0.4);
+
+            const line = bootLines[i];
+            const ly = textStartY + i * lineH;
+            if (ly > y + h - 10) break;
+
+            // Color-code based on prefix
+            if (line.startsWith('>>')) {
+                ctx.fillStyle = `rgba(${hexToRgb(color)}, ${lineAlpha})`;
+            } else if (line.startsWith('[OK]')) {
+                ctx.fillStyle = `rgba(0, 255, 100, ${lineAlpha})`;
+            } else if (line.startsWith('[SKIP]') || line.startsWith('[WARN]')) {
+                ctx.fillStyle = `rgba(255, 200, 0, ${lineAlpha})`;
+            } else {
+                ctx.fillStyle = `rgba(180, 200, 220, ${lineAlpha * 0.7})`;
+            }
+
+            // Typewriter effect for current line
+            if (isCurrent) {
+                const partialProgress = progress * bootLines.length - i;
+                const charsToShow = Math.floor(partialProgress * line.length);
+                ctx.fillText(line.substring(0, charsToShow), x + 4, ly);
+            } else {
+                ctx.fillText(line, x + 4, ly);
+            }
+        }
+
+        // Blinking cursor after last visible line
+        const cursorLineIdx = Math.min(visibleLines, bootLines.length - 1);
+        const cursorY = textStartY + cursorLineIdx * lineH;
+        if (cursorY < y + h - 10) {
+            const cursorLine = bootLines[cursorLineIdx] || '';
+            const blink = Math.floor(Date.now() / 400) % 2 === 0;
+            if (blink) {
+                ctx.fillStyle = `rgba(${hexToRgb(color)}, 0.8)`;
+                const cursorX = x + 4 + ctx.measureText(cursorLine).width + 2;
+                ctx.fillText('_', Math.min(cursorX, x + w - 10), cursorY);
+            }
+        }
+    }
+
+    ctx.restore(); // end clip
+
+    // Progress bar at bottom of panel (3px tall)
+    const barPad = 4;
+    const barY = y + h - barPad - 3;
+    const barW = w - barPad * 2;
+    ctx.fillStyle = `rgba(${hexToRgb(color)}, 0.2)`;
+    ctx.fillRect(x + barPad, barY, barW, 3);
+    ctx.fillStyle = color;
+    ctx.fillRect(x + barPad, barY, barW * progress, 3);
+
+    // Scanline overlay for CRT feel
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.08)';
+    for (let sy = y; sy < y + h; sy += 3) {
+        ctx.fillRect(x, sy, w, 1);
+    }
+
+    // Static/noise during early boot (progress < 0.4)
+    if (progress < 0.4) {
+        const noiseCount = Math.floor(30 * (1 - progress / 0.4));
+        for (let n = 0; n < noiseCount; n++) {
+            const nx = x + Math.random() * w;
+            const ny = y + Math.random() * h;
+            const gray = Math.floor(Math.random() * 200);
+            const noiseAlpha = 0.03 + Math.random() * 0.05;
+            ctx.fillStyle = `rgba(${gray}, ${gray}, ${gray}, ${noiseAlpha})`;
+            ctx.fillRect(nx, ny, 2 + Math.random() * 2, 2 + Math.random() * 2);
+        }
+    }
+
+    ctx.restore();
+}
+
+function renderHUDBootGlobalEffects() {
+    if (hudBootState.phase !== 'booting') return;
+
+    const timer = hudBootState.timer;
+
+    // CRT power-on flash (first 200ms)
+    if (timer < 0.2) {
+        const halfH = canvas.height / 2;
+        if (timer < 0.1) {
+            // Expanding white line from center
+            const expandProgress = timer / 0.1;
+            const lineH = Math.max(1, expandProgress * canvas.height);
+            const lineY = halfH - lineH / 2;
+            const alpha = 0.7 * (1 - expandProgress * 0.3);
+            ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+            ctx.fillRect(0, lineY, canvas.width, lineH);
+        } else {
+            // Fading out
+            const fadeProgress = (timer - 0.1) / 0.1;
+            const alpha = 0.5 * (1 - fadeProgress);
+            ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+    }
+
+    // "ALL SYSTEMS NOMINAL" text (timer 3.0 - 3.5s)
+    if (timer >= 3.0 && timer <= 3.5) {
+        // Check if all active panels are online
+        let allOnline = true;
+        for (const [key, panel] of Object.entries(hudBootState.panels)) {
+            if (panel.active && panel.phase !== 'online') {
+                allOnline = false;
+                break;
+            }
+        }
+
+        if (allOnline) {
+            const textProgress = (timer - 3.0) / 0.5;
+            const alpha = textProgress < 0.3 ? textProgress / 0.3 :
+                         textProgress < 0.7 ? 1.0 :
+                         1.0 - (textProgress - 0.7) / 0.3;
+            const scale = 1.0 + (1 - textProgress) * 0.1;
+
+            ctx.save();
+            ctx.translate(canvas.width / 2, canvas.height / 2);
+            ctx.scale(scale, scale);
+            ctx.font = 'bold 18px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = `rgba(255, 255, 255, ${Math.max(0, alpha)})`;
+            ctx.shadowColor = '#0ff';
+            ctx.shadowBlur = 12;
+            ctx.fillText('ALL SYSTEMS NOMINAL', 0, 0);
+            ctx.shadowBlur = 0;
+            ctx.restore();
         }
     }
 }
@@ -17378,6 +18049,7 @@ function updateWaveTransition(dt) {
         waveTimer = CONFIG.WAVE_DURATION;
         lastTimerWarningSecond = -1; // Reset timer warning
         gameState = 'PLAYING';
+        initHUDBoot();
 
         // Reset auto-deploy cooldown so coordinators deploy immediately
         autoDeployCooldown = 0;
@@ -19684,6 +20356,9 @@ function render() {
 
     // Render UI (not affected by shake) - NGE Evangelion HUD
     renderHUDFrame();
+
+    // Boot sequence global effects (CRT flash, ALL SYSTEMS NOMINAL)
+    renderHUDBootGlobalEffects();
 
     // Render tutorial hints (wave 1 only, above UI, below full-screen overlays)
     if (tutorialState && tutorialState.phase !== 'COMPLETE') {
