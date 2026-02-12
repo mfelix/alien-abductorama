@@ -251,12 +251,12 @@ const CONFIG = {
         },
         {
             id: 'missile_capacity',
-            name: 'SWARM SIZE+',
-            description: '+1 missile per swarm',
+            name: 'MISSILE GROUP+',
+            description: '+1 MISSILE GROUP (+4 missiles)',
             cost: 200,
             color: '#ff4400',
             effect: 'missileCapacity',
-            value: 1,
+            value: 4,
             requiresMissile: true
         },
         {
@@ -290,15 +290,51 @@ const CONFIG = {
     ],
 
     // === EXPANSION: Missile Swarm ===
-    MISSILE_SWARM_CAPACITY: 3,
+    MISSILE_GROUP_SIZE: 4,
     MISSILE_SWARM_DAMAGE: 35,
     MISSILE_SWARM_SPEED: 900,
-    MISSILE_RECHARGE_TIME: 5,
+    MISSILE_GROUP_RECHARGE_TIME: 3.0,
     MISSILE_LAUNCH_UP_SPEED: 500,
     MISSILE_LAUNCH_DURATION: 0.25,
-    MISSILE_DECEL_DURATION: 0.12,
-    MISSILE_APEX_DURATION: 0.06,
+    MISSILE_DECEL_DURATION: 0.15,
+    MISSILE_APEX_DURATION: 0.10,
     MISSILE_DIVE_RAMP_SPEED: 950,
+
+    // === EXPANSION: Missile Interceptor & Kinematics ===
+    MISSILE_INTERCEPT_RADIUS: 25,
+    MISSILE_INTERCEPT_NEAR_RANGE: 200,
+    MISSILE_INTERCEPT_PROXIMITY_MAX: 600,
+    MISSILE_INTERCEPT_URGENCY_MAX: 400,
+    MISSILE_PN_CONSTANT: 3.5,
+    MISSILE_MAX_TURN_RATE: 6.0,
+    MISSILE_TURN_RESPONSIVENESS: 12.0,
+    MISSILE_DIVE_THRUST: 1800,
+    MISSILE_DRAG_LAUNCH: 0.5,
+    MISSILE_DRAG_DECEL: 3.0,
+    MISSILE_DRAG_DIVE: 1.2,
+    MISSILE_DECEL_GRAVITY: 400,
+    MISSILE_MAX_SPEED: 1100,
+    MISSILE_LAUNCH_WOBBLE_FREQ_MIN: 8,
+    MISSILE_LAUNCH_WOBBLE_FREQ_MAX: 14,
+    MISSILE_LAUNCH_WOBBLE_AMP_MIN: 40,
+    MISSILE_LAUNCH_WOBBLE_AMP_MAX: 70,
+    MISSILE_DIVE_WOBBLE_AMP: 15,
+    MISSILE_TERMINAL_WOBBLE_AMP: 2,
+    MISSILE_WOBBLE_DECAY_DIST: 200,
+    MISSILE_WOBBLE_DECAY_RATE: 5.0,
+    MISSILE_SNAP_ANGLE: Math.PI / 6,
+    MISSILE_SNAP_THRESHOLD: Math.PI / 4,
+    MISSILE_RETARGET_BOOST: 1.8,
+    MISSILE_RETARGET_BOOST_TIME: 0.15,
+    MISSILE_FAN_SPREAD: Math.PI * 0.7,
+    MISSILE_FAN_JITTER: 0.075,
+    MISSILE_LAUNCH_STAGGER_BASE: 0.025,
+    MISSILE_LAUNCH_STAGGER_JITTER: 0.04,
+    MISSILE_TRAIL_LENGTH: 40,
+    MISSILE_SMOKE_INTERVAL: 0.025,
+    MISSILE_MAX_LIFETIME: 3.5,
+    MISSILE_MAX_GROUPS: 18,
+    MISSILE_GROUP_ENERGY_COST: 5,
 
     // === EXPANSION: Bomb Upgrade Tiers ===
     BOMB_BLAST_TIERS: [120, 160, 200],
@@ -1454,6 +1490,20 @@ const SFX = {
         });
     },
 
+    missileGroupReady: () => {
+        if (!audioCtx) return;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(1200, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.06);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.06);
+    },
+
     researchComplete: () => {
         if (!audioCtx) return;
         // Ascending chime: C5, E5, G5, C6
@@ -2150,14 +2200,23 @@ let techFlags = {
 
 
 // === EXPANSION: Missile Swarm State ===
-let missileAmmo = 0;
-let missileMaxAmmo = 0;
-let missileRechargeTimer = 0;
-let missileCapacity = 0;   // Upgrade tracking
+let missileGroups = [];      // Array of { ready: bool, rechargeTimer: float, index: int }
+let missileGroupCount = 0;   // How many groups (driven by upgrades)
 let missileDamage = 0;     // Upgrade tracking
 let playerMissiles = [];   // Active missiles in the world
 let missileTargetReticles = []; // Brief targeting reticle visuals
 let missileUnlocked = false; // Whether missile swarm is purchased
+let claimedThreats = new Set(); // Per-frame threat claiming for missile coordination
+
+function getMissileMaxAmmo() {
+    return missileGroupCount * CONFIG.MISSILE_GROUP_SIZE;
+}
+function getMissileReadyCount() {
+    return missileGroups.filter(g => g.ready).length * CONFIG.MISSILE_GROUP_SIZE;
+}
+function getReadyGroupCount() {
+    return missileGroups.filter(g => g.ready).length;
+}
 
 // === EXPANSION: Drone State ===
 let activeDrones = [];
@@ -2503,9 +2562,9 @@ window.addEventListener('keydown', (e) => {
         dropBomb();
     }
 
-    // Handle missile swarm during gameplay (X or M key)
+    // Handle missile group during gameplay (X or M key)
     if (gameState === 'PLAYING' && (e.code === 'KeyX' || e.code === 'KeyM')) {
-        fireMissileSwarm();
+        fireMissileGroup();
     }
 
     // Handle drone deployment (A = battle drone, S/H = harvester)
@@ -6323,6 +6382,17 @@ class Bomb {
 // MISSILE SWARM SYSTEM
 // ============================================
 
+function angleDiff(a, b) {
+    let d = a - b;
+    while (d > Math.PI) d -= 2 * Math.PI;
+    while (d < -Math.PI) d += 2 * Math.PI;
+    return d;
+}
+
+function clampValue(v, min, max) {
+    return Math.max(min, Math.min(max, v));
+}
+
 class Missile {
     constructor(x, y, targetTank, launchAngle, fromCoordinator = false) {
         this.x = x;
@@ -6333,6 +6403,31 @@ class Missile {
         this.age = 0;
         this.fromCoordinator = fromCoordinator;
 
+        // Core physics (thrust-steered model)
+        this.heading = launchAngle;
+        this.speed = 0;
+        this.turnRate = 0;
+        this.prevLosAngle = 0;
+
+        // Interceptor state
+        this.mode = 'offensive';
+        this.interceptTarget = null;
+        this.interceptReticleCreated = false; // track whether we already created a reticle for current intercept target
+
+        // Retarget boost
+        this.turnBoostTimer = 0;
+
+        // Launch stagger
+        this.launchDelay = 0;
+
+        // Enhanced wobble
+        this.wobblePhase = Math.random() * Math.PI * 2;
+        this.launchWobbleFreq = CONFIG.MISSILE_LAUNCH_WOBBLE_FREQ_MIN + Math.random() * (CONFIG.MISSILE_LAUNCH_WOBBLE_FREQ_MAX - CONFIG.MISSILE_LAUNCH_WOBBLE_FREQ_MIN);
+        this.launchWobbleAmp = CONFIG.MISSILE_LAUNCH_WOBBLE_AMP_MIN + Math.random() * (CONFIG.MISSILE_LAUNCH_WOBBLE_AMP_MAX - CONFIG.MISSILE_LAUNCH_WOBBLE_AMP_MIN);
+        this.diveWobbleFreq = 6 + Math.random() * 4;
+        this.diveWobbleAmp = CONFIG.MISSILE_DIVE_WOBBLE_AMP + Math.random() * 5;
+        this.currentWobbleAmp = this.launchWobbleAmp;
+
         if (fromCoordinator) {
             // Four-phase trajectory: launch UP from coordinator
             this.phase = 'LAUNCH';  // LAUNCH -> DECEL -> APEX -> DIVE
@@ -6340,29 +6435,39 @@ class Missile {
             this.decelDuration = CONFIG.MISSILE_DECEL_DURATION;
             this.apexDuration = CONFIG.MISSILE_APEX_DURATION;
             // Launch velocity: upward + slight horizontal fan
-            this.vx = Math.cos(launchAngle) * 120;
-            this.vy = -CONFIG.MISSILE_LAUNCH_UP_SPEED; // negative = upward
+            this.heading = launchAngle;
+            this.speed = CONFIG.MISSILE_LAUNCH_UP_SPEED + 50; // 550 px/s
+            this.vx = Math.cos(this.heading) * this.speed;
+            this.vy = Math.sin(this.heading) * this.speed;
             this.apexFlashed = false;
         } else {
             // Legacy two-phase trajectory: fan downward from UFO
             this.phase = 'LEGACY_LAUNCH';
-            this.launchPhase = true; // backward compat until update() is rewritten
+            this.launchPhase = true;
             this.launchDuration = 0.5;
             this.vx = Math.cos(launchAngle) * 200;
             this.vy = 300;
+            this.heading = Math.atan2(this.vy, this.vx);
+            this.speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
         }
 
-        // Spiral parameters (shared by all modes)
+        // Spiral parameters (legacy compat)
         this.spiralPhase = Math.random() * Math.PI * 2;
         this.spiralFreq = 3 + Math.random() * 2;
         this.spiralAmp = 30 + Math.random() * 20;
         this.trail = [];
-        this.maxTrailLength = 30;
+        this.maxTrailLength = CONFIG.MISSILE_TRAIL_LENGTH;
         this.smokePuffs = [];
         this.smokeTimer = 0;
     }
 
     update(dt) {
+        // Launch delay (stagger)
+        if (this.age < this.launchDelay) {
+            this.age += dt;
+            return;
+        }
+
         this.age += dt;
 
         // Store trail position
@@ -6372,15 +6477,15 @@ class Missile {
 
         // Spawn billowy smoke puffs
         this.smokeTimer += dt;
-        if (this.smokeTimer >= 0.03) {
+        if (this.smokeTimer >= CONFIG.MISSILE_SMOKE_INTERVAL) {
             this.smokeTimer = 0;
             this.smokePuffs.push({
                 x: this.x + (Math.random() - 0.5) * 4,
                 y: this.y + (Math.random() - 0.5) * 4,
                 radius: 2 + Math.random() * 2,
                 age: 0,
-                maxAge: 0.6 + Math.random() * 0.4,
-                drift: { x: (Math.random() - 0.5) * 30, y: -20 - Math.random() * 20 }
+                maxAge: 0.8 + Math.random() * 0.4,
+                drift: { x: (Math.random() - 0.5) * 30, y: -25 - Math.random() * 20 }
             });
         }
         // Update smoke puffs
@@ -6389,16 +6494,16 @@ class Missile {
             p.age += dt;
             p.x += p.drift.x * dt;
             p.y += p.drift.y * dt;
-            p.radius += dt * 12; // expand over time
+            p.radius += dt * 14; // expand over time
             if (p.age >= p.maxAge) this.smokePuffs.splice(i, 1);
         }
 
         if (this.phase === 'LEGACY_LAUNCH') {
-            // === Legacy UFO launch: fan down + spiral (unchanged behavior) ===
-            let speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
-            if (speed > 0) {
-                let perpX = -this.vy / speed;
-                let perpY = this.vx / speed;
+            // === Legacy UFO launch: fan down + spiral ===
+            let spd = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+            if (spd > 0) {
+                let perpX = -this.vy / spd;
+                let perpY = this.vx / spd;
                 let spiralOffset = Math.sin(this.age * this.spiralFreq + this.spiralPhase) * this.spiralAmp;
                 this.x += (this.vx + perpX * spiralOffset * 3) * dt;
                 this.y += (this.vy + perpY * spiralOffset * 3) * dt;
@@ -6407,40 +6512,76 @@ class Missile {
                 this.y += this.vy * dt;
             }
             this.vy -= 100 * dt;
+            this.heading = Math.atan2(this.vy, this.vx);
+            this.speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
             if (this.age > this.launchDuration) {
                 this.phase = 'HOMING';
+                // Initialize PN state
+                if (this.targetTank && this.targetTank.alive !== false) {
+                    let tx = this.targetTank.x + (this.targetTank.width || 0) / 2;
+                    let ty = this.targetTank.y + (this.targetTank.height || 0) / 2;
+                    this.prevLosAngle = Math.atan2(ty - this.y, tx - this.x);
+                } else {
+                    this.prevLosAngle = this.heading;
+                }
             }
 
         } else if (this.phase === 'LAUNCH') {
-            // === Phase 1: Launch burst upward (0 to ~0.3s) ===
-            // Clean rocket launch — minimal wobble, mostly straight up
-            let spiralOffset = Math.sin(this.age * this.spiralFreq + this.spiralPhase) * this.spiralAmp * 0.1;
-            this.x += (this.vx + spiralOffset) * dt;
-            this.y += this.vy * dt;
+            // === Phase 1: Thrust-steered upward burst ===
+            // Apply thrust along heading
+            let thrustAccel = 200;
+            this.vx += Math.cos(this.heading) * thrustAccel * dt;
+            this.vy += Math.sin(this.heading) * thrustAccel * dt;
+            // Light drag
+            this.vx *= (1 - CONFIG.MISSILE_DRAG_LAUNCH * dt);
+            this.vy *= (1 - CONFIG.MISSILE_DRAG_LAUNCH * dt);
+
+            // Dramatic spiral wobble during launch
+            this.wobblePhase += this.launchWobbleFreq * dt;
+            let wobbleOffset = Math.sin(this.wobblePhase) * this.launchWobbleAmp;
+            let perpX = -Math.sin(this.heading);
+            let perpY = Math.cos(this.heading);
+
+            this.x += (this.vx + perpX * wobbleOffset) * dt;
+            this.y += (this.vy + perpY * wobbleOffset) * dt;
+
+            // Track heading from velocity for smooth transition
+            this.heading = Math.atan2(this.vy, this.vx);
+            this.speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+
             if (this.age > this.launchDuration) {
                 this.phase = 'DECEL';
             }
 
         } else if (this.phase === 'DECEL') {
-            // === Phase 2: Quick arc-over (0.3s to ~0.45s) ===
+            // === Phase 2: Zero thrust, heavy drag, gravity arc-over ===
             const phaseAge = this.age - this.launchDuration;
             const t = Math.min(1, phaseAge / this.decelDuration);
-            // Smooth velocity blend rather than per-frame drag
-            const keepFactor = 1 - t * 0.8;
-            this.vx *= 0.96;
-            this.vy = this.vy * 0.96 + 300 * dt; // gravity curves them over
 
-            let spiralOffset = Math.sin(this.age * this.spiralFreq + this.spiralPhase) * this.spiralAmp * (0.1 + t * 0.2);
-            let speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
-            if (speed > 0) {
-                let perpX = -this.vy / speed;
-                let perpY = this.vx / speed;
-                this.x += (this.vx + perpX * spiralOffset) * dt;
-                this.y += (this.vy + perpY * spiralOffset) * dt;
+            // Heavy drag
+            this.vx *= (1 - CONFIG.MISSILE_DRAG_DECEL * dt);
+            this.vy *= (1 - CONFIG.MISSILE_DRAG_DECEL * dt);
+            // Gravity curves them over
+            this.vy += CONFIG.MISSILE_DECEL_GRAVITY * dt;
+
+            // Wobble amplitude grows (widening spiral)
+            let activeWobbleAmp = this.launchWobbleAmp * (1 + t * 0.5);
+            this.wobblePhase += this.launchWobbleFreq * dt;
+            let wobbleOffset = Math.sin(this.wobblePhase) * activeWobbleAmp;
+            let spd = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+            if (spd > 0) {
+                let perpX = -this.vy / spd;
+                let perpY = this.vx / spd;
+                this.x += (this.vx + perpX * wobbleOffset) * dt;
+                this.y += (this.vy + perpY * wobbleOffset) * dt;
             } else {
                 this.x += this.vx * dt;
                 this.y += this.vy * dt;
             }
+
+            // Track heading from velocity
+            this.heading = Math.atan2(this.vy, this.vx);
+            this.speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
 
             if (phaseAge > this.decelDuration) {
                 this.phase = 'APEX';
@@ -6448,90 +6589,183 @@ class Missile {
             }
 
         } else if (this.phase === 'APEX') {
-            // === Phase 3: Brief apex flash then immediately dive ===
-            // Apex flash (brief bright pulse at lock-on moment)
+            // === Phase 3: Near-motionless pause, lock-on flash ===
+            // Multiply velocity by 0.2 (near-motionless)
             if (!this.apexFlashed) {
                 this.apexFlashed = true;
                 this.apexFlashTimer = 0.12;
+                this.vx *= 0.2;
+                this.vy *= 0.2;
+                this.speed *= 0.2;
+                this.currentWobbleAmp = 5; // subtle trembling
             }
             if (this.apexFlashTimer > 0) {
                 this.apexFlashTimer -= dt;
             }
-            // Minimal drift during flash
-            this.x += this.vx * 0.3 * dt;
-            this.y += this.vy * 0.3 * dt;
+
+            // Minimal drift
+            this.x += this.vx * dt;
+            this.y += this.vy * dt;
+
+            // Subtle wobble
+            this.wobblePhase += this.diveWobbleFreq * dt;
+            let wobbleOffset = Math.sin(this.wobblePhase) * this.currentWobbleAmp;
+            let perpX = -Math.sin(this.heading);
+            let perpY = Math.cos(this.heading);
+            this.x += perpX * wobbleOffset * dt;
+            this.y += perpY * wobbleOffset * dt;
 
             const apexAge = this.age - this.apexStart;
             if (apexAge > this.apexDuration) {
+                // Initialize PN state
+                if (this.targetTank && this.targetTank.alive !== false) {
+                    let tx = this.targetTank.x + (this.targetTank.width || 0) / 2;
+                    let ty = this.targetTank.y + (this.targetTank.height || 0) / 2;
+                    this.prevLosAngle = Math.atan2(ty - this.y, tx - this.x);
+                    // Heading snap toward target if angle > 45 degrees
+                    let angleToTarget = Math.atan2(ty - this.y, tx - this.x);
+                    let headingError = angleDiff(angleToTarget, this.heading);
+                    if (Math.abs(headingError) > CONFIG.MISSILE_SNAP_THRESHOLD) {
+                        this.heading += Math.sign(headingError) * CONFIG.MISSILE_SNAP_ANGLE;
+                    }
+                } else {
+                    this.prevLosAngle = this.heading;
+                }
                 this.phase = 'DIVE';
             }
 
         } else if (this.phase === 'DIVE' || this.phase === 'HOMING') {
-            // Fuel decay: maneuverability degrades over missile lifetime
-            const fuel = Math.max(0, 1 - this.age / 3); // full at birth, zero at 3s
-            const chaos = (1 - fuel); // increases as fuel drops
-            const baseSpeed = this.phase === 'DIVE' ? CONFIG.MISSILE_DIVE_RAMP_SPEED : CONFIG.MISSILE_SWARM_SPEED;
+            // === THE CORE: PN Guidance with Interceptor Scanning ===
+            const fuel = Math.max(0, 1 - this.age / CONFIG.MISSILE_MAX_LIFETIME);
+            let tx, ty;
+            let targetWobbleAmp = this.diveWobbleAmp;
 
-            this.retarget();
-            if (this.targetTank && this.targetTank.alive !== false) {
-                let tx = this.targetTank.x + (this.targetTank.width || 0) / 2;
-                let ty = this.targetTank.y + (this.targetTank.height || 0) / 2;
-                let dx = tx - this.x;
-                let dy = ty - this.y;
-                let dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist < 1) dist = 1;
+            // PRIMARY: scan for interceptable threats
+            this.interceptTarget = this.scanForThreats();
 
-                const diveAge = this.phase === 'DIVE'
-                    ? this.age - this.apexStart - this.apexDuration
-                    : this.age - this.launchDuration;
-                // Homing ramps up fast initially, then decays with fuel
-                let homingStrength = Math.min(1, diveAge * 3) * fuel;
+            if (this.interceptTarget) {
+                // Create reticle when FIRST acquiring an intercept target
+                if (!this.interceptReticleCreated) {
+                    this.interceptReticleCreated = true;
+                    missileTargetReticles.push({
+                        target: this.interceptTarget,  // projectile reference
+                        isProjectile: true,
+                        timer: 0,
+                        maxTimer: 2.5,
+                        groupLabel: this.groupLabel || '?',
+                        missileIndex: this.missileIndex || 0,
+                        designation: this.designation || '?.?',
+                        mode: 'intercept',
+                        lockPhase: 'acquiring'
+                    });
+                }
+                this.mode = 'interceptor';
+                this.targetTank = null;
+                // Lead targeting: predict intercept point
+                let dist = Math.hypot(this.interceptTarget.x - this.x, this.interceptTarget.y - this.y);
+                let timeToIntercept = dist / Math.max(this.speed, 1);
+                tx = this.interceptTarget.x + this.interceptTarget.vx * timeToIntercept;
+                ty = this.interceptTarget.y + this.interceptTarget.vy * timeToIntercept;
+            } else {
+                // Lost intercept target — reset reticle flag so a new one can be created for next target
+                if (this.interceptReticleCreated) {
+                    this.interceptReticleCreated = false;
+                }
+                this.interceptTarget = null;
+                this.retarget();
+                if (this.targetTank && this.targetTank.alive !== false) {
+                    this.mode = 'offensive';
+                    tx = this.targetTank.x + (this.targetTank.width || 0) / 2;
+                    ty = this.targetTank.y + (this.targetTank.height || 0) / 2;
+                } else {
+                    this.mode = 'wander';
+                }
+            }
 
-                let desiredVx = dx / dist * baseSpeed;
-                let desiredVy = dy / dist * baseSpeed;
-                this.vx += (desiredVx - this.vx) * homingStrength * 8 * dt;
-                this.vy += (desiredVy - this.vy) * homingStrength * 8 * dt;
+            if (this.mode !== 'wander') {
+                // === PROPORTIONAL NAVIGATION ===
+                let losAngle = Math.atan2(ty - this.y, tx - this.x);
+                if (this.prevLosAngle === 0) this.prevLosAngle = losAngle;
+                let losRate = angleDiff(losAngle, this.prevLosAngle) / dt;
+                this.prevLosAngle = losAngle;
 
-                // Spiral wobble increases as fuel drops (less stable)
-                let spiralOffset = Math.sin(this.age * this.spiralFreq + this.spiralPhase) * this.spiralAmp;
-                spiralOffset *= chaos * 0.5 + 0.1;
-                let perpX = -this.vy, perpY = this.vx;
-                let pLen = Math.sqrt(perpX * perpX + perpY * perpY);
-                if (pLen > 0) { perpX /= pLen; perpY /= pLen; }
-                this.x += (this.vx + perpX * spiralOffset) * dt;
-                this.y += (this.vy + perpY * spiralOffset) * dt;
+                let commandedAccel = CONFIG.MISSILE_PN_CONSTANT * this.speed * losRate;
+                let desiredTurnRate = commandedAccel / Math.max(this.speed, 1);
 
-                if (dist < 30) {
+                // Speed-dependent turn rate (wider arcs at high speed)
+                let effectiveMaxTurn = CONFIG.MISSILE_MAX_TURN_RATE * (800 / Math.max(this.speed, 800));
+                effectiveMaxTurn *= (0.3 + 0.7 * fuel);
+
+                // Retarget boost
+                if (this.turnBoostTimer > 0) {
+                    effectiveMaxTurn *= CONFIG.MISSILE_RETARGET_BOOST;
+                    this.turnBoostTimer -= dt;
+                }
+
+                // Terminal approach adjustments
+                let dist = Math.hypot(tx - this.x, ty - this.y);
+                if (dist < 150) {
+                    effectiveMaxTurn *= 1.5;
+                    targetWobbleAmp = CONFIG.MISSILE_TERMINAL_WOBBLE_AMP;
+                } else if (dist < CONFIG.MISSILE_WOBBLE_DECAY_DIST) {
+                    let t = dist / CONFIG.MISSILE_WOBBLE_DECAY_DIST;
+                    targetWobbleAmp = CONFIG.MISSILE_TERMINAL_WOBBLE_AMP + (this.diveWobbleAmp - CONFIG.MISSILE_TERMINAL_WOBBLE_AMP) * t;
+                } else {
+                    targetWobbleAmp = this.diveWobbleAmp;
+                }
+
+                desiredTurnRate = clampValue(desiredTurnRate, -effectiveMaxTurn, effectiveMaxTurn);
+                this.turnRate += (desiredTurnRate - this.turnRate) * CONFIG.MISSILE_TURN_RESPONSIVENESS * dt;
+                this.turnRate = clampValue(this.turnRate, -effectiveMaxTurn * 1.2, effectiveMaxTurn * 1.2);
+                this.heading += this.turnRate * dt;
+
+                // Thrust + drag
+                let thrust = CONFIG.MISSILE_DIVE_THRUST * (0.4 + 0.6 * fuel);
+                if (dist < 150) thrust *= 1.3; // terminal boost
+                this.speed += (thrust - CONFIG.MISSILE_DRAG_DIVE * this.speed * this.speed / 1000) * dt;
+                this.speed = clampValue(this.speed, 0, CONFIG.MISSILE_MAX_SPEED);
+
+                // Direct hit check for offensive mode
+                if (this.mode === 'offensive' && dist < 30) {
                     this.hit();
                 }
             } else {
-                // No targets — go increasingly wild as fuel burns out
-                if (!this.wanderAngle) this.wanderAngle = Math.atan2(this.vy || 1, this.vx || 0);
-                // Direction jitter escalates from gentle to insane
-                const jitter = 2 + chaos * 14; // 2 rad/s at full fuel → 16 rad/s at empty
+                // === WANDER: no target — enhanced chaos ===
+                let chaos = 1 - fuel;
+                if (!this.wanderAngle) this.wanderAngle = this.heading;
+                let jitter = 2 + chaos * 14;
                 this.wanderAngle += (Math.random() - 0.5) * jitter * dt;
-                // Sharp random direction snaps when low on fuel
                 if (chaos > 0.5 && Math.random() < chaos * 2 * dt) {
                     this.wanderAngle += (Math.random() - 0.5) * Math.PI;
                 }
 
-                const wanderSpeed = baseSpeed * (0.5 + chaos * 0.5);
-                this.vx += (Math.cos(this.wanderAngle) * wanderSpeed - this.vx) * 6 * dt;
-                this.vy += (Math.sin(this.wanderAngle) * wanderSpeed - this.vy) * 6 * dt;
-                // Light gravity tug at very end of life
-                this.vy += chaos * chaos * 200 * dt;
+                let dTurn = angleDiff(this.wanderAngle, this.heading);
+                this.turnRate += (dTurn * 4 - this.turnRate) * 6 * dt;
+                this.heading += this.turnRate * dt;
 
-                let spiralOffset = Math.sin(this.age * this.spiralFreq * (1 + chaos * 2) + this.spiralPhase)
-                    * this.spiralAmp * (0.3 + chaos * 1.2);
-                let speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
-                if (speed > 0) {
-                    this.x += (this.vx + (-this.vy / speed) * spiralOffset) * dt;
-                    this.y += (this.vy + (this.vx / speed) * spiralOffset) * dt;
-                } else {
-                    this.x += this.vx * dt;
-                    this.y += this.vy * dt;
-                }
+                let wanderThrust = CONFIG.MISSILE_DIVE_THRUST * (0.3 + 0.7 * fuel) * 0.5;
+                this.speed += (wanderThrust - CONFIG.MISSILE_DRAG_DIVE * this.speed * this.speed / 1000) * dt;
+                this.speed = clampValue(this.speed, 0, CONFIG.MISSILE_MAX_SPEED * 0.7);
+
+                // Gravity pull — subtle downward bias on heading
+                this.heading += chaos * chaos * 0.5 * dt;
+
+                targetWobbleAmp = this.diveWobbleAmp * (1 + chaos * 3);
             }
+
+            // Compute velocity from heading
+            this.vx = Math.cos(this.heading) * this.speed;
+            this.vy = Math.sin(this.heading) * this.speed;
+
+            // Wobble perpendicular to heading
+            this.currentWobbleAmp += (targetWobbleAmp - this.currentWobbleAmp) * CONFIG.MISSILE_WOBBLE_DECAY_RATE * dt;
+            this.wobblePhase += this.diveWobbleFreq * dt;
+            let wobbleOffset = Math.sin(this.wobblePhase) * this.currentWobbleAmp;
+            let perpX = -Math.sin(this.heading);
+            let perpY = Math.cos(this.heading);
+
+            this.x += (this.vx + perpX * wobbleOffset) * dt;
+            this.y += (this.vy + perpY * wobbleOffset) * dt;
         }
 
         // Ground collision — explode on impact
@@ -6548,7 +6782,7 @@ class Missile {
         }
 
         // Max lifetime — explode on timeout
-        if (this.age > 3) {
+        if (this.age > CONFIG.MISSILE_MAX_LIFETIME) {
             this.alive = false;
             createExplosion(this.x, this.y, 'small');
             screenShake = Math.max(screenShake, 0.1);
@@ -6571,6 +6805,61 @@ class Missile {
             if (d < minDist) { minDist = d; nearest = t; }
         }
         this.targetTank = nearest;
+    }
+
+    scanForThreats() {
+        let bestTarget = null;
+        let bestScore = -1;
+
+        for (const p of projectiles) {
+            if (!p.alive) continue;
+            if (claimedThreats.has(p)) continue;
+            if (p.vy >= 0 && !this.isNearFriendly(p, CONFIG.MISSILE_INTERCEPT_NEAR_RANGE)) continue;
+
+            const distToMe = Math.hypot(p.x - this.x, p.y - this.y);
+            const minDistToFriendly = this.minDistanceToAnyFriendly(p);
+
+            const proximityScore = 50 * (1 - Math.min(distToMe / CONFIG.MISSILE_INTERCEPT_PROXIMITY_MAX, 1));
+            const urgencyScore = 40 * (1 - Math.min(minDistToFriendly / CONFIG.MISSILE_INTERCEPT_URGENCY_MAX, 1));
+            const valueScore = p.type === 'missile' ? 10 : 0;
+            const score = proximityScore + urgencyScore + valueScore;
+
+            if (score > bestScore) {
+                bestScore = score;
+                bestTarget = p;
+            }
+        }
+
+        if (bestTarget) {
+            claimedThreats.add(bestTarget);
+        }
+        return bestTarget;
+    }
+
+    minDistanceToAnyFriendly(p) {
+        let minDist = Infinity;
+        if (ufo) {
+            minDist = Math.min(minDist, Math.hypot(p.x - ufo.x, p.y - ufo.y));
+        }
+        for (const drone of activeDrones) {
+            if (!drone.alive) continue;
+            const dx = drone.x + (drone.width || 0) / 2;
+            const dy = drone.y + (drone.height || 0) / 2;
+            minDist = Math.min(minDist, Math.hypot(p.x - dx, p.y - dy));
+        }
+        for (const coord of activeCoordinators) {
+            if (!coord.alive || coord.state === 'DYING') continue;
+            minDist = Math.min(minDist, Math.hypot(p.x - coord.x, p.y - coord.y));
+            for (const drone of (coord.subDrones || [])) {
+                if (!drone.alive) continue;
+                minDist = Math.min(minDist, Math.hypot(p.x - drone.x, p.y - drone.y));
+            }
+        }
+        return minDist;
+    }
+
+    isNearFriendly(p, range) {
+        return this.minDistanceToAnyFriendly(p) < range;
     }
 
     hit() {
@@ -6619,9 +6908,10 @@ class Missile {
         }
 
         // Hot exhaust trail (core)
+        const flickerAlpha = 0.7 + 0.3 * Math.sin(this.age * 40);
         for (let i = 0; i < this.trail.length; i++) {
             let t = this.trail[i];
-            let alpha = (1 - t.age * 2) * (i / this.trail.length);
+            let alpha = (1 - t.age * 1.8) * (i / this.trail.length) * flickerAlpha;
             if (alpha <= 0) continue;
             ctx.save();
             ctx.globalAlpha = alpha;
@@ -6635,7 +6925,7 @@ class Missile {
 
         // Missile body
         ctx.save();
-        let angle = Math.atan2(this.vy, this.vx);
+        let angle = this.heading;
         ctx.translate(this.x, this.y);
         ctx.rotate(angle);
 
@@ -6645,10 +6935,10 @@ class Missile {
         ctx.ellipse(0, 0, 8, 3, 0, 0, Math.PI * 2);
         ctx.fill();
 
-        // Nose glow
-        ctx.shadowColor = '#ff4400';
+        // Nose glow (cyan when intercepting, orange when offensive)
+        ctx.shadowColor = this.mode === 'interceptor' ? '#0088ff' : '#ff4400';
         ctx.shadowBlur = 8;
-        ctx.fillStyle = '#ffaa00';
+        ctx.fillStyle = this.mode === 'interceptor' ? '#00ccff' : '#ffaa00';
         ctx.beginPath();
         ctx.arc(4, 0, 2, 0, Math.PI * 2);
         ctx.fill();
@@ -9402,8 +9692,10 @@ class AttackCoordinator extends Coordinator {
         this.bombTimer = 0;       // Cooldown between bomb drops
         this.bombInterval = 4.0;  // Drop a bomb every 4 seconds
         this.missileTimer = 0;    // Cooldown between missile salvos
-        this.missileInterval = 5.0; // Fire missiles every 5 seconds
+        this.missileInterval = 2.5; // Offensive auto-fire every 2.5 seconds
+        this.reactiveInterval = 0.5; // Reactive defense: fire as fast as groups recharge
         this.missileLaunchFlash = 0; // Remaining flash duration on launch
+        this.reactiveMode = false;  // True when incoming threats detected
     }
 
     update(dt) {
@@ -9427,12 +9719,31 @@ class AttackCoordinator extends Coordinator {
             }
         }
 
-        // Auto-fire missiles when full salvo ready
-        if (this.missileTimer >= this.missileInterval && missileUnlocked && missileAmmo >= missileMaxAmmo) {
-            const hasTanks = [...tanks, ...heavyTanks].some(t => t.alive);
-            if (hasTanks) {
-                this.autoMissile();
-                this.missileTimer = 0;
+        // Auto-fire missiles — only the first alive attack coordinator drives auto-fire
+        // (fireMissileGroup distributes missiles across ALL coordinators regardless)
+        const atkCoords = activeCoordinators.filter(c => c.type === 'attack' && c.alive && c.state !== 'DYING');
+        const isLeadCoordinator = atkCoords.length > 0 && atkCoords[0] === this;
+
+        if (isLeadCoordinator && missileUnlocked && missileGroups.some(g => g.ready)) {
+            // Detect incoming threats: enemy projectiles heading upward toward friendlies
+            const hasThreats = projectiles.some(p => p.alive && p.vy < 0);
+            this.reactiveMode = hasThreats;
+
+            if (hasThreats) {
+                // REACTIVE DEFENSE: fire immediately when groups recharge — point-defense mode
+                if (this.missileTimer >= this.reactiveInterval && ufo && ufo.energy >= CONFIG.MISSILE_GROUP_ENERGY_COST) {
+                    this.autoMissile();
+                    this.missileTimer = 0;
+                }
+            } else {
+                // OFFENSIVE MODE: fire at a moderate pace when tanks exist
+                if (this.missileTimer >= this.missileInterval) {
+                    const hasTanks = [...tanks, ...heavyTanks].some(t => t.alive);
+                    if (hasTanks) {
+                        this.autoMissile();
+                        this.missileTimer = 0;
+                    }
+                }
             }
         }
     }
@@ -9479,8 +9790,21 @@ class AttackCoordinator extends Coordinator {
     }
 
     autoMissile() {
-        fireMissileSwarm();
-        createFloatingText(this.x, this.y + 30, 'AUTO MISSILES!', '#f44');
+        // Fire ALL ready groups in a burst — the missileInterval is a cooldown between bursts
+        let groupsFired = 0;
+        while (missileGroups.some(g => g.ready) && ufo && ufo.energy >= CONFIG.MISSILE_GROUP_ENERGY_COST) {
+            fireMissileGroup();
+            groupsFired++;
+        }
+        if (groupsFired > 0) {
+            if (this.reactiveMode) {
+                const label = groupsFired > 1 ? `INTERCEPT x${groupsFired}!` : 'INTERCEPT!';
+                createFloatingText(this.x, this.y + 30, label, '#ffcc00');
+            } else {
+                const label = groupsFired > 1 ? `AUTO SALVO x${groupsFired}!` : 'AUTO MISSILES!';
+                createFloatingText(this.x, this.y + 30, label, '#f44');
+            }
+        }
     }
 
     render() {
@@ -9517,13 +9841,26 @@ class AttackCoordinator extends Coordinator {
                 ctx.fill();
             }
 
-            // Missile ready indicator (small red dot)
-            if (missileUnlocked && missileAmmo >= missileMaxAmmo && this.missileTimer >= this.missileInterval * 0.8) {
-                const readyAlpha = 0.4 + Math.sin(this.glowPulse * 3) * 0.3;
-                ctx.fillStyle = `rgba(255, 50, 50, ${readyAlpha})`;
-                ctx.beginPath();
-                ctx.arc(cx + 15, cy + this.height / 2 + 8, 4, 0, Math.PI * 2);
-                ctx.fill();
+            // Missile ready indicator (small red dot, or rapid yellow pulse in reactive mode)
+            if (missileUnlocked && missileGroups.some(g => g.ready)) {
+                const activeInterval = this.reactiveMode ? this.reactiveInterval : this.missileInterval;
+                if (this.missileTimer >= activeInterval * 0.8) {
+                    if (this.reactiveMode) {
+                        // Reactive defense: rapid yellow-white pulse, slightly larger dot
+                        const readyAlpha = 0.6 + Math.sin(this.glowPulse * 8) * 0.4;
+                        ctx.fillStyle = `rgba(255, 255, 100, ${readyAlpha})`;
+                        ctx.beginPath();
+                        ctx.arc(cx + 15, cy + this.height / 2 + 8, 5, 0, Math.PI * 2);
+                        ctx.fill();
+                    } else {
+                        // Offensive mode: normal red dot
+                        const readyAlpha = 0.4 + Math.sin(this.glowPulse * 3) * 0.3;
+                        ctx.fillStyle = `rgba(255, 50, 50, ${readyAlpha})`;
+                        ctx.beginPath();
+                        ctx.arc(cx + 15, cy + this.height / 2 + 8, 4, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
             }
         }
     }
@@ -10113,121 +10450,160 @@ function triggerWarpJuke(direction) {
 // MISSILE SWARM MANAGEMENT
 // ============================================
 
-function fireMissileSwarm() {
+function fireMissileGroup() {
     if (!ufo || !missileUnlocked) return;
-    if (missileAmmo < missileMaxAmmo) return; // Only fire full swarm
 
-    // Find all alive tanks
-    let allTanks = [...tanks, ...heavyTanks].filter(t => t.alive !== false);
-    if (allTanks.length === 0) return;
+    // Find the first ready group
+    const group = missileGroups.find(g => g.ready);
+    if (!group) return;
 
-    // Assign targets: one missile per unique tank, extras double up on heavy tanks first
-    let targetAssignments = [];
-    let heavyTargets = allTanks.filter(t => heavyTanks.includes(t));
-
-    // First pass: one missile per tank
-    for (let t of allTanks) {
-        if (targetAssignments.length >= missileAmmo) break;
-        targetAssignments.push(t);
+    // Energy check
+    if (ufo.energy < CONFIG.MISSILE_GROUP_ENERGY_COST) {
+        createFloatingText(ufo.x, ufo.y + 60, 'LOW ENERGY!', '#ff4444');
+        return;
     }
 
-    // Excess missiles double up on heavy tanks first, then any tank
-    let remaining = missileAmmo - targetAssignments.length;
-    for (let i = 0; i < remaining; i++) {
-        if (heavyTargets.length > 0) {
-            targetAssignments.push(heavyTargets[i % heavyTargets.length]);
-        } else {
-            targetAssignments.push(allTanks[i % allTanks.length]);
+    // Deduct energy
+    ufo.energy -= CONFIG.MISSILE_GROUP_ENERGY_COST;
+
+    // Mark group as fired
+    group.ready = false;
+    group.rechargeTimer = CONFIG.MISSILE_GROUP_RECHARGE_TIME;
+
+    const missileCount = CONFIG.MISSILE_GROUP_SIZE;
+    const groupLabel = String.fromCharCode(65 + group.index); // A, B, C, D...
+
+    // Find all alive tanks for target assignment
+    let allTanks = [...tanks, ...heavyTanks].filter(t => t.alive !== false);
+    if (allTanks.length === 0 && projectiles.filter(p => p.alive).length === 0) return;
+
+    // Assign targets: one missile per unique tank, extras double up on heavy tanks
+    let targetAssignments = [];
+    if (allTanks.length > 0) {
+        let heavyTargets = allTanks.filter(t => heavyTanks.includes(t));
+        for (let t of allTanks) {
+            if (targetAssignments.length >= missileCount) break;
+            targetAssignments.push(t);
+        }
+        let remaining = missileCount - targetAssignments.length;
+        for (let i = 0; i < remaining; i++) {
+            if (heavyTargets.length > 0) {
+                targetAssignments.push(heavyTargets[i % heavyTargets.length]);
+            } else {
+                targetAssignments.push(allTanks[i % allTanks.length]);
+            }
+        }
+    } else {
+        // No tanks but projectiles exist — missiles will find intercept targets via scanForThreats
+        for (let i = 0; i < missileCount; i++) {
+            targetAssignments.push(null);
         }
     }
 
-    // Show targeting reticles on targets
-    let uniqueTargets = [...new Set(targetAssignments)];
+    // Show targeting reticles with group designations
+    let uniqueTargets = [...new Set(targetAssignments.filter(t => t !== null))];
     for (let t of uniqueTargets) {
-        missileTargetReticles.push({
-            tank: t,
-            timer: 0.6,
-            maxTimer: 0.6
-        });
+        const missilesOnTarget = targetAssignments.filter(a => a === t);
+        for (let mi = 0; mi < missilesOnTarget.length; mi++) {
+            missileTargetReticles.push({
+                tank: t,
+                timer: 0,
+                maxTimer: 2.5,
+                groupLabel: groupLabel,
+                missileIndex: mi + 1,
+                designation: groupLabel + '.' + (mi + 1),
+                mode: 'offensive',
+                lockPhase: 'acquiring'
+            });
+        }
     }
 
-    // Play lock-on sound sequence
+    // Play lock-on sound
     SFX.missileLockOn && SFX.missileLockOn();
 
-    // Check for alive, non-DYING attack coordinators
+    // Check for alive attack coordinators
     const launchCoords = activeCoordinators.filter(c => c.type === 'attack' && c.alive && c.state !== 'DYING');
+    const fanSpread = CONFIG.MISSILE_FAN_SPREAD;
 
     if (launchCoords.length > 0) {
-        // === COORDINATOR LAUNCH: split missiles across active attack coordinators ===
-        const swarmCount = targetAssignments.length;
-        const perCoord = Math.floor(swarmCount / launchCoords.length);
-        let remainder = swarmCount % launchCoords.length;
+        // Split missiles across coordinators
+        const perCoord = Math.floor(missileCount / launchCoords.length);
+        let remainder = missileCount % launchCoords.length;
         let assignmentIndex = 0;
 
         for (let c = 0; c < launchCoords.length; c++) {
             const coord = launchCoords[c];
             const count = perCoord + (c < remainder ? 1 : 0);
-            // Fan spread upward (-PI/2 is straight up), fan across ~0.6 radians
-            const fanSpread = Math.PI * 0.6;
-            const centerAngle = -Math.PI / 2; // straight up
+            const centerAngle = -Math.PI / 2;
             const startAngle = centerAngle - fanSpread / 2;
 
             for (let i = 0; i < count; i++) {
-                const launchAngle = count > 1
+                let launchAngle = count > 1
                     ? startAngle + (fanSpread * i / (count - 1))
                     : centerAngle;
+                launchAngle += (Math.random() - 0.5) * CONFIG.MISSILE_FAN_JITTER * 2;
                 const missile = new Missile(
-                    coord.x,
-                    coord.y,
+                    coord.x, coord.y,
                     targetAssignments[assignmentIndex],
-                    launchAngle,
-                    true // fromCoordinator
+                    launchAngle, true
                 );
+                missile.launchDelay = assignmentIndex * CONFIG.MISSILE_LAUNCH_STAGGER_BASE + Math.random() * CONFIG.MISSILE_LAUNCH_STAGGER_JITTER;
+                missile.groupLabel = groupLabel;
+                missile.missileIndex = assignmentIndex + 1;
+                missile.designation = groupLabel + '.' + (assignmentIndex + 1);
                 playerMissiles.push(missile);
                 assignmentIndex++;
             }
-
-            // Trigger launch flash on coordinator
-            coord.missileLaunchFlash = 0.2; // seconds remaining for flash effect
+            coord.missileLaunchFlash = 0.2;
         }
 
-        // Floating text at centroid of launching coordinators
         const centroidX = launchCoords.reduce((sum, c) => sum + c.x, 0) / launchCoords.length;
         const centroidY = launchCoords.reduce((sum, c) => sum + c.y, 0) / launchCoords.length;
-        createFloatingText(centroidX, centroidY + 30, 'MISSILE SWARM!', '#ff2200');
-
+        createFloatingText(centroidX, centroidY + 30, 'MISSILES!', '#ff2200');
     } else {
-        // === UFO FALLBACK: original downward fan pattern ===
-        const swarmCount = targetAssignments.length;
-        const fanSpread = Math.PI * 0.6;
+        // UFO fallback
         const startAngle = Math.PI / 2 - fanSpread / 2;
-
-        for (let i = 0; i < swarmCount; i++) {
-            const launchAngle = startAngle + (fanSpread * i / Math.max(1, swarmCount - 1));
+        for (let i = 0; i < missileCount; i++) {
+            let launchAngle = startAngle + (fanSpread * i / Math.max(1, missileCount - 1));
+            launchAngle += (Math.random() - 0.5) * CONFIG.MISSILE_FAN_JITTER * 2;
             const missile = new Missile(
-                ufo.x,
-                ufo.y + ufo.height / 2,
+                ufo.x, ufo.y + ufo.height / 2,
                 targetAssignments[i],
-                launchAngle,
-                false
+                launchAngle, false
             );
+            missile.launchDelay = i * CONFIG.MISSILE_LAUNCH_STAGGER_BASE + Math.random() * CONFIG.MISSILE_LAUNCH_STAGGER_JITTER;
+            missile.groupLabel = groupLabel;
+            missile.missileIndex = i + 1;
+            missile.designation = groupLabel + '.' + (i + 1);
             playerMissiles.push(missile);
         }
-
-        createFloatingText(ufo.x, ufo.y + 50, 'MISSILE SWARM!', '#ff2200');
+        createFloatingText(ufo.x, ufo.y + 50, 'MISSILES!', '#ff2200');
     }
 
-    // Consume ammo and start recharge
-    missileAmmo = 0;
-    missileRechargeTimer = CONFIG.MISSILE_RECHARGE_TIME;
-
-    // Play launch sound
     SFX.missileLaunch && SFX.missileLaunch();
 }
 
 function updateMissiles(dt) {
+    claimedThreats.clear();
+
     for (const missile of playerMissiles) {
         missile.update(dt);
+    }
+
+    // Intercept collision: player missiles vs enemy projectiles
+    for (const missile of playerMissiles) {
+        if (!missile.alive) continue;
+        if (missile.phase === 'LAUNCH' || missile.phase === 'DECEL' || missile.phase === 'APEX') continue;
+        if (!missile.interceptTarget || !missile.interceptTarget.alive) continue;
+
+        const dist = Math.hypot(missile.x - missile.interceptTarget.x, missile.y - missile.interceptTarget.y);
+        if (dist < CONFIG.MISSILE_INTERCEPT_RADIUS) {
+            missile.alive = false;
+            missile.interceptTarget.alive = false;
+            createExplosion(missile.x, missile.y, 'small');
+            screenShake = Math.max(screenShake, 0.1);
+            createFloatingText(missile.x, missile.y, 'INTERCEPTED!', '#00ccff');
+        }
     }
 
     // Collision with ANY enemy — missiles explode and deal damage on contact
@@ -10287,24 +10663,41 @@ function updateMissiles(dt) {
 
     playerMissiles = playerMissiles.filter(m => m.alive);
 
-    // Update targeting reticles
+    // Update targeting reticles (timer counts UP)
     for (const reticle of missileTargetReticles) {
-        reticle.timer -= dt;
+        reticle.timer += dt;
+        // Update lock phase
+        if (reticle.lockPhase === 'acquiring' && reticle.timer >= 0.4) {
+            reticle.lockPhase = 'tracking';
+        }
+        // If the target died (intercepted projectile, destroyed tank), jump to fadeout phase
+        const tgt = reticle.tank || reticle.target;
+        if (tgt && tgt.alive === false && reticle.timer < reticle.maxTimer - 0.5) {
+            reticle.timer = reticle.maxTimer - 0.5; // enter terminal fadeout
+        }
     }
-    missileTargetReticles = missileTargetReticles.filter(r => r.timer > 0);
+    missileTargetReticles = missileTargetReticles.filter(r => r.timer < r.maxTimer);
 
-    // Recharge missiles after cooldown
-    if (missileUnlocked && missileAmmo < missileMaxAmmo && missileRechargeTimer > 0) {
-        missileRechargeTimer -= dt;
-        if (missileRechargeTimer <= 0) {
-            missileAmmo = missileMaxAmmo;
-            missileRechargeTimer = 0;
-            SFX.missileReady && SFX.missileReady();
-            createFloatingText(
-                ufo ? ufo.x : canvas.width / 2,
-                ufo ? ufo.y + 30 : 100,
-                'MISSILES READY', '#ff4400'
-            );
+    // Recharge missile groups independently
+    if (missileUnlocked) {
+        for (const group of missileGroups) {
+            if (!group.ready && group.rechargeTimer > 0) {
+                group.rechargeTimer -= dt;
+                if (group.rechargeTimer <= 0) {
+                    group.ready = true;
+                    group.rechargeTimer = 0;
+                    SFX.missileGroupReady && SFX.missileGroupReady();
+                    // Check if ALL groups are now ready
+                    if (missileGroups.every(g => g.ready)) {
+                        SFX.missileReady && SFX.missileReady();
+                        createFloatingText(
+                            ufo ? ufo.x : canvas.width / 2,
+                            ufo ? ufo.y + 30 : 100,
+                            'ALL GROUPS READY', '#ff4400'
+                        );
+                    }
+                }
+            }
         }
     }
 }
@@ -10314,156 +10707,326 @@ function renderMissiles() {
         missile.render(ctx);
     }
 
-    // Render targeting reticles on locked tanks
+    // Render Evangelion-style targeting reticles
+    // Group reticles by target for label stacking
+    const reticlesByTarget = new Map();
     for (const reticle of missileTargetReticles) {
-        if (!reticle.tank || reticle.tank.alive === false) continue;
-        const t = reticle.tank;
-        const cx = t.x + (t.width || 0) / 2;
-        const cy = t.y + (t.height || 0) / 2;
-        const progress = 1 - reticle.timer / reticle.maxTimer;
-        const alpha = reticle.timer / reticle.maxTimer;
-        const size = 25 + progress * 10;
+        // Support both tank targets and projectile targets
+        const tgt = reticle.tank || reticle.target;
+        if (!tgt || tgt.alive === false) continue;
+        if (!reticlesByTarget.has(tgt)) reticlesByTarget.set(tgt, []);
+        reticlesByTarget.get(tgt).push(reticle);
+    }
 
-        ctx.save();
-        ctx.globalAlpha = alpha;
-        ctx.strokeStyle = '#ff2200';
-        ctx.lineWidth = 2;
+    for (const [target, reticles] of reticlesByTarget) {
+        // Projectiles use x,y directly; tanks use center of bounding box
+        const isProjectile = reticles[0] && reticles[0].isProjectile;
+        const tcx = isProjectile ? target.x : target.x + (target.width || 0) / 2;
+        const tcy = isProjectile ? target.y : target.y + (target.height || 0) / 2;
 
-        // Outer rotating square
-        ctx.translate(cx, cy);
-        ctx.rotate(progress * Math.PI);
-        ctx.strokeRect(-size, -size, size * 2, size * 2);
+        for (let ri = 0; ri < reticles.length; ri++) {
+            const reticle = reticles[ri];
+            const t = reticle.timer; // time elapsed
+            const maxT = reticle.maxTimer;
+            const mode = reticle.mode || 'offensive';
+            const primaryColor = mode === 'intercept' ? '#00ccff' : '#ff4400';
+            const highlightColor = mode === 'intercept' ? '#88eeff' : '#ff8844';
 
-        // Inner crosshairs
-        ctx.rotate(-progress * Math.PI);
-        const cross = 10;
-        ctx.beginPath();
-        ctx.moveTo(-cross, 0); ctx.lineTo(cross, 0);
-        ctx.moveTo(0, -cross); ctx.lineTo(0, cross);
-        ctx.stroke();
+            // Diamond size (center-to-vertex) — smaller for projectile intercepts
+            const baseSize = isProjectile ? 20 : 32;
 
-        // Corner brackets
-        const bSize = size * 0.4;
-        ctx.beginPath();
-        ctx.moveTo(-size, -size + bSize); ctx.lineTo(-size, -size); ctx.lineTo(-size + bSize, -size);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(size, -size + bSize); ctx.lineTo(size, -size); ctx.lineTo(size - bSize, -size);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(-size, size - bSize); ctx.lineTo(-size, size); ctx.lineTo(-size + bSize, size);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(size, size - bSize); ctx.lineTo(size, size); ctx.lineTo(size - bSize, size);
-        ctx.stroke();
+            // Phase calculations
+            const isAcquiring = t < 0.4;
+            const isConfirming = t >= 0.4 && t < 0.8;
+            const isTracking = t >= 0.8 && t < maxT - 0.5;
+            const isFading = t >= maxT - 0.5;
 
-        ctx.restore();
+            // Alpha
+            let alpha = 1.0;
+            if (isFading) {
+                alpha = Math.max(0, (maxT - t) / 0.5);
+            }
+            if (isTracking) {
+                alpha = 0.7 + Math.sin(t * 4) * 0.15;
+            }
+
+            // Acquiring scale (2x -> 1x)
+            let scale = 1.0;
+            if (isAcquiring) {
+                scale = 2.0 - (t / 0.4);
+            }
+
+            // Flash phase for acquiring
+            const flashOn = isAcquiring ? Math.floor(Date.now() / 83) % 2 === 0 : true;
+
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.translate(tcx, tcy);
+
+            // Rotating diamond (45-deg rotated square)
+            const rotation = t * 0.8; // 0.8 rad/s
+            const diamondSize = baseSize * scale;
+
+            ctx.save();
+            ctx.rotate(Math.PI / 4 + rotation);
+
+            // Confirmation flash at t=0.4
+            if (isConfirming && t < 0.5) {
+                const flashAlpha = 1.0 - (t - 0.4) / 0.1;
+                ctx.strokeStyle = highlightColor;
+                ctx.lineWidth = 3;
+                ctx.globalAlpha = alpha * flashAlpha;
+                ctx.strokeRect(-diamondSize, -diamondSize, diamondSize * 2, diamondSize * 2);
+                ctx.globalAlpha = alpha;
+            }
+
+            // Diamond stroke
+            ctx.strokeStyle = (isAcquiring && !flashOn) ? highlightColor : primaryColor;
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(-diamondSize, -diamondSize, diamondSize * 2, diamondSize * 2);
+
+            // Corner brackets at diamond vertices
+            let bracketLen = 6;
+            if (isConfirming && t < 0.5) {
+                bracketLen = 6 + (12 - 6) * Math.max(0, 1 - (t - 0.4) / 0.1);
+            }
+            const corners = [
+                [-diamondSize, -diamondSize],
+                [diamondSize, -diamondSize],
+                [diamondSize, diamondSize],
+                [-diamondSize, diamondSize]
+            ];
+            ctx.beginPath();
+            for (const [bx, by] of corners) {
+                const dx = bx > 0 ? -1 : 1;
+                const dy = by > 0 ? -1 : 1;
+                ctx.moveTo(bx + dx * bracketLen, by);
+                ctx.lineTo(bx, by);
+                ctx.lineTo(bx, by + dy * bracketLen);
+            }
+            ctx.stroke();
+
+            ctx.restore(); // undo diamond rotation
+
+            // Static crosshair (no rotation)
+            ctx.strokeStyle = primaryColor;
+            ctx.lineWidth = 1;
+            ctx.globalAlpha = alpha * 0.7;
+            const crossLen = 12;
+            const gap = 2;
+            ctx.beginPath();
+            ctx.moveTo(-crossLen, 0); ctx.lineTo(-gap, 0);
+            ctx.moveTo(gap, 0); ctx.lineTo(crossLen, 0);
+            ctx.moveTo(0, -crossLen); ctx.lineTo(0, -gap);
+            ctx.moveTo(0, gap); ctx.lineTo(0, crossLen);
+            ctx.stroke();
+            ctx.globalAlpha = alpha;
+
+            // Center dot (pulsing)
+            const dotPulse = Math.sin(t * 8) * 0.3 + 0.7;
+            ctx.fillStyle = primaryColor;
+            ctx.globalAlpha = alpha * dotPulse;
+            ctx.beginPath();
+            ctx.arc(0, 0, 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = alpha;
+
+            // Designation label
+            if (reticle.designation) {
+                const labelVisible = isAcquiring ? flashOn : true;
+                if (labelVisible) {
+                    const labelX = 22;
+                    const labelY = -22 + ri * 14; // stack labels for same target
+                    const labelText = reticle.designation;
+
+                    ctx.font = 'bold 11px monospace';
+                    const textW = ctx.measureText(labelText).width;
+
+                    // Background rect
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+                    ctx.fillRect(labelX - 2, labelY - 10, textW + 4, 14);
+                    ctx.strokeStyle = primaryColor;
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(labelX - 2, labelY - 10, textW + 4, 14);
+
+                    // Label text
+                    ctx.fillStyle = primaryColor;
+                    ctx.textAlign = 'left';
+                    ctx.fillText(labelText, labelX, labelY);
+                }
+            }
+
+            ctx.restore();
+        }
     }
 }
 
 function renderMissileCount(startX, startY) {
-    if (!missileUnlocked || missileMaxAmmo <= 0) return 0;
+    if (!missileUnlocked || missileGroupCount <= 0) return 0;
 
-    const missileSize = 16;
-    const spacing = 6;
-    const rowSpacing = 4;
+    const mW = 5;        // missile silhouette width (compact for 3-col grid)
+    const mH = 14;       // missile silhouette height
+    const mSpacing = 2;  // spacing between missiles in a group
+    const groupSpacing = 5; // vertical spacing between group rows
     const panelPadding = 8;
     const keyWidth = 20;
     const keyHeight = 18;
-    const keyPadding = 6;
-    const labelText = 'SWARM';
-    const labelGap = 8;
-    const maxPerRow = 6;
+    const labelGap = 6;
+    const labelCharW = 8; // approximate width for group label letter
+    const groupSize = CONFIG.MISSILE_GROUP_SIZE;
+    const colGap = 8;    // gap between grid columns
 
-    // Calculate rows
-    const rowCount = Math.ceil(missileMaxAmmo / maxPerRow);
-    const missilesPerRow = Math.min(missileMaxAmmo, maxPerRow);
+    // Up to 3-column grid: groups split across columns
+    const numCols = missileGroupCount > 6 ? 3 : (missileGroupCount > 3 ? 2 : 1);
+    const rowsPerCol = Math.ceil(missileGroupCount / numCols);
+    const colW = labelCharW + groupSize * (mW + mSpacing); // width of one column
 
-    // Calculate dimensions (vertical missiles are narrower: half-width each)
-    const missilesWidth = (missileSize / 2 + spacing) * missilesPerRow - spacing;
+    // Panel dimensions
     ctx.font = 'bold 10px monospace';
-    const labelWidth = ctx.measureText(labelText).width;
-    const headerWidth = labelWidth + labelGap + keyWidth + keyPadding;
-    const panelWidth = headerWidth + missilesWidth + panelPadding * 2;
-    const firstRowHeight = Math.max(missileSize, keyHeight);
-    const extraRowsHeight = rowCount > 1 ? (rowCount - 1) * (missileSize + rowSpacing) : 0;
-    const panelHeight = firstRowHeight + extraRowsHeight + panelPadding * 2;
+    const headerLabelW = ctx.measureText('SALVO').width;
+    const headerW = headerLabelW + labelGap + keyWidth + 4;
+    const gridW = numCols > 1 ? colW * numCols + colGap * (numCols - 1) : colW;
+    const panelWidth = Math.max(headerW, gridW) + panelPadding * 2;
+    const headerHeight = keyHeight + 2;
+    const groupsHeight = rowsPerCol * (mH + groupSpacing) - groupSpacing;
+    const panelHeight = headerHeight + groupsHeight + panelPadding * 2 + 4;
+
+    const allReady = missileGroups.every(g => g.ready);
 
     // Panel background
-    const isReady = missileAmmo >= missileMaxAmmo;
-    ctx.fillStyle = isReady ? 'rgba(80, 0, 0, 0.5)' : 'rgba(0, 0, 0, 0.5)';
+    ctx.fillStyle = allReady ? 'rgba(80, 0, 0, 0.5)' : 'rgba(0, 0, 0, 0.5)';
     ctx.beginPath();
     ctx.roundRect(startX, startY, panelWidth, panelHeight, 8);
     ctx.fill();
 
-    // Label (vertically centered with first row)
-    const firstRowCenterY = startY + panelPadding + firstRowHeight / 2;
-    ctx.fillStyle = isReady ? '#ff4400' : '#888';
+    // Header label
+    const headerY = startY + panelPadding;
+    ctx.fillStyle = allReady ? '#ff4400' : '#888';
     ctx.font = 'bold 10px monospace';
     ctx.textAlign = 'left';
-    const labelX = startX + panelPadding;
-    ctx.fillText(labelText, labelX, firstRowCenterY + 4);
+    ctx.fillText('SALVO', startX + panelPadding, headerY + keyHeight / 2 + 4);
 
-    // Keyboard key badge (C)
-    const keyX = labelX + labelWidth + labelGap;
-    const keyY = firstRowCenterY - keyHeight / 2;
-
+    // Key badge (X)
+    const keyX = startX + panelPadding + headerLabelW + labelGap;
     ctx.fillStyle = '#444';
     ctx.beginPath();
-    ctx.roundRect(keyX, keyY, keyWidth, keyHeight, 4);
+    ctx.roundRect(keyX, headerY, keyWidth, keyHeight, 4);
     ctx.fill();
     ctx.fillStyle = '#666';
     ctx.beginPath();
-    ctx.roundRect(keyX + 1, keyY + 1, keyWidth - 2, keyHeight - 4, 3);
+    ctx.roundRect(keyX + 1, headerY + 1, keyWidth - 2, keyHeight - 4, 3);
     ctx.fill();
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 11px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('C', keyX + keyWidth / 2, keyY + keyHeight / 2 + 3);
+    ctx.fillText('X', keyX + keyWidth / 2, headerY + keyHeight / 2 + 3);
 
-    // Draw missile icons in rows (rotated 90° to stand upright)
-    const missilesStartX = keyX + keyWidth + keyPadding;
-    for (let i = 0; i < missileMaxAmmo; i++) {
-        const row = Math.floor(i / maxPerRow);
-        const col = i % maxPerRow;
-        const x = missilesStartX + col * (missileSize / 2 + spacing) + missileSize / 4;
-        const y = firstRowCenterY + row * (missileSize + rowSpacing);
-        const filled = i < missileAmmo;
-
-        ctx.save();
-        ctx.translate(x, y);
-
-        if (filled) {
-            ctx.fillStyle = '#ff2200';
-            ctx.beginPath();
-            ctx.ellipse(0, 0, missileSize / 4, missileSize / 2, 0, 0, Math.PI * 2);
-            ctx.fill();
-            const pulse = Math.sin(Date.now() / 150 + i) * 0.3 + 0.7;
-            ctx.fillStyle = `rgba(255, 170, 0, ${pulse})`;
-            ctx.beginPath();
-            ctx.arc(0, -missileSize / 4, 2, 0, Math.PI * 2);
-            ctx.fill();
-        } else {
-            ctx.strokeStyle = '#333';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.ellipse(0, 0, missileSize / 4, missileSize / 2, 0, 0, Math.PI * 2);
-            ctx.stroke();
-        }
-
-        ctx.restore();
+    // SALVO RDY text
+    if (allReady) {
+        const pulse = Math.sin(Date.now() / 200) * 0.4 + 0.6;
+        ctx.fillStyle = `rgba(255, 68, 0, ${pulse})`;
+        ctx.font = 'bold 10px monospace';
+        ctx.textAlign = 'right';
+        ctx.fillText('SALVO RDY', startX + panelWidth - panelPadding, headerY + keyHeight / 2 + 4);
+        ctx.textAlign = 'left';
     }
 
-    // Recharge progress bar if recharging
-    if (missileAmmo < missileMaxAmmo && missileRechargeTimer > 0) {
-        const progress = 1 - (missileRechargeTimer / CONFIG.MISSILE_RECHARGE_TIME);
-        const barY = startY + panelHeight - 4;
-        ctx.strokeStyle = 'rgba(255, 68, 0, 0.8)';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(missilesStartX, barY);
-        ctx.lineTo(missilesStartX + missilesWidth * progress, barY);
-        ctx.stroke();
+    // Draw groups in up to 3-column grid
+    const groupsStartY = headerY + headerHeight + 4;
+    for (let gi = 0; gi < missileGroupCount; gi++) {
+        const group = missileGroups[gi];
+        const col = Math.floor(gi / rowsPerCol);  // column 0, 1, or 2
+        const row = gi % rowsPerCol;               // row within column
+        const colX = startX + panelPadding + col * (colW + colGap);
+        const rowY = groupsStartY + row * (mH + groupSpacing);
+        const groupLabel = String.fromCharCode(65 + gi);
+
+        // Recharge progress (0 = empty, 1 = full/ready)
+        const rechargeProgress = group.ready ? 1.0 :
+            1.0 - (group.rechargeTimer / CONFIG.MISSILE_GROUP_RECHARGE_TIME);
+
+        // Group label
+        const labelPulse = group.ready ? (Math.sin(Date.now() / 300 + gi) * 0.3 + 0.7) : 0.4;
+        ctx.fillStyle = group.ready ? `rgba(255, 68, 0, ${labelPulse})` : '#555';
+        ctx.font = 'bold 9px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(groupLabel, colX, rowY + mH / 2 + 3);
+
+        // Draw 4 missile silhouettes
+        for (let mi = 0; mi < groupSize; mi++) {
+            const mx = colX + labelCharW + mi * (mW + mSpacing);
+            const my = rowY;
+
+            if (group.ready) {
+                // Full fill
+                ctx.fillStyle = '#cc2200';
+                ctx.fillRect(mx, my + 2, mW, mH - 2);
+                // Nose cone
+                ctx.beginPath();
+                ctx.moveTo(mx, my + 2);
+                ctx.lineTo(mx + mW / 2, my);
+                ctx.lineTo(mx + mW, my + 2);
+                ctx.closePath();
+                ctx.fill();
+                // Fins
+                ctx.fillStyle = '#881100';
+                ctx.fillRect(mx - 1, my + mH - 2, mW + 2, 2);
+                // Pulsing nose glow
+                const pulse = Math.sin(Date.now() / 150 + mi + gi * 4) * 0.3 + 0.7;
+                ctx.fillStyle = `rgba(255, 170, 0, ${pulse})`;
+                ctx.beginPath();
+                ctx.arc(mx + mW / 2, my + 1, 1.2, 0, Math.PI * 2);
+                ctx.fill();
+            } else {
+                // Empty outline
+                ctx.strokeStyle = '#333';
+                ctx.lineWidth = 0.8;
+                ctx.strokeRect(mx, my + 2, mW, mH - 2);
+                ctx.beginPath();
+                ctx.moveTo(mx, my + 2);
+                ctx.lineTo(mx + mW / 2, my);
+                ctx.lineTo(mx + mW, my + 2);
+                ctx.closePath();
+                ctx.stroke();
+
+                // Fill-from-bottom based on recharge progress
+                if (rechargeProgress > 0) {
+                    const fillH = (mH - 2) * rechargeProgress;
+                    const fillY = my + mH - fillH;
+
+                    // Fill color based on progress
+                    let fillColor;
+                    if (rechargeProgress < 0.5) fillColor = '#661100';
+                    else if (rechargeProgress < 0.9) fillColor = '#cc2200';
+                    else fillColor = '#ff4400';
+
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.rect(mx, fillY, mW, fillH);
+                    ctx.clip();
+
+                    ctx.fillStyle = fillColor;
+                    ctx.fillRect(mx, my + 2, mW, mH - 2);
+                    // Nose cone in clip
+                    ctx.beginPath();
+                    ctx.moveTo(mx, my + 2);
+                    ctx.lineTo(mx + mW / 2, my);
+                    ctx.lineTo(mx + mW, my + 2);
+                    ctx.closePath();
+                    ctx.fill();
+
+                    ctx.restore();
+
+                    // Meniscus line at fill level
+                    ctx.strokeStyle = 'rgba(255, 170, 0, 0.6)';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(mx, fillY);
+                    ctx.lineTo(mx + mW, fillY);
+                    ctx.stroke();
+                }
+            }
+        }
     }
 
     return panelHeight;
@@ -11218,12 +11781,11 @@ function startGame() {
     researchFlashTimer = 0;
     lastResearchCountdownSecond = -1;
 
-    missileAmmo = 0;
-    missileMaxAmmo = 0;
-    missileRechargeTimer = 0;
-    missileCapacity = 0;
+    missileGroups = [];
+    missileGroupCount = 0;
     missileDamage = 0;
     playerMissiles = [];
+    claimedThreats.clear();
     missileTargetReticles = [];
     missileUnlocked = false;
 
@@ -11892,6 +12454,7 @@ function renderHUDFrame() {
     if (hasWeapons) {
         hudAnimState.weaponsPanelVisible = true;
     }
+    let weaponsPanelH = layout.weaponsZone.h;
     if (hudAnimState.weaponsPanelVisible) {
         if (hudAnimState.weaponsPanelSlide < 1) {
             hudAnimState.weaponsPanelSlide = Math.min(1, hudAnimState.weaponsPanelSlide + 0.04);
@@ -11899,8 +12462,41 @@ function renderHUDFrame() {
         ctx.save();
         const slideOffset = (1 - easeOutCubic(hudAnimState.weaponsPanelSlide)) * -layout.weaponsZone.w;
         ctx.translate(slideOffset, 0);
-        renderWeaponsZone(layout.weaponsZone);
+        weaponsPanelH = renderWeaponsZone(layout.weaponsZone) || layout.weaponsZone.h;
         ctx.restore();
+    }
+
+    // Research progress bar: render below weapons zone
+    if (techTree.activeResearch) {
+        const node = getTechNode(techTree.activeResearch.nodeId);
+        if (node) {
+            const rX = layout.weaponsZone.x;
+            const rW = layout.weaponsZone.w;
+            const rY = layout.weaponsZone.y + weaponsPanelH + 6;
+            const rH = 28;
+            const progress = 1 - (techTree.activeResearch.timeRemaining / techTree.activeResearch.totalTime);
+            const timeLeft = Math.ceil(techTree.activeResearch.timeRemaining);
+
+            if (hudAnimState.weaponsPanelVisible) {
+                ctx.save();
+                const slideOffset = (1 - easeOutCubic(hudAnimState.weaponsPanelSlide)) * -layout.weaponsZone.w;
+                ctx.translate(slideOffset, 0);
+            }
+
+            renderNGEPanel(rX, rY, rW, rH, { color: '#0a4', cutCorners: [], alpha: 0.6 });
+            renderNGEBar(rX + 4, rY + 4, rW - 8, rH - 8, progress, '#0a4', { segments: 15 });
+
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 11px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(`RSRCH: ${node.name} ${timeLeft}s`, rX + rW / 2, rY + rH / 2 + 4);
+
+            renderNGEBlinkLight(rX + rW - 10, rY + 6, '#0f0', 300);
+
+            if (hudAnimState.weaponsPanelVisible) {
+                ctx.restore();
+            }
+        }
     }
 
     // Fleet zone: slide in when drones/coordinators unlocked
@@ -12027,36 +12623,11 @@ function renderStatusZone(zone) {
         ctx.fillText(bioMatter.toString(), x + pad + 58, y + 104);
     }
 
-    // Research progress (relocated from mission zone to avoid UFO energy bar overlap)
-    let statusBottomY = y + 120;
-    if (techTree.activeResearch) {
-        const node = getTechNode(techTree.activeResearch.nodeId);
-        if (node) {
-            const resY = statusBottomY + 2;
-            const resH = 28;
-            const progress = 1 - (techTree.activeResearch.timeRemaining / techTree.activeResearch.totalTime);
-            const timeLeft = Math.ceil(techTree.activeResearch.timeRemaining);
-
-            renderNGEPanel(x, resY, w, resH, { color: '#0a4', cutCorners: [], alpha: 0.6 });
-            renderNGEBar(x + 4, resY + 4, w - 8, resH - 8, progress, '#0a4', { segments: 15 });
-
-            ctx.fillStyle = '#fff';
-            ctx.font = 'bold 11px monospace';
-            ctx.textAlign = 'center';
-            ctx.fillText(`RSRCH: ${node.name} ${timeLeft}s`, x + w / 2, resY + resH / 2 + 4);
-
-            // Blinking research indicator
-            renderNGEBlinkLight(x + w - 10, resY + 6, '#0f0', 300);
-
-            statusBottomY = resY + resH;
-        }
-    }
-
     // Blinking status light
     renderNGEBlinkLight(x + w - 12, y + 8, '#0ff', 800);
 
-    // Active powerups (below status panel and research bar)
-    renderPowerupsInStatus(x, statusBottomY + 4);
+    // Active powerups (below status panel)
+    renderPowerupsInStatus(x, y + 120 + 4);
 }
 
 function renderPowerupsInStatus(startX, startY) {
@@ -12339,27 +12910,28 @@ function renderWeaponsZone(zone) {
     const bombSize = 16;
     const bombSpacing = 6;
 
-    // Missile dimensions
-    const missileW = 6;
-    const missileH = 14;
-    const missileSpacing = 5;
-    const missileRowH = missileH + 4;
+    // Missile dimensions for grouped layout (up to 3-column grid)
+    const missileW = 5;
+    const missileH = 12;
+    const missileSpacing = 2;
+    const groupRowH = missileH + 5;
+    const groupLabelW = 9;
+    const missileColGap = 6;
+    const missileNumCols = missileGroupCount > 6 ? 3 : (missileGroupCount > 3 ? 2 : 1);
+    const missileRowsPerCol = Math.ceil(missileGroupCount / missileNumCols);
 
     // Dynamic columns based on available width
     const bombCols = playerInventory.maxBombs > 0
         ? Math.max(1, Math.floor(availableGridW / (bombSize + bombSpacing))) : 0;
-    const missileCols = (missileUnlocked && missileMaxAmmo > 0)
-        ? Math.max(1, Math.floor(availableGridW / (missileW + missileSpacing))) : 0;
 
     // Calculate panel height dynamically from actual content
     let panelH = 22; // header
     if (playerInventory.maxBombs > 0) {
         const bombRows = Math.ceil(playerInventory.maxBombs / bombCols);
-        panelH += 4 + bombRows * (bombSize + bombSpacing) + 6;
+        panelH += 4 + bombRows * (bombSize + bombSpacing) + 18;
     }
-    if (missileUnlocked && missileMaxAmmo > 0) {
-        const missileRows = Math.ceil(missileMaxAmmo / missileCols);
-        panelH += 4 + missileRows * missileRowH + 8;
+    if (missileUnlocked && missileGroupCount > 0) {
+        panelH += 4 + missileRowsPerCol * groupRowH + 8;
     }
     panelH += 8; // bottom pad
 
@@ -12374,7 +12946,7 @@ function renderWeaponsZone(zone) {
         const rechargeTimers = playerInventory.bombRechargeTimers || [];
 
         renderNGELabel(x + pad, curY, 'ORD.B', '#f80');
-        renderNGEKeyBadge(x + pad + 44, curY - 10, 'X');
+        renderNGEKeyBadge(x + pad + 44, curY - 10, 'Z');
         curY += 4;
 
         for (let i = 0; i < maxBombs; i++) {
@@ -12417,81 +12989,127 @@ function renderWeaponsZone(zone) {
         }
 
         const bombRows = Math.ceil(maxBombs / bombCols);
-        curY += bombRows * (bombSize + bombSpacing) + 6;
+        curY += bombRows * (bombSize + bombSpacing) + 18;
     }
 
-    // Missiles section
-    if (missileUnlocked && missileMaxAmmo > 0) {
+    // Missiles section (grouped layout)
+    if (missileUnlocked && missileGroupCount > 0) {
         renderNGELabel(x + pad, curY, 'ORD.M', '#f40');
-        renderNGEKeyBadge(x + pad + 44, curY - 10, 'C');
+        renderNGEKeyBadge(x + pad + 44, curY - 10, 'X');
 
-        // SWARM RDY indicator
-        if (missileAmmo >= missileMaxAmmo) {
+        // SALVO RDY indicator
+        const allGroupsReady = missileGroups.every(g => g.ready);
+        if (allGroupsReady) {
             const pulse = Math.sin(Date.now() / 200) * 0.4 + 0.6;
             ctx.fillStyle = `rgba(255, 68, 0, ${pulse})`;
             ctx.font = 'bold 10px monospace';
             ctx.textAlign = 'right';
-            ctx.fillText('SWARM RDY', x + w - pad, curY);
+            ctx.fillText('SALVO RDY', x + w - pad, curY);
             ctx.textAlign = 'left';
         }
 
         curY += 4;
 
-        for (let i = 0; i < missileMaxAmmo; i++) {
-            const col = i % missileCols;
-            const row = Math.floor(i / missileCols);
-            const mx = gridStartX + col * (missileW + missileSpacing);
-            const my = curY + row * missileRowH;
-            const filled = i < missileAmmo;
+        // Up to 3-column grid layout for missile groups
+        const mColW = groupLabelW + CONFIG.MISSILE_GROUP_SIZE * (missileW + missileSpacing);
+        const mGridStartX = x + pad + 20;
 
-            ctx.save();
-            if (filled) {
-                // Missile body (rectangle)
-                ctx.fillStyle = '#cc2200';
-                ctx.fillRect(mx, my + 3, missileW, missileH - 3);
+        for (let gi = 0; gi < missileGroupCount; gi++) {
+            const group = missileGroups[gi];
+            const col = Math.floor(gi / missileRowsPerCol);  // column 0, 1, or 2
+            const row = gi % missileRowsPerCol;               // row within column
+            const colX = mGridStartX + col * (mColW + missileColGap);
+            const rowY = curY + row * groupRowH;
+            const groupLabel = String.fromCharCode(65 + gi);
+            const rechargeProgress = group.ready ? 1.0 :
+                1.0 - (group.rechargeTimer / CONFIG.MISSILE_GROUP_RECHARGE_TIME);
 
-                // Pointed nose cone (triangle)
-                ctx.beginPath();
-                ctx.moveTo(mx, my + 3);
-                ctx.lineTo(mx + missileW / 2, my);
-                ctx.lineTo(mx + missileW, my + 3);
-                ctx.closePath();
-                ctx.fill();
+            // Group label
+            const labelAlpha = group.ready ? (Math.sin(Date.now() / 300 + gi) * 0.3 + 0.7) : 0.4;
+            ctx.fillStyle = group.ready ? `rgba(255, 68, 0, ${labelAlpha})` : '#555';
+            ctx.font = 'bold 8px monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText(groupLabel, colX, rowY + missileH / 2 + 3);
 
-                // Fins at bottom
-                ctx.fillStyle = '#881100';
-                ctx.fillRect(mx - 1, my + missileH - 2, missileW + 2, 2);
+            // Draw 4 missile silhouettes per group
+            const missilesStartX = colX + groupLabelW;
+            for (let mi = 0; mi < CONFIG.MISSILE_GROUP_SIZE; mi++) {
+                const mx = missilesStartX + mi * (missileW + missileSpacing);
+                const my = rowY;
 
-                // Glow tip
-                const pulse = Math.sin(Date.now() / 150 + i) * 0.3 + 0.7;
-                ctx.fillStyle = `rgba(255, 170, 0, ${pulse})`;
-                ctx.beginPath();
-                ctx.arc(mx + missileW / 2, my + 1, 1.5, 0, Math.PI * 2);
-                ctx.fill();
-            } else {
-                // Empty missile outline
-                ctx.strokeStyle = '#333';
-                ctx.lineWidth = 0.8;
-                ctx.strokeRect(mx, my + 3, missileW, missileH - 3);
-                ctx.beginPath();
-                ctx.moveTo(mx, my + 3);
-                ctx.lineTo(mx + missileW / 2, my);
-                ctx.lineTo(mx + missileW, my + 3);
-                ctx.closePath();
-                ctx.stroke();
+                if (group.ready) {
+                    ctx.fillStyle = '#cc2200';
+                    ctx.fillRect(mx, my + 2, missileW, missileH - 2);
+                    ctx.beginPath();
+                    ctx.moveTo(mx, my + 2);
+                    ctx.lineTo(mx + missileW / 2, my);
+                    ctx.lineTo(mx + missileW, my + 2);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.fillStyle = '#881100';
+                    ctx.fillRect(mx - 1, my + missileH - 2, missileW + 2, 2);
+                    const pulse = Math.sin(Date.now() / 150 + mi + gi * 4) * 0.3 + 0.7;
+                    ctx.fillStyle = `rgba(255, 170, 0, ${pulse})`;
+                    ctx.beginPath();
+                    ctx.arc(mx + missileW / 2, my + 1, 1, 0, Math.PI * 2);
+                    ctx.fill();
+                } else {
+                    // Empty outline
+                    ctx.strokeStyle = '#333';
+                    ctx.lineWidth = 0.8;
+                    ctx.strokeRect(mx, my + 2, missileW, missileH - 2);
+                    ctx.beginPath();
+                    ctx.moveTo(mx, my + 2);
+                    ctx.lineTo(mx + missileW / 2, my);
+                    ctx.lineTo(mx + missileW, my + 2);
+                    ctx.closePath();
+                    ctx.stroke();
+
+                    // Fill-from-bottom recharge
+                    if (rechargeProgress > 0) {
+                        const fillH = (missileH - 2) * rechargeProgress;
+                        const fillY = my + missileH - fillH;
+
+                        let fillColor;
+                        if (rechargeProgress < 0.5) fillColor = '#661100';
+                        else if (rechargeProgress < 0.9) fillColor = '#cc2200';
+                        else fillColor = '#ff4400';
+
+                        ctx.save();
+                        ctx.beginPath();
+                        ctx.rect(mx, fillY, missileW, fillH);
+                        ctx.clip();
+                        ctx.fillStyle = fillColor;
+                        ctx.fillRect(mx, my + 2, missileW, missileH - 2);
+                        ctx.beginPath();
+                        ctx.moveTo(mx, my + 2);
+                        ctx.lineTo(mx + missileW / 2, my);
+                        ctx.lineTo(mx + missileW, my + 2);
+                        ctx.closePath();
+                        ctx.fill();
+                        ctx.restore();
+
+                        // Meniscus line
+                        ctx.strokeStyle = 'rgba(255, 170, 0, 0.6)';
+                        ctx.lineWidth = 1;
+                        ctx.beginPath();
+                        ctx.moveTo(mx, fillY);
+                        ctx.lineTo(mx + missileW, fillY);
+                        ctx.stroke();
+                    }
+                }
             }
-            ctx.restore();
-        }
 
-        // Recharge bar
-        if (missileAmmo < missileMaxAmmo && missileRechargeTimer > 0) {
-            const missileRows = Math.ceil(missileMaxAmmo / missileCols);
-            const rechargeY = curY + missileRows * missileRowH + 2;
-            const progress = 1 - (missileRechargeTimer / CONFIG.MISSILE_RECHARGE_TIME);
-            const barW = Math.min(missileCols * (missileW + missileSpacing), availableGridW);
-            renderNGEBar(gridStartX, rechargeY, barW, 3, progress, '#f40', { segments: 6 });
+            // Per-group recharge bar
+            if (!group.ready) {
+                const barY = rowY + missileH + 1;
+                const barW = CONFIG.MISSILE_GROUP_SIZE * (missileW + missileSpacing) - missileSpacing;
+                renderNGEBar(missilesStartX, barY, barW, 2, rechargeProgress, '#f40', { segments: 4 });
+            }
         }
     }
+
+    return panelH;
 }
 
 function renderFleetZone(zone) {
@@ -12950,18 +13568,19 @@ function renderUI() {
         return labelWidth + labelGap + keyWidth + keyPadding + bombsWidth + bombPadding * 2;
     })();
     const missilePanelWidth = (() => {
-        if (!missileUnlocked || missileMaxAmmo <= 0) return 0;
-        const missileSize = 16;
-        const spacing = 6;
+        if (!missileUnlocked || missileGroupCount <= 0) return 0;
+        const mW = 8;
+        const mSpacing = 4;
         const missilePadding = 8;
         const keyWidth = 20;
-        const keyPadding = 6;
-        const labelText = 'SWARM';
-        const labelGap = 8;
+        const labelText = 'SALVO';
+        const labelGap = 6;
+        const labelCharW = 10;
         ctx.font = 'bold 10px monospace';
         const labelWidth = ctx.measureText(labelText).width;
-        const missilesWidth = (missileSize / 2 + spacing) * missileMaxAmmo - spacing;
-        return labelWidth + labelGap + keyWidth + keyPadding + missilesWidth + missilePadding * 2;
+        const missilesRowW = labelCharW + CONFIG.MISSILE_GROUP_SIZE * (mW + mSpacing);
+        const headerW = labelWidth + labelGap + keyWidth + 4;
+        return Math.max(headerW, missilesRowW) + missilePadding * 2;
     })();
     const energyBonusWidth = playerInventory.maxEnergyBonus > 0 ? 110 : 0;
     const speedWidth = playerInventory.speedBonus > 0 ? 90 : 0;
@@ -16928,6 +17547,7 @@ function getShopItemStatus(item) {
     if (item.effect === 'bombBlast' && bombBlastTier >= CONFIG.BOMB_BLAST_TIERS.length - 1) return 'maxed';
     if (item.effect === 'bombDamage' && bombDamageTier >= CONFIG.BOMB_DAMAGE_TIERS.length - 1) return 'maxed';
     if (item.effect === 'bombCapacity' && playerInventory.maxBombs >= CONFIG.BOMB_MAX_COUNT) return 'maxed';
+    if (item.effect === 'missileCapacity' && missileGroupCount >= CONFIG.MISSILE_MAX_GROUPS) return 'maxed';
     if (item.requiresMissile && !missileUnlocked && !shopCart.includes('missile_swarm')) return 'locked';
     return 'available';
 }
@@ -18674,14 +19294,14 @@ function applyShopItemEffect(item) {
             break;
         case 'missileSwarm':
             missileUnlocked = true;
-            missileMaxAmmo = CONFIG.MISSILE_SWARM_CAPACITY;
-            missileAmmo = missileMaxAmmo;
-            missileCapacity = missileMaxAmmo;
+            missileGroupCount = 1;
+            missileGroups = [{ ready: true, rechargeTimer: 0, index: 0 }];
             break;
         case 'missileCapacity':
-            missileCapacity += item.value;
-            missileMaxAmmo = missileCapacity;
-            missileAmmo = missileMaxAmmo; // Fill to new max on purchase
+            if (missileGroupCount < CONFIG.MISSILE_MAX_GROUPS) {
+                missileGroupCount++;
+                missileGroups.push({ ready: true, rechargeTimer: 0, index: missileGroupCount - 1 });
+            }
             break;
         case 'missileDamage':
             missileDamage += item.value;
