@@ -306,6 +306,20 @@ const CONFIG = {
     BATTLE_TIMER: 40,
     HARVESTER_BATCH_SIZE: 3,
 
+    // === EXPANSION: Coordinator Charging UX ===
+    COORD_CHARGE_SNAP_RANGE: 140,       // Horizontal px range for beam snap
+    COORD_CHARGE_BEAM_WIDTH: 10,        // Width of charging beam rod (px)
+    COORD_CHARGE_SINE_AMP: 12,          // Sine wave amplitude on charging beam
+    COORD_CHARGE_SINE_FREQ: 4,          // Sine wave frequency (cycles along beam)
+    COORD_CHARGE_PARTICLE_RATE: 0.08,   // Seconds between energy particles
+    COORD_ENERGY_BAR_WIDTH: 60,         // Upgraded energy bar width
+    COORD_ENERGY_BAR_HEIGHT: 7,         // Upgraded energy bar height
+    COORD_SOS_INTERVAL: 2.0,           // Seconds between SOS beacon pulses
+    COORD_SOS_DYING_INTERVAL: 1.0,     // SOS interval when below 10%
+    COORD_SOS_RING_MAX_RADIUS: 90,     // Max expansion radius of SOS ring
+    COORD_SOS_RING_DURATION: 1.0,      // How long each ring lasts
+    COORD_HUD_ARROW_SIZE: 12,          // Size of directional arrow indicator
+
     // === EXPANSION: Bio-Matter ===
     BIO_MATTER_RATES: { human: 3, cow: 2, sheep: 2, cat: 1, dog: 1, harvester_batch: 2 },
 
@@ -374,6 +388,7 @@ const TUTORIAL_CONFIG = {
     TANK_WARNING_DURATION: 2.5,      // Total tank entrance sequence
     COMPLETION_DURATION: 2.0,        // Completion celebration duration
     COMPLETION_FADE_START: 1.5,      // When to start fading out completion text
+    COORD_CHARGE_HINT_DELAY: 1.0,       // Delay after coordinator enters ACTIVE before hint shows
 
     // Colors
     COLORS: {
@@ -382,7 +397,8 @@ const TUTORIAL_CONFIG = {
         warp_juke: '#0f0',
         bomb: '#f80',
         warning: '#f44',
-        complete: '#fff'
+        complete: '#fff',
+        coordinator_charge: '#ffa000'
     }
 };
 
@@ -611,6 +627,65 @@ const SFX = {
             SFX.beamLoop = null;
             SFX.beamLoopGain = null;
         }
+    },
+
+    // Charging beam hum - warm electrical hum, distinct from beam loop
+    chargingHumLoop: null,
+    chargingHumGain: null,
+
+    startChargingHum: () => {
+        if (!audioCtx || SFX.chargingHumLoop) return;
+        SFX.chargingHumLoop = audioCtx.createOscillator();
+        const lfo = audioCtx.createOscillator();
+        SFX.chargingHumGain = audioCtx.createGain();
+        const lfoGain = audioCtx.createGain();
+
+        lfo.frequency.setValueAtTime(4, audioCtx.currentTime);
+        lfoGain.gain.setValueAtTime(15, audioCtx.currentTime);
+        lfo.connect(lfoGain);
+        lfoGain.connect(SFX.chargingHumLoop.frequency);
+
+        SFX.chargingHumLoop.type = 'triangle';
+        SFX.chargingHumLoop.frequency.setValueAtTime(120, audioCtx.currentTime);
+        SFX.chargingHumLoop.connect(SFX.chargingHumGain);
+        SFX.chargingHumGain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+        SFX.chargingHumGain.connect(audioCtx.destination);
+
+        SFX.chargingHumLoop.start();
+        lfo.start();
+    },
+
+    stopChargingHum: () => {
+        if (SFX.chargingHumLoop) {
+            SFX.chargingHumGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+            SFX.chargingHumLoop.stop(audioCtx.currentTime + 0.15);
+            SFX.chargingHumLoop = null;
+            SFX.chargingHumGain = null;
+        }
+    },
+
+    // Rising pitch on charging hum as coordinator approaches full
+    setChargingHumPitch: (energyPct) => {
+        if (SFX.chargingHumLoop) {
+            const freq = 120 + energyPct * 80; // 120Hz at empty -> 200Hz at full
+            SFX.chargingHumLoop.frequency.setTargetAtTime(freq, audioCtx.currentTime, 0.1);
+        }
+    },
+
+    chargeFull: () => {
+        if (!audioCtx) return;
+        // Satisfying "full charge" chime — ascending major chord
+        [523, 659, 784].forEach((freq, i) => {
+            setTimeout(() => playTone(freq, 0.2, 'sine', 0.15), i * 60);
+        });
+    },
+
+    distressBeep: () => {
+        if (!audioCtx) return;
+        // Two-tone warning beep (short, not annoying)
+        const t = audioCtx.currentTime;
+        playTone(600, 0.08, 'square', 0.1);
+        setTimeout(() => playTone(400, 0.08, 'square', 0.1), 100);
     },
 
     abductionComplete: (targetType) => {
@@ -3375,6 +3450,8 @@ class Target {
 
 let floatingTexts = [];
 let tutorialState = null;
+let coordChargeTutorialShown = false; // One-time: has the player seen the coordinator charge hint?
+let coordChargeTutorialState = null;  // { phase: 'WAITING'|'SHOWING'|'DISMISSED', timer, targetCoord }
 
 function createFloatingText(x, y, text, color, options = {}) {
     const {
@@ -3738,6 +3815,100 @@ function updateTutorialCelebration(dt) {
             ts.phase = 'COMPLETE';
         }
     }
+}
+
+function updateCoordChargeTutorial(dt) {
+    if (!coordChargeTutorialState || coordChargeTutorialState.phase === 'DISMISSED') return;
+
+    const cs = coordChargeTutorialState;
+    cs.timer += dt;
+
+    if (cs.phase === 'WAITING') {
+        // Wait for coordinator to enter ACTIVE state
+        if (cs.targetCoord && cs.targetCoord.state === 'ACTIVE' && cs.timer >= TUTORIAL_CONFIG.COORD_CHARGE_HINT_DELAY) {
+            cs.phase = 'SHOWING';
+            cs.timer = 0;
+        }
+    } else if (cs.phase === 'SHOWING') {
+        // Dismiss when player charges the coordinator for the first time
+        if (cs.targetCoord && cs.targetCoord.isBeingCharged) {
+            cs.phase = 'DISMISSED';
+            // Particle burst on dismissal
+            const cx = cs.targetCoord.x;
+            const cy = cs.targetCoord.y;
+            for (let i = 0; i < 10; i++) {
+                const angle = (i / 10) * Math.PI * 2;
+                const speed = 80 + Math.random() * 50;
+                particles.push(new Particle(
+                    cx + (Math.random() - 0.5) * 20, cy,
+                    Math.cos(angle) * speed, Math.sin(angle) * speed,
+                    'rgb(255, 180, 50)', 3, 0.3
+                ));
+            }
+            SFX.powerupCollect && SFX.powerupCollect();
+            coordChargeTutorialState = null;
+        }
+    }
+}
+
+function renderCoordChargeHint() {
+    if (!coordChargeTutorialState || coordChargeTutorialState.phase !== 'SHOWING') return;
+
+    const cs = coordChargeTutorialState;
+    const coord = cs.targetCoord;
+    if (!coord || !coord.alive) {
+        coordChargeTutorialState = null;
+        return;
+    }
+
+    const t = cs.timer;
+    const alpha = Math.min(1, t / 0.3); // Fade in
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    // Panel near the coordinator
+    const panelW = 340;
+    const panelH = 55;
+    const panelX = coord.x;
+    const panelY = coord.y - coord.height / 2 - 50;
+
+    renderHintPanel(panelX, panelY, panelW, panelH);
+
+    // Pulsing glow
+    const glowBlur = 8 + Math.sin(t * 4) * 6;
+    ctx.shadowColor = TUTORIAL_CONFIG.COLORS.coordinator_charge;
+    ctx.shadowBlur = glowBlur;
+
+    // [SPACE] key badge + text
+    const keyW = 60;
+    const textLabel = 'RECHARGE COORDINATOR';
+    ctx.font = 'bold 18px monospace';
+    const textW = ctx.measureText(textLabel).width;
+    const totalW = keyW + 12 + textW;
+    const startX = panelX - totalW / 2;
+    const keyY = panelY - 14;
+
+    renderKeyBadge(startX, keyY, 'SPACE', keyW, 22);
+
+    ctx.fillStyle = TUTORIAL_CONFIG.COLORS.coordinator_charge;
+    ctx.font = 'bold 18px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(textLabel, startX + keyW + 12, panelY + 2);
+
+    // Arrow pointing at coordinator
+    const arrowY = panelY + panelH / 2 + 5;
+    const arrowAlpha = 0.5 + Math.sin(t * 5) * 0.3;
+    ctx.strokeStyle = `rgba(255, 160, 0, ${arrowAlpha})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(panelX - 5, arrowY);
+    ctx.lineTo(panelX, arrowY + 10);
+    ctx.lineTo(panelX + 5, arrowY);
+    ctx.stroke();
+
+    ctx.shadowBlur = 0;
+    ctx.restore();
 }
 
 // ---- Tutorial Rendering ----
@@ -4275,6 +4446,8 @@ class UFO {
         this.beamTarget = null;
         this.beamProgress = 0;
         this.beamOutOfEnergy = false; // Flag to prevent rapid on/off cycling when out of energy
+        this.chargingTarget = null;       // Coordinator being charged via snap beam
+        this.chargingParticleTimer = 0;   // Timer for spawning energy particles along charge beam
         this.hoverOffset = 0;
         this.hoverTime = 0;
         this.beamRotation = 0; // For spiral effect
@@ -4321,76 +4494,136 @@ class UFO {
             this.beamOutOfEnergy = false;
         }
 
+        // Mark inSnapRange on all coordinators within snap range (regardless of beam state)
+        for (const coord of activeCoordinators) {
+            if (!coord.alive || coord.state === 'DEPLOYING' || coord.state === 'DYING') continue;
+            coord.inSnapRange = Math.abs(coord.x - this.x) <= CONFIG.COORD_CHARGE_SNAP_RANGE;
+        }
+
         if (wantsBeam && canFireBeam) {
-            // Start beam sound on activation
-            if (!this.beamActive) {
-                SFX.beamOn();
-                SFX.startBeamLoop();
-            }
-            this.beamActive = true;
-            if (!activePowerups.energy_surge.active) {
-                this.energy -= CONFIG.ENERGY_DRAIN_RATE * dt;
-            }
-            this.energy = Math.min(this.energy, this.maxEnergy);
+            // Check for snap coordinator before normal beam
+            const snapCoord = this.findSnapCoordinator();
 
-            // Check for target lock
-            if (!this.beamTarget) {
-                this.beamTarget = this.findTargetInBeam();
-                if (this.beamTarget) {
-                    this.beamTarget.beingAbducted = true;
-                    notifyTutorialBeamLock();
-                    // Play pickup sound (with cooldown to prevent spam)
-                    SFX.targetPickup(this.beamTarget);
-                    // Reset falling state if re-catching a dropped target
-                    if (this.beamTarget.falling) {
-                        this.beamTarget.falling = false;
-                        this.beamTarget.vy = 0;
-                    }
+            if (snapCoord) {
+                // === Snap charging mode ===
+                // Transition from normal beam to charging if needed
+                if (!this.beamActive) {
+                    SFX.beamOn();
                 }
-            }
+                if (this.chargingTarget !== snapCoord) {
+                    // Switching targets or starting fresh
+                    if (this.chargingTarget) {
+                        this.chargingTarget.isBeingCharged = false;
+                    }
+                    // Stop normal beam loop if it was playing
+                    SFX.stopBeamLoop();
+                    SFX.startChargingHum();
+                    this.chargingTarget = snapCoord;
+                    this.chargingParticleTimer = 0;
+                }
+                snapCoord.isBeingCharged = true;
+                this.beamActive = true;
 
-            // Beam recharges coordinators and drones
-            if (this.beamActive) {
-                const beamTop = this.y + this.height / 2;
-                const beamBottom = canvas.height - 60;
-                const widthMult = activePowerups.wide_beam.active ? CONFIG.POWERUPS.wide_beam.widthMultiplier : 1;
-                const beamTopWidth = 30 * widthMult;
-                const beamBottomWidth = 225 * widthMult;
+                // Drain UFO energy
+                if (!activePowerups.energy_surge.active) {
+                    this.energy -= CONFIG.ENERGY_DRAIN_RATE * dt;
+                }
+                this.energy = Math.min(this.energy, this.maxEnergy);
 
+                // Recharge the coordinator
                 const rechargeRate = techFlags.reactorAmplifier ? 4.0 : 2.0;
-                const broadcastExtra = techFlags.powerBroadcast ? 60 : 0;
+                snapCoord.rechargeEnergy(rechargeRate * dt);
 
-                const isInBeam = (ex, ey) => {
-                    if (ey < beamTop || ey > beamBottom) return false;
-                    const t = (ey - beamTop) / (beamBottom - beamTop);
-                    const beamWidth = beamTopWidth + (beamBottomWidth - beamTopWidth) * t;
-                    const halfWidth = beamWidth / 2 + broadcastExtra;
-                    return Math.abs(ex - this.x) <= halfWidth;
-                };
+                // Update charging hum pitch based on coordinator energy level
+                const energyPct = snapCoord.energyTimer / snapCoord.maxEnergy;
+                SFX.setChargingHumPitch(energyPct);
 
-                // Recharge coordinators (always works, no tech required)
-                for (const coord of activeCoordinators) {
-                    if (!coord.alive || coord.state === 'DEPLOYING' || coord.state === 'DYING') continue;
-                    if (isInBeam(coord.x, coord.y)) {
-                        coord.rechargeEnergy(rechargeRate * dt);
-                    }
+                // Check if coordinator reached full energy
+                if (snapCoord.energyTimer >= snapCoord.maxEnergy) {
+                    SFX.chargeFull();
+                    snapCoord.isBeingCharged = false;
+                    this.chargingTarget = null;
+                    SFX.stopChargingHum();
+                }
+            } else {
+                // === Normal beam mode ===
+                // If we were charging, stop
+                if (this.chargingTarget) {
+                    this.chargingTarget.isBeingCharged = false;
+                    this.chargingTarget = null;
+                    SFX.stopChargingHum();
                 }
 
-                // Recharge raw drones (requires beamConduit / PG1)
-                if (techFlags.beamConduit) {
-                    for (const drone of activeDrones) {
-                        if (!drone.alive) continue;
-                        if (isInBeam(drone.x, drone.y)) {
-                            drone.energyTimer = Math.min(drone.maxEnergy, drone.energyTimer + rechargeRate * dt);
+                // Start beam sound on activation
+                if (!this.beamActive) {
+                    SFX.beamOn();
+                    SFX.startBeamLoop();
+                }
+                this.beamActive = true;
+                if (!activePowerups.energy_surge.active) {
+                    this.energy -= CONFIG.ENERGY_DRAIN_RATE * dt;
+                }
+                this.energy = Math.min(this.energy, this.maxEnergy);
+
+                // Check for target lock
+                if (!this.beamTarget) {
+                    this.beamTarget = this.findTargetInBeam();
+                    if (this.beamTarget) {
+                        this.beamTarget.beingAbducted = true;
+                        notifyTutorialBeamLock();
+                        // Play pickup sound (with cooldown to prevent spam)
+                        SFX.targetPickup(this.beamTarget);
+                        // Reset falling state if re-catching a dropped target
+                        if (this.beamTarget.falling) {
+                            this.beamTarget.falling = false;
+                            this.beamTarget.vy = 0;
                         }
                     }
-                    // Also recharge coordinator sub-drones
+                }
+
+                // Beam recharges coordinators and drones
+                if (this.beamActive) {
+                    const beamTop = this.y + this.height / 2;
+                    const beamBottom = canvas.height - 60;
+                    const widthMult = activePowerups.wide_beam.active ? CONFIG.POWERUPS.wide_beam.widthMultiplier : 1;
+                    const beamTopWidth = 30 * widthMult;
+                    const beamBottomWidth = 225 * widthMult;
+
+                    const rechargeRate = techFlags.reactorAmplifier ? 4.0 : 2.0;
+                    const broadcastExtra = techFlags.powerBroadcast ? 60 : 0;
+
+                    const isInBeam = (ex, ey) => {
+                        if (ey < beamTop || ey > beamBottom) return false;
+                        const t = (ey - beamTop) / (beamBottom - beamTop);
+                        const beamWidth = beamTopWidth + (beamBottomWidth - beamTopWidth) * t;
+                        const halfWidth = beamWidth / 2 + broadcastExtra;
+                        return Math.abs(ex - this.x) <= halfWidth;
+                    };
+
+                    // Recharge coordinators (always works, no tech required)
                     for (const coord of activeCoordinators) {
-                        if (!coord.alive) continue;
-                        for (const drone of coord.subDrones) {
+                        if (!coord.alive || coord.state === 'DEPLOYING' || coord.state === 'DYING') continue;
+                        if (isInBeam(coord.x, coord.y)) {
+                            coord.rechargeEnergy(rechargeRate * dt);
+                        }
+                    }
+
+                    // Recharge raw drones (requires beamConduit / PG1)
+                    if (techFlags.beamConduit) {
+                        for (const drone of activeDrones) {
                             if (!drone.alive) continue;
                             if (isInBeam(drone.x, drone.y)) {
                                 drone.energyTimer = Math.min(drone.maxEnergy, drone.energyTimer + rechargeRate * dt);
+                            }
+                        }
+                        // Also recharge coordinator sub-drones
+                        for (const coord of activeCoordinators) {
+                            if (!coord.alive) continue;
+                            for (const drone of coord.subDrones) {
+                                if (!drone.alive) continue;
+                                if (isInBeam(drone.x, drone.y)) {
+                                    drone.energyTimer = Math.min(drone.maxEnergy, drone.energyTimer + rechargeRate * dt);
+                                }
                             }
                         }
                     }
@@ -4406,6 +4639,12 @@ class UFO {
             // Beam deactivated
             if (this.beamActive) {
                 SFX.stopBeamLoop();
+                // Clear charging target if snap-charging
+                if (this.chargingTarget) {
+                    this.chargingTarget.isBeingCharged = false;
+                    this.chargingTarget = null;
+                    SFX.stopChargingHum();
+                }
                 // Drop current target if any (only if it's still alive - not already abducted)
                 if (this.beamTarget && this.beamTarget.alive) {
                     // Check if this is a tank and was lifted high enough for stun
@@ -4461,6 +4700,12 @@ class UFO {
         if (this.energy <= 0) {
             if (this.beamActive) {
                 SFX.stopBeamLoop();
+            }
+            // Clear charging target if snap-charging
+            if (this.chargingTarget) {
+                this.chargingTarget.isBeingCharged = false;
+                this.chargingTarget = null;
+                SFX.stopChargingHum();
             }
             if (this.beamTarget) {
                 // Check if this is a tank and was lifted high enough for stun
@@ -4608,6 +4853,24 @@ class UFO {
         return null;
     }
 
+    // Find the coordinator in snap range with the lowest energy
+    findSnapCoordinator() {
+        if (activeCoordinators.length === 0) return null;
+        let best = null;
+        let bestEnergy = Infinity;
+        for (const coord of activeCoordinators) {
+            if (!coord.alive || coord.state === 'DEPLOYING' || coord.state === 'DYING') continue;
+            const dx = Math.abs(coord.x - this.x);
+            if (dx <= CONFIG.COORD_CHARGE_SNAP_RANGE) {
+                if (coord.energyTimer < coord.maxEnergy && coord.energyTimer < bestEnergy) {
+                    bestEnergy = coord.energyTimer;
+                    best = coord;
+                }
+            }
+        }
+        return best;
+    }
+
     render() {
         const drawX = this.x - this.width / 2;
         const drawY = this.y - this.height / 2 + this.hoverOffset;
@@ -4639,7 +4902,11 @@ class UFO {
 
         // Render beam first (behind UFO)
         if (this.beamActive) {
-            this.renderBeam();
+            if (this.chargingTarget) {
+                this.renderChargingBeam();
+            } else {
+                this.renderBeam();
+            }
         }
 
         // Flicker effect during invincibility
@@ -4846,6 +5113,107 @@ class UFO {
             ctx.arc(x, y, 3, 0, Math.PI * 2);
             ctx.fill();
         }
+    }
+
+    renderChargingBeam() {
+        if (!this.chargingTarget) return;
+        const coord = this.chargingTarget;
+        const startX = this.x;
+        const startY = this.y + this.height / 2 + this.hoverOffset;
+        const endX = coord.x;
+        const endY = coord.y;
+
+        const dx = endX - startX;
+        const dy = endY - startY;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 1) return;
+
+        const segments = 30;
+        const now = Date.now() / 1000;
+        const sineAmp = CONFIG.COORD_CHARGE_SINE_AMP;
+        const sineFreq = CONFIG.COORD_CHARGE_SINE_FREQ;
+        const beamWidth = CONFIG.COORD_CHARGE_BEAM_WIDTH;
+
+        // Perpendicular direction for sine oscillation
+        const perpX = -dy / dist;
+        const perpY = dx / dist;
+
+        ctx.save();
+
+        // Soft outer glow
+        ctx.globalAlpha = 0.2;
+        ctx.strokeStyle = 'rgba(255, 180, 50, 0.3)';
+        ctx.lineWidth = beamWidth * 3;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        for (let i = 0; i <= segments; i++) {
+            const t = i / segments;
+            const bx = startX + dx * t;
+            const by = startY + dy * t;
+            const sine = Math.sin(t * Math.PI * 2 * sineFreq + now * 6) * sineAmp;
+            const px = bx + perpX * sine;
+            const py = by + perpY * sine;
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+
+        // Main beam rod
+        ctx.globalAlpha = 0.7;
+        ctx.strokeStyle = 'rgba(255, 200, 80, 0.8)';
+        ctx.lineWidth = beamWidth;
+        ctx.beginPath();
+        for (let i = 0; i <= segments; i++) {
+            const t = i / segments;
+            const bx = startX + dx * t;
+            const by = startY + dy * t;
+            const sine = Math.sin(t * Math.PI * 2 * sineFreq + now * 6) * sineAmp;
+            const px = bx + perpX * sine;
+            const py = by + perpY * sine;
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+
+        // Bright center line
+        ctx.globalAlpha = 0.9;
+        ctx.strokeStyle = 'rgba(255, 240, 180, 0.9)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        for (let i = 0; i <= segments; i++) {
+            const t = i / segments;
+            const bx = startX + dx * t;
+            const by = startY + dy * t;
+            const sine = Math.sin(t * Math.PI * 2 * sineFreq + now * 6) * sineAmp;
+            const px = bx + perpX * sine;
+            const py = by + perpY * sine;
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+
+        // Energy particles traveling along the sine path toward coordinator
+        this.chargingParticleTimer += 0.016; // approximate dt
+        if (this.chargingParticleTimer >= CONFIG.COORD_CHARGE_PARTICLE_RATE) {
+            this.chargingParticleTimer = 0;
+            // Spawn a particle at a random position along the beam, moving toward coord
+            const t = Math.random() * 0.7; // spawn in first 70% of beam
+            const bx = startX + dx * t;
+            const by = startY + dy * t;
+            const sine = Math.sin(t * Math.PI * 2 * sineFreq + now * 6) * sineAmp;
+            const px = bx + perpX * sine;
+            const py = by + perpY * sine;
+            const speed = 150 + Math.random() * 100;
+            const dirX = (dx / dist) * speed;
+            const dirY = (dy / dist) * speed;
+            particles.push(new Particle(
+                px, py, dirX, dirY,
+                `rgb(255, ${200 + Math.floor(Math.random() * 55)}, ${80 + Math.floor(Math.random() * 80)})`,
+                2 + Math.random() * 2, 0.3 + Math.random() * 0.2
+            ));
+        }
+
+        ctx.restore();
     }
 
     renderEnergyBar(y) {
@@ -7854,6 +8222,14 @@ class Coordinator {
 
         // BM pulse orbs traveling along tether lines
         this.bmPulses = []; // { fromX, fromY, toX, toY, progress, duration, type: 'drone-to-coord' | 'coord-to-ufo' }
+
+        // Charging UX state
+        this.isBeingCharged = false;      // Currently receiving charge beam
+        this.chargeShimmerPhase = 0;      // Shimmer animation on energy bar
+        this.sosTimer = 0;                // Timer for SOS beacon pulses
+        this.sosRings = [];               // Active expanding SOS rings [{radius, alpha, maxRadius}]
+        this.inSnapRange = false;         // UFO is within snap range
+        this.snapHighlightPulse = 0;      // Pulse animation for proximity highlight
     }
 
     spawnBmPulse(fromX, fromY, toX, toY, type) {
@@ -7944,6 +8320,27 @@ class Coordinator {
                 // Sinking when low energy (raise targetY so it drifts down)
                 if (this.state === 'LOW_ENERGY') {
                     this.targetY += 15 * dt;
+                }
+
+                // SOS beacon
+                if (this.state === 'LOW_ENERGY') {
+                    const sosInterval = this.energyTimer <= this.maxEnergy * 0.10 ?
+                        CONFIG.COORD_SOS_DYING_INTERVAL : CONFIG.COORD_SOS_INTERVAL;
+                    this.sosTimer += dt;
+                    if (this.sosTimer >= sosInterval) {
+                        this.sosTimer = 0;
+                        this.sosRings.push({ radius: this.width * 0.5, alpha: 0.8 });
+                        SFX.distressBeep && SFX.distressBeep();
+                    }
+                }
+                // Update SOS rings
+                for (let i = this.sosRings.length - 1; i >= 0; i--) {
+                    const ring = this.sosRings[i];
+                    ring.radius += 60 * dt;
+                    ring.alpha -= dt / CONFIG.COORD_SOS_RING_DURATION;
+                    if (ring.alpha <= 0 || ring.radius >= CONFIG.COORD_SOS_RING_MAX_RADIUS) {
+                        this.sosRings.splice(i, 1);
+                    }
                 }
 
                 // Death at 0 energy
@@ -8193,8 +8590,23 @@ class Coordinator {
         const baseG = isHarvester ? 220 : 120;
         const baseB = isHarvester ? 100 : 30;
 
-        // Glow intensity tied to energy
-        const glowIntensity = energyPct * (0.5 + Math.sin(this.glowPulse) * 0.2);
+        // Glow intensity scales with energy level
+        let glowIntensity;
+        if (energyPct > 0.5) {
+            // Full/healthy: vibrant pulsing
+            glowIntensity = (0.5 + energyPct * 0.5) * (0.7 + Math.sin(this.glowPulse) * 0.3);
+        } else if (energyPct > 0.25) {
+            // Depleting: dimming
+            glowIntensity = energyPct * (0.4 + Math.sin(this.glowPulse) * 0.15);
+        } else {
+            // Critical: washed out, intermittent flicker
+            glowIntensity = 0.1 + energyPct * 0.4;
+        }
+
+        // Intensify glow while being charged
+        if (this.isBeingCharged) {
+            glowIntensity = Math.min(1.0, glowIntensity + 0.3 + Math.sin(this.glowPulse * 2) * 0.15);
+        }
 
         // Flicker when low energy
         const flickerAlpha = this.state === 'LOW_ENERGY' ?
@@ -8252,18 +8664,75 @@ class Coordinator {
             ctx.stroke();
         }
 
+        // Proximity snap highlight (UFO in charge range)
+        if (this.inSnapRange && this.state !== 'DYING') {
+            this.snapHighlightPulse += 0.04;
+            const highlightAlpha = 0.3 + Math.sin(this.snapHighlightPulse * 3) * 0.15;
+            ctx.strokeStyle = `rgba(255, 255, 255, ${highlightAlpha})`;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.ellipse(0, 0, this.width * 0.6 + 3, this.height * 0.6 + 3, 0, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
         ctx.restore();
+
+        // SOS beacon rings
+        for (const ring of this.sosRings) {
+            ctx.strokeStyle = `rgba(255, 50, 50, ${ring.alpha})`;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(cx, cy, ring.radius, 0, Math.PI * 2);
+            ctx.stroke();
+        }
 
         // Energy bar above coordinator
         if (this.state !== 'DEPLOYING') {
-            const bw = 40, bh = 4;
-            const bx = cx - bw / 2, by = cy - this.height / 2 - 10;
-            ctx.fillStyle = '#333';
+            const bw = CONFIG.COORD_ENERGY_BAR_WIDTH;
+            const bh = CONFIG.COORD_ENERGY_BAR_HEIGHT;
+            const bx = cx - bw / 2;
+            const by = cy - this.height / 2 - 12;
+
+            // Dark border/background
+            ctx.fillStyle = '#111';
+            ctx.fillRect(bx - 1, by - 1, bw + 2, bh + 2);
+            ctx.fillStyle = '#222';
             ctx.fillRect(bx, by, bw, bh);
-            const barColor = energyPct > 0.5 ? (isHarvester ? '#0f8' : '#f80') :
-                             energyPct > 0.25 ? '#ff0' : '#f00';
-            ctx.fillStyle = barColor;
+
+            // Color progression: green > yellow > red
+            let barR, barG, barB;
+            if (energyPct > 0.5) {
+                barR = 0; barG = 220; barB = 80;
+            } else if (energyPct > 0.25) {
+                barR = 255; barG = 220; barB = 0;
+            } else {
+                barR = 255; barG = 50; barB = 50;
+            }
+
+            // Fill bar
+            ctx.fillStyle = `rgb(${barR}, ${barG}, ${barB})`;
             ctx.fillRect(bx, by, bw * energyPct, bh);
+
+            // Inner glow (subtle lighter overlay on filled portion)
+            const glowGrad = ctx.createLinearGradient(bx, by, bx, by + bh);
+            glowGrad.addColorStop(0, `rgba(255, 255, 255, 0.25)`);
+            glowGrad.addColorStop(0.5, `rgba(255, 255, 255, 0)`);
+            glowGrad.addColorStop(1, `rgba(0, 0, 0, 0.15)`);
+            ctx.fillStyle = glowGrad;
+            ctx.fillRect(bx, by, bw * energyPct, bh);
+
+            // Charging shimmer (bright white highlight sweeping across bar)
+            if (this.isBeingCharged) {
+                this.chargeShimmerPhase += 0.03;
+                const shimmerX = bx + ((this.chargeShimmerPhase % 1) * bw * energyPct);
+                const shimmerW = 12;
+                const shimmerGrad = ctx.createLinearGradient(shimmerX - shimmerW, by, shimmerX + shimmerW, by);
+                shimmerGrad.addColorStop(0, 'rgba(255, 255, 255, 0)');
+                shimmerGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.6)');
+                shimmerGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                ctx.fillStyle = shimmerGrad;
+                ctx.fillRect(bx, by, bw * energyPct, bh);
+            }
         }
 
         // Radio control signal line from UFO to coordinator
@@ -8647,6 +9116,11 @@ function deployHarvesterDrone() {
         droneCooldownTimer = DRONE_DEPLOY_COOLDOWN;
         SFX.droneDeploy && SFX.droneDeploy('harvester');
         createFloatingText(ufo.x, ufo.y + 50, 'HARVESTER COORD!', '#0ff');
+        // Trigger coordinator charge tutorial on first deploy
+        if (!coordChargeTutorialShown) {
+            coordChargeTutorialShown = true;
+            coordChargeTutorialState = { phase: 'WAITING', timer: 0, targetCoord: coord };
+        }
         return;
     }
 
@@ -8677,6 +9151,11 @@ function deployBattleDrone() {
         droneCooldownTimer = DRONE_DEPLOY_COOLDOWN;
         SFX.droneDeploy && SFX.droneDeploy('battle');
         createFloatingText(ufo.x, ufo.y + 50, 'ATTACK COORD!', '#f44');
+        // Trigger coordinator charge tutorial on first deploy
+        if (!coordChargeTutorialShown) {
+            coordChargeTutorialShown = true;
+            coordChargeTutorialState = { phase: 'WAITING', timer: 0, targetCoord: coord };
+        }
         return;
     }
 
@@ -10154,6 +10633,8 @@ function startGame() {
 
     activeDrones = [];
     activeCoordinators = [];
+    coordChargeTutorialShown = false;
+    coordChargeTutorialState = null;
     droneSlots = 0;
     harvesterUnlocked = false;
     battleDroneUnlocked = false;
@@ -10386,6 +10867,9 @@ function renderUI() {
 
     // ========== RESEARCH PROGRESS (below quota) ==========
     renderResearchProgress();
+
+    // ========== COORDINATOR DISTRESS ARROWS ==========
+    renderCoordDistressArrows();
 }
 
 function renderBioMatterCounter(startX, startY) {
@@ -10537,6 +11021,55 @@ function renderDroneStatus(startX, startY) {
         ctx.fillStyle = '#888';
         ctx.font = '9px monospace';
         ctx.fillText(`${Math.ceil(drone.energyTimer)}s`, ebX + barWidth + 4, rowY + iconSize / 2 + 3);
+    }
+}
+
+function renderCoordDistressArrows() {
+    if (!ufo || activeCoordinators.length === 0) return;
+
+    for (const coord of activeCoordinators) {
+        if (!coord.alive || (coord.state !== 'LOW_ENERGY' && coord.energyTimer > coord.maxEnergy * 0.25)) continue;
+
+        const dx = coord.x - ufo.x;
+        const dy = coord.y - ufo.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 5) continue;
+
+        const angle = Math.atan2(dy, dx);
+        const arrowDist = 70; // Distance from UFO center
+        const isHarvester = coord.type === 'harvester';
+        const typeColor = isHarvester ? '0, 220, 255' : '255, 160, 50';
+
+        // Arrow position (clamped to screen edges if coord is off-screen)
+        let ax = ufo.x + Math.cos(angle) * arrowDist;
+        let ay = ufo.y + Math.sin(angle) * arrowDist;
+        ax = Math.max(20, Math.min(canvas.width - 20, ax));
+        ay = Math.max(20, Math.min(canvas.height - 20, ay));
+
+        const size = CONFIG.COORD_HUD_ARROW_SIZE;
+        const dying = coord.energyTimer <= coord.maxEnergy * 0.10;
+        const pulse = dying ? (Math.sin(Date.now() / 100) * 0.5 + 0.5) : (Math.sin(Date.now() / 300) * 0.3 + 0.7);
+
+        ctx.save();
+        ctx.translate(ax, ay);
+        ctx.rotate(angle);
+
+        // Red pulsing outline
+        ctx.strokeStyle = `rgba(255, 50, 50, ${pulse})`;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(size, 0);
+        ctx.lineTo(-size * 0.6, -size * 0.6);
+        ctx.lineTo(-size * 0.3, 0);
+        ctx.lineTo(-size * 0.6, size * 0.6);
+        ctx.closePath();
+        ctx.stroke();
+
+        // Type-colored fill
+        ctx.fillStyle = `rgba(${typeColor}, ${pulse * 0.8})`;
+        ctx.fill();
+
+        ctx.restore();
     }
 }
 
@@ -16101,6 +16634,12 @@ function update(dt) {
         damageFlash -= dt;
     }
 
+    // Clear coordinator charging flags (re-set each frame by UFO.update)
+    for (const coord of activeCoordinators) {
+        coord.isBeingCharged = false;
+        coord.inSnapRange = false;
+    }
+
     if (ufo) {
         ufo.update(dt);
     }
@@ -16155,6 +16694,9 @@ function update(dt) {
         updateTutorial(dt);
     }
 
+    // Update coordinator charge tutorial
+    updateCoordChargeTutorial(dt);
+
     // Update powerups
     updatePowerupSpawning(dt);
     updateActivePowerups(dt);
@@ -16183,6 +16725,12 @@ function update(dt) {
         // Stop beam sound if beam is active
         if (ufo && ufo.beamActive) {
             SFX.stopBeamLoop();
+            // Clear charging target if snap-charging
+            if (ufo.chargingTarget) {
+                ufo.chargingTarget.isBeingCharged = false;
+                ufo.chargingTarget = null;
+                SFX.stopChargingHum();
+            }
             if (ufo.beamTarget) {
                 ufo.beamTarget.beingAbducted = false;
                 ufo.beamTarget.abductionProgress = 0;
@@ -16345,6 +16893,9 @@ function render() {
     if (tutorialState && tutorialState.phase !== 'COMPLETE') {
         renderTutorialHints();
     }
+
+    // Render coordinator charge hint (above tutorial hints)
+    renderCoordChargeHint();
 
     // Timer critical warning (last 5 seconds)
     if (waveTimer <= 5 && waveTimer > 0) {
