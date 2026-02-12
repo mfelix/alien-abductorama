@@ -12758,12 +12758,21 @@ function getHUDLayout() {
     const centerW = 280;
     const centerX = (canvas.width - centerW) / 2;
 
+    // Compute fleet zone Y: push down when energy graph (NRG.FLOW) is visible
+    let fleetY = 108;
+    if (techFlags.beamConduit) {
+        let graphY = margin + 88 + 8;
+        if (playerInventory.speedBonus > 0) graphY += 22;
+        if (playerInventory.maxEnergyBonus > 0) graphY += 14;
+        fleetY = graphY + 72 + 10; // energy graph height + gap
+    }
+
     return {
         statusZone: { x: margin, y: margin, w: leftW, h: 120 },
         missionZone: { x: centerX, y: 4, w: centerW, h: 110 },
         systemsZone: { x: canvas.width - rightW - margin, y: margin, w: rightW, h: 90 },
         weaponsZone: { x: margin, y: 140, w: leftW, h: 200 },
-        fleetZone: { x: canvas.width - rightW - margin, y: 108, w: rightW, h: 300 },
+        fleetZone: { x: canvas.width - rightW - margin, y: fleetY, w: rightW, h: 300 },
         commanderZone: { x: margin, y: canvas.height - 110, w: Math.min(260, canvas.width * 0.22), h: 100 },
         diagnosticsZone: { x: margin, y: canvas.height - 330, w: leftW, h: 100 },
         opsLogZone: { x: margin, y: canvas.height - 220, w: Math.min(240, canvas.width * 0.20), h: 100 }
