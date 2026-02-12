@@ -293,7 +293,12 @@ const CONFIG = {
     MISSILE_SWARM_CAPACITY: 3,
     MISSILE_SWARM_DAMAGE: 35,
     MISSILE_SWARM_SPEED: 600,
-    MISSILE_RECHARGE_TIME: 17.5,
+    MISSILE_RECHARGE_TIME: 5,
+    MISSILE_LAUNCH_UP_SPEED: 350,
+    MISSILE_LAUNCH_DURATION: 0.3,
+    MISSILE_DECEL_DURATION: 0.3,
+    MISSILE_APEX_DURATION: 0.2,
+    MISSILE_DIVE_RAMP_SPEED: 600,
 
     // === EXPANSION: Bomb Upgrade Tiers ===
     BOMB_BLAST_TIERS: [120, 160, 200],
@@ -6227,19 +6232,35 @@ class Bomb {
 // ============================================
 
 class Missile {
-    constructor(x, y, targetTank, launchAngle) {
+    constructor(x, y, targetTank, launchAngle, fromCoordinator = false) {
         this.x = x;
         this.y = y;
         this.targetTank = targetTank;
         this.damage = CONFIG.MISSILE_SWARM_DAMAGE + missileDamage;
         this.alive = true;
         this.age = 0;
-        this.launchPhase = true;
-        this.launchDuration = 0.5;
-        // Launch velocity: downward + outward based on angle
-        this.vx = Math.cos(launchAngle) * 200;
-        this.vy = 300;
-        // Spiral parameters (anime-style)
+        this.fromCoordinator = fromCoordinator;
+
+        if (fromCoordinator) {
+            // Four-phase trajectory: launch UP from coordinator
+            this.phase = 'LAUNCH';  // LAUNCH -> DECEL -> APEX -> DIVE
+            this.launchDuration = CONFIG.MISSILE_LAUNCH_DURATION;
+            this.decelDuration = CONFIG.MISSILE_DECEL_DURATION;
+            this.apexDuration = CONFIG.MISSILE_APEX_DURATION;
+            // Launch velocity: upward + slight horizontal fan
+            this.vx = Math.cos(launchAngle) * 120;
+            this.vy = -CONFIG.MISSILE_LAUNCH_UP_SPEED; // negative = upward
+            this.apexFlashed = false;
+        } else {
+            // Legacy two-phase trajectory: fan downward from UFO
+            this.phase = 'LEGACY_LAUNCH';
+            this.launchPhase = true; // backward compat until update() is rewritten
+            this.launchDuration = 0.5;
+            this.vx = Math.cos(launchAngle) * 200;
+            this.vy = 300;
+        }
+
+        // Spiral parameters (shared by all modes)
         this.spiralPhase = Math.random() * Math.PI * 2;
         this.spiralFreq = 3 + Math.random() * 2;
         this.spiralAmp = 30 + Math.random() * 20;
@@ -6280,8 +6301,8 @@ class Missile {
             if (p.age >= p.maxAge) this.smokePuffs.splice(i, 1);
         }
 
-        if (this.launchPhase) {
-            // Fan out phase with spiral from the start
+        if (this.phase === 'LEGACY_LAUNCH') {
+            // === Legacy UFO launch: fan down + spiral (unchanged behavior) ===
             let speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
             if (speed > 0) {
                 let perpX = -this.vy / speed;
@@ -6293,26 +6314,132 @@ class Missile {
                 this.x += this.vx * dt;
                 this.y += this.vy * dt;
             }
-            this.vy -= 100 * dt; // slight drag slows downward motion
+            this.vy -= 100 * dt;
             if (this.age > this.launchDuration) {
-                this.launchPhase = false;
+                this.phase = 'HOMING';
             }
-        } else {
-            // Homing phase with spiral
+
+        } else if (this.phase === 'LAUNCH') {
+            // === Phase 1: Launch burst upward (0 to ~0.3s) ===
+            let speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+            if (speed > 0) {
+                let perpX = -this.vy / speed;
+                let perpY = this.vx / speed;
+                let spiralOffset = Math.sin(this.age * this.spiralFreq + this.spiralPhase) * this.spiralAmp * 0.5;
+                this.x += (this.vx + perpX * spiralOffset * 3) * dt;
+                this.y += (this.vy + perpY * spiralOffset * 3) * dt;
+            } else {
+                this.x += this.vx * dt;
+                this.y += this.vy * dt;
+            }
+            if (this.age > this.launchDuration) {
+                this.phase = 'DECEL';
+            }
+
+        } else if (this.phase === 'DECEL') {
+            // === Phase 2: Rising deceleration (0.3s to ~0.6s) ===
+            // Bleed off upward momentum with drag
+            const decelFactor = 0.92; // per-frame drag
+            this.vx *= decelFactor;
+            this.vy *= decelFactor;
+            // Gravity pulls down slightly
+            this.vy += 200 * dt;
+
+            let speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+            if (speed > 0) {
+                let perpX = -this.vy / speed;
+                let perpY = this.vx / speed;
+                let spiralOffset = Math.sin(this.age * this.spiralFreq + this.spiralPhase) * this.spiralAmp;
+                this.x += (this.vx + perpX * spiralOffset * 3) * dt;
+                this.y += (this.vy + perpY * spiralOffset * 3) * dt;
+            } else {
+                this.x += this.vx * dt;
+                this.y += this.vy * dt;
+            }
+
+            const phaseAge = this.age - this.launchDuration;
+            if (phaseAge > this.decelDuration) {
+                this.phase = 'APEX';
+                this.apexStart = this.age;
+            }
+
+        } else if (this.phase === 'APEX') {
+            // === Phase 3: Apex tension (~0.6s to ~0.8s) ===
+            // Nearly weightless hang — tiny drift, subtle wobble
+            this.vx *= 0.85;
+            this.vy *= 0.85;
+            let spiralOffset = Math.sin(this.age * this.spiralFreq * 2 + this.spiralPhase) * this.spiralAmp * 0.3;
+            this.x += (this.vx + spiralOffset * 0.5) * dt;
+            this.y += this.vy * dt;
+
+            // Apex flash (brief bright pulse at lock-on moment)
+            if (!this.apexFlashed) {
+                this.apexFlashed = true;
+                this.apexFlashTimer = 0.12;
+            }
+            if (this.apexFlashTimer > 0) {
+                this.apexFlashTimer -= dt;
+            }
+
+            const apexAge = this.age - this.apexStart;
+            if (apexAge > this.apexDuration) {
+                this.phase = 'DIVE';
+            }
+
+        } else if (this.phase === 'DIVE') {
+            // === Phase 4: Attack dive (0.8s+) — snap toward target ===
             if (this.targetTank && this.targetTank.alive !== false) {
                 let tx = this.targetTank.x + (this.targetTank.width || 0) / 2;
                 let ty = this.targetTank.y + (this.targetTank.height || 0) / 2;
                 let dx = tx - this.x;
                 let dy = ty - this.y;
                 let dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < 1) dist = 1;
 
-                if (dist < 1) dist = 1; // prevent division by zero
+                const diveAge = this.age - this.apexStart - this.apexDuration;
+                let speed = CONFIG.MISSILE_DIVE_RAMP_SPEED;
+                let homingStrength = Math.min(1, diveAge * 3); // locks in fast
 
-                // Direct homing vector
+                let perpX = -dy / dist;
+                let perpY = dx / dist;
+                let spiralOffset = Math.sin(this.age * this.spiralFreq + this.spiralPhase) * this.spiralAmp;
+                spiralOffset *= Math.max(0, 1 - homingStrength * 0.7); // spiral tightens
+
+                this.vx = (dx / dist * speed * homingStrength) + perpX * spiralOffset * 3;
+                this.vy = (dy / dist * speed * homingStrength) + perpY * spiralOffset * 3;
+
+                this.x += this.vx * dt;
+                this.y += this.vy * dt;
+
+                if (dist < 30) {
+                    this.hit();
+                }
+            } else {
+                this.retarget();
+                let speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+                if (speed < 1) speed = 1;
+                let dirX = this.vx / speed;
+                let dirY = this.vy / speed;
+                let perpX = -dirY;
+                let perpY = dirX;
+                let spiralOffset = Math.sin(this.age * this.spiralFreq + this.spiralPhase) * this.spiralAmp;
+                this.x += (this.vx + perpX * spiralOffset * 3) * dt;
+                this.y += (this.vy + perpY * spiralOffset * 3) * dt;
+            }
+
+        } else if (this.phase === 'HOMING') {
+            // === Legacy homing phase (for UFO-launched missiles) ===
+            if (this.targetTank && this.targetTank.alive !== false) {
+                let tx = this.targetTank.x + (this.targetTank.width || 0) / 2;
+                let ty = this.targetTank.y + (this.targetTank.height || 0) / 2;
+                let dx = tx - this.x;
+                let dy = ty - this.y;
+                let dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < 1) dist = 1;
+
                 let speed = CONFIG.MISSILE_SWARM_SPEED;
                 let homingStrength = Math.min(1, (this.age - this.launchDuration) * 2);
 
-                // Spiral component (perpendicular to direction)
                 let perpX = -dy / dist;
                 let perpY = dx / dist;
                 let spiralOffset = Math.sin(this.age * this.spiralFreq + this.spiralPhase) * this.spiralAmp;
@@ -6324,14 +6451,11 @@ class Missile {
                 this.x += this.vx * dt;
                 this.y += this.vy * dt;
 
-                // Check hit
                 if (dist < 30) {
                     this.hit();
                 }
             } else {
-                // Target dead, retarget
                 this.retarget();
-                // No target — fly wild with spiraling motion
                 let speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
                 if (speed < 1) speed = 1;
                 let dirX = this.vx / speed;
@@ -6345,7 +6469,7 @@ class Missile {
         }
 
         // Off screen check
-        if (this.y > canvas.height + 50 || this.x < -100 || this.x > canvas.width + 100 || this.y < -200) {
+        if (this.y > canvas.height + 50 || this.x < -100 || this.x > canvas.width + 100 || this.y < -400) {
             this.alive = false;
         }
 
@@ -6457,6 +6581,22 @@ class Missile {
         ctx.shadowBlur = 0;
 
         ctx.restore();
+
+        // Apex lock-on flash (coordinator missiles only)
+        if (this.apexFlashTimer > 0) {
+            const flashAlpha = (this.apexFlashTimer / 0.12) * 0.9;
+            const flashRadius = 8 + (1 - this.apexFlashTimer / 0.12) * 6;
+            ctx.save();
+            ctx.globalAlpha = flashAlpha;
+            ctx.shadowColor = '#ffffaa';
+            ctx.shadowBlur = 12;
+            ctx.fillStyle = '#ffffffcc';
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, flashRadius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            ctx.restore();
+        }
     }
 }
 
@@ -8288,9 +8428,13 @@ class Coordinator {
 
                 // Lazy follow UFO horizontally with spacing offset
                 if (ufo) {
-                    // Offset so coordinators don't stack — harvester left, attack right
-                    const spacing = 70;
-                    const offsetX = this.type === 'harvester' ? -spacing : spacing;
+                    // Fan out coordinators evenly below UFO
+                    const aliveCoords = activeCoordinators.filter(c => c.alive && c.state !== 'DYING');
+                    const myIndex = aliveCoords.indexOf(this);
+                    const total = aliveCoords.length;
+                    const spacing = 80;
+                    // Center the group: e.g. 3 coordinators -> offsets of -80, 0, +80
+                    const offsetX = total <= 1 ? 0 : (myIndex - (total - 1) / 2) * spacing;
                     const targetX = ufo.x + offsetX + Math.sin(this.bobPhase * 0.7) * this.bobAmpX;
                     const dx = targetX - this.x;
                     this.x += dx * this.followLag * dt;
@@ -8961,14 +9105,23 @@ class HarvesterCoordinator extends Coordinator {
 
     spawnSubDrones() {
         for (let i = 0; i < this.maxSubDrones; i++) {
-            this.spawnSingleSubDrone();
+            this.spawnSingleSubDrone(i, this.maxSubDrones);
         }
     }
 
-    spawnSingleSubDrone() {
+    spawnSingleSubDrone(index, total) {
         if (this.subDrones.length >= this.maxSubDrones) return;
         const drone = new HarvesterDrone(this.x, this.y);
         drone.coordinator = this;
+        // Fan out: spread drones at angles from coordinator
+        if (typeof index === 'number' && total > 1) {
+            const spread = 180; // total horizontal spread in px/s
+            const t = (index / (total - 1)) - 0.5; // -0.5 to 0.5
+            drone.vx = t * spread;
+        } else {
+            // Single redeploy — pick a random side
+            drone.vx = (Math.random() - 0.5) * 120;
+        }
         this.subDrones.push(drone);
     }
 }
@@ -8979,11 +9132,15 @@ class AttackCoordinator extends Coordinator {
         this.bombTimer = 0;       // Cooldown between bomb drops
         this.bombInterval = 4.0;  // Drop a bomb every 4 seconds
         this.missileTimer = 0;    // Cooldown between missile salvos
-        this.missileInterval = 8.0; // Fire missiles every 8 seconds
+        this.missileInterval = 5.0; // Fire missiles every 5 seconds
+        this.missileLaunchFlash = 0; // Remaining flash duration on launch
     }
 
     update(dt) {
         super.update(dt);
+
+        // Tick launch flash timer (runs in all states so flash fades even during transitions)
+        if (this.missileLaunchFlash > 0) this.missileLaunchFlash -= dt;
 
         if (this.state !== 'ACTIVE' && this.state !== 'LOW_ENERGY') return;
 
@@ -9059,6 +9216,23 @@ class AttackCoordinator extends Coordinator {
     render() {
         super.render();
 
+        // Missile launch flash effect
+        if (this.missileLaunchFlash > 0) {
+            const flashAlpha = (this.missileLaunchFlash / 0.2) * 0.7;
+            const flashRadius = 20 + (1 - this.missileLaunchFlash / 0.2) * 15;
+            ctx.save();
+            ctx.globalAlpha = flashAlpha;
+            const gradient = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, flashRadius);
+            gradient.addColorStop(0, 'rgba(255, 200, 50, 1)');
+            gradient.addColorStop(0.4, 'rgba(255, 100, 0, 0.8)');
+            gradient.addColorStop(1, 'rgba(255, 50, 0, 0)');
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, flashRadius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+
         // Visual: weapon ready indicators
         if (this.state === 'ACTIVE' || this.state === 'LOW_ENERGY') {
             const cx = this.x;
@@ -9086,14 +9260,23 @@ class AttackCoordinator extends Coordinator {
 
     spawnSubDrones() {
         for (let i = 0; i < this.maxSubDrones; i++) {
-            this.spawnSingleSubDrone();
+            this.spawnSingleSubDrone(i, this.maxSubDrones);
         }
     }
 
-    spawnSingleSubDrone() {
+    spawnSingleSubDrone(index, total) {
         if (this.subDrones.length >= this.maxSubDrones) return;
         const drone = new BattleDrone(this.x, this.y);
         drone.coordinator = this;
+        // Fan out: spread drones at angles from coordinator
+        if (typeof index === 'number' && total > 1) {
+            const spread = 200; // total horizontal spread in px/s (battle drones spread wider)
+            const t = (index / (total - 1)) - 0.5; // -0.5 to 0.5
+            drone.vx = t * spread;
+        } else {
+            // Single redeploy — pick a random side
+            drone.vx = (Math.random() - 0.5) * 140;
+        }
         this.subDrones.push(drone);
     }
 }
@@ -9701,20 +9884,67 @@ function fireMissileSwarm() {
     // Play lock-on sound sequence
     SFX.missileLockOn && SFX.missileLockOn();
 
-    // Launch missiles in fan pattern from UFO position
-    const swarmCount = targetAssignments.length;
-    const fanSpread = Math.PI * 0.6;
-    const startAngle = Math.PI / 2 - fanSpread / 2;
+    // Check for alive, non-DYING attack coordinators
+    const launchCoords = activeCoordinators.filter(c => c.type === 'attack' && c.alive && c.state !== 'DYING');
 
-    for (let i = 0; i < swarmCount; i++) {
-        const launchAngle = startAngle + (fanSpread * i / Math.max(1, swarmCount - 1));
-        const missile = new Missile(
-            ufo.x,
-            ufo.y + ufo.height / 2,
-            targetAssignments[i],
-            launchAngle
-        );
-        playerMissiles.push(missile);
+    if (launchCoords.length > 0) {
+        // === COORDINATOR LAUNCH: split missiles across active attack coordinators ===
+        const swarmCount = targetAssignments.length;
+        const perCoord = Math.floor(swarmCount / launchCoords.length);
+        let remainder = swarmCount % launchCoords.length;
+        let assignmentIndex = 0;
+
+        for (let c = 0; c < launchCoords.length; c++) {
+            const coord = launchCoords[c];
+            const count = perCoord + (c < remainder ? 1 : 0);
+            // Fan spread upward (-PI/2 is straight up), fan across ~0.6 radians
+            const fanSpread = Math.PI * 0.6;
+            const centerAngle = -Math.PI / 2; // straight up
+            const startAngle = centerAngle - fanSpread / 2;
+
+            for (let i = 0; i < count; i++) {
+                const launchAngle = count > 1
+                    ? startAngle + (fanSpread * i / (count - 1))
+                    : centerAngle;
+                const missile = new Missile(
+                    coord.x,
+                    coord.y,
+                    targetAssignments[assignmentIndex],
+                    launchAngle,
+                    true // fromCoordinator
+                );
+                playerMissiles.push(missile);
+                assignmentIndex++;
+            }
+
+            // Trigger launch flash on coordinator
+            coord.missileLaunchFlash = 0.2; // seconds remaining for flash effect
+        }
+
+        // Floating text at centroid of launching coordinators
+        const centroidX = launchCoords.reduce((sum, c) => sum + c.x, 0) / launchCoords.length;
+        const centroidY = launchCoords.reduce((sum, c) => sum + c.y, 0) / launchCoords.length;
+        createFloatingText(centroidX, centroidY + 30, 'MISSILE SWARM!', '#ff2200');
+
+    } else {
+        // === UFO FALLBACK: original downward fan pattern ===
+        const swarmCount = targetAssignments.length;
+        const fanSpread = Math.PI * 0.6;
+        const startAngle = Math.PI / 2 - fanSpread / 2;
+
+        for (let i = 0; i < swarmCount; i++) {
+            const launchAngle = startAngle + (fanSpread * i / Math.max(1, swarmCount - 1));
+            const missile = new Missile(
+                ufo.x,
+                ufo.y + ufo.height / 2,
+                targetAssignments[i],
+                launchAngle,
+                false
+            );
+            playerMissiles.push(missile);
+        }
+
+        createFloatingText(ufo.x, ufo.y + 50, 'MISSILE SWARM!', '#ff2200');
     }
 
     // Consume ammo and start recharge
@@ -9723,9 +9953,6 @@ function fireMissileSwarm() {
 
     // Play launch sound
     SFX.missileLaunch && SFX.missileLaunch();
-
-    // Visual feedback
-    createFloatingText(ufo.x, ufo.y + 50, 'MISSILE SWARM!', '#ff2200');
 }
 
 function updateMissiles(dt) {
@@ -9982,6 +10209,21 @@ function triggerGameOver() {
 
     // Hide the UFO immediately
     ufo = null;
+
+    // Kill all coordinators — fast crash sequence (must finish before game over screen at 1200ms)
+    for (const coord of activeCoordinators) {
+        if (!coord.alive || coord.state === 'DYING') continue;
+        coord.state = 'DYING';
+        coord.dyingTimer = 0.6; // Skip the sag phase, go straight to fast tumble
+        coord.dyingVy = 300;    // Start with high downward velocity
+        coord.dyingTiltSpeed = 4;
+        coord.dyingTiltDir = Math.random() < 0.5 ? -1 : 1;
+        // Kill sub-drones immediately
+        for (const drone of coord.subDrones) {
+            if (drone.alive) drone.die();
+        }
+        coord.subDrones = [];
+    }
 
     // MASSIVE explosion at UFO position - multiple waves of explosions
     // Initial central explosion
