@@ -18,6 +18,7 @@ dist/
 .beads/
 .agent/
 .claude/
+.worktrees/
 
 # Processed sounds (generated at build time)
 assets/sounds/processed/
