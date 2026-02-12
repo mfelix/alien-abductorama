@@ -1,6 +1,22 @@
 // Auto-generated changelog - do not edit manually
 const CHANGELOG = [
   {
+    "message": "New tech tree, wave 1 tutorial, shop redesign, and tons of polish",
+    "timestamp": 1770920082592
+  },
+  {
+    "message": "Drone coordinators: fleet management, beam charging, auto-deploy",
+    "timestamp": 1770920079400
+  },
+  {
+    "message": "Missile overhaul: interceptors, group salvos, anime-style homing",
+    "timestamp": 1770920075786
+  },
+  {
+    "message": "Evangelion HUD: CRT boot sequence, commander comms, fleet tree",
+    "timestamp": 1770920072991
+  },
+  {
     "message": "Animated sprites: targets and tanks now play frame-by-frame animations",
     "timestamp": 1770521121876
   },
