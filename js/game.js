@@ -12799,12 +12799,22 @@ function renderHUDFrame() {
         renderPanelBootOverlay(layout.missionZone, 110, '#0a0', 'MISSION.CTL', hudBootState.panels.mission, hudBootState.bootLines.mission);
     }
 
+    // Tech readout chips in top-center gap
+    if (!booting) {
+        renderTechChips(layout);
+    }
+
     // Systems zone
     if (panelReady('systems')) {
         renderSystemsZone(layout.systemsZone);
     }
     if (booting && hudBootState.panels.systems.phase !== 'waiting') {
         renderPanelBootOverlay(layout.systemsZone, 88, '#f80', 'SYS.INTG', hudBootState.panels.systems, hudBootState.bootLines.systems);
+    }
+
+    // Energy graph (below systems zone)
+    if (panelReady('systems') && !booting) {
+        renderEnergyGraph(layout.systemsZone);
     }
 
     // Weapons zone: slide in when weapons are unlocked
@@ -13005,6 +13015,17 @@ function renderStatusZone(zone) {
     // Blinking status light
     renderNGEBlinkLight(x + w - 12, y + 8, '#0ff', 800);
 
+    // Panel indicators
+    renderNGEIndicator(x + 4, y + 120 - 8, 'diamond', '#0ff', 'steady', { rate: 1200 });
+    renderNGEIndicator(x + w - 8, y + 120 - 8, 'circle', '#0ff', 'reactive', {
+        reactiveValue: waveTimer,
+        reactiveThresholds: [
+            { threshold: 30, rate: 1500 },
+            { threshold: 10, rate: 600 },
+            { threshold: 0, rate: 200 }
+        ]
+    });
+
     // Active powerups (below status panel)
     renderPowerupsInStatus(x, y + 120 + 4);
 }
@@ -13123,6 +13144,16 @@ function renderMissionZone(zone) {
     // Harvest counter
     const harvestY = y + 30;
     renderHarvestCounterNGE(x, harvestY, w);
+
+    // Panel indicators
+    renderNGEIndicator(x + 4, y + 4, 'triangle', '#0a0', 'steady', { rate: 700 });
+    const quotaPct = quotaTarget > 0 ? quotaProgress / quotaTarget : 0;
+    const missionEColor = quotaPct > 0.8 ? '#0f0' : (quotaPct < 0.5 ? '#ff0' : '#0a0');
+    const missionERate = quotaPct > 0.8 ? 9999 : (quotaPct < 0.5 ? 400 : 1000);
+    renderNGEIndicator(x + w - 8, y + 4, 'square', missionEColor, 'steady', { rate: missionERate });
+    renderNGEIndicator(x + 4, y + 110 - 6, 'circle', '#0a0', 'steady', { rate: 900 });
+    renderNGEIndicator(x + 12, y + 110 - 6, 'circle', '#0a0', 'steady', { rate: 900, phaseOffset: 450 });
+    renderNGEIndicator(x + w - 8, y + 110 - 6, 'diamond', '#0a0', 'steady', { rate: 1100 });
 
 }
 
@@ -13277,6 +13308,140 @@ function renderSystemsZone(zone) {
         renderNGELabel(x + pad, enY, `NRG +${playerInventory.maxEnergyBonus}`, '#7ff');
         renderNGEStatusDot(x + w - pad - 2, enY - 3, 'nominal');
     }
+
+    // Panel indicators
+    renderNGEIndicator(x + 4, y + 4, 'square', '#f80', 'steady', { rate: 600 });
+    const shldPct = ufo ? ufo.health / CONFIG.UFO_START_HEALTH : finalHealth / CONFIG.UFO_START_HEALTH;
+    const sysJColor = shldPct > 0.5 ? '#f80' : (shldPct > 0.25 ? '#fc0' : '#f44');
+    const sysJGlow = shldPct < 0.25 ? 8 : 4;
+    renderNGEIndicator(x + 4, y + 88 - 8, 'cross', sysJColor, 'reactive', {
+        reactiveValue: shldPct, reactiveThresholds: [
+            { threshold: 0.5, rate: 1000 },
+            { threshold: 0.25, rate: 500 },
+            { threshold: 0, rate: 150 }
+        ], glowIntensity: sysJGlow
+    });
+    renderNGEIndicator(x + w - 8, y + 88 - 8, 'diamond', '#f80', 'steady', { rate: 800 });
+}
+
+function renderEnergyGraph(systemsZone) {
+    if (!techFlags.beamConduit) return;
+
+    const { x, y, w } = systemsZone;
+
+    // Calculate Y position below systems zone content
+    let graphY = y + 88 + 8;
+    if (playerInventory.speedBonus > 0) graphY += 22;
+    if (playerInventory.maxEnergyBonus > 0) graphY += 14;
+
+    const graphW = w;
+    const graphH = 72;
+
+    // Panel
+    renderNGEPanel(x, graphY, graphW, graphH, { color: '#f80', cutCorners: ['tr'], alpha: 0.5 });
+
+    // Header
+    ctx.fillStyle = '#f80';
+    ctx.font = 'bold 9px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('NRG.FLOW', x + 6, graphY + 10);
+
+    // Legend
+    ctx.font = '7px monospace';
+    ctx.fillStyle = '#f44';
+    ctx.textAlign = 'right';
+    ctx.fillText('OUT', x + graphW - 28, graphY + 10);
+    ctx.fillStyle = '#0f0';
+    ctx.fillText('IN', x + graphW - 8, graphY + 10);
+
+    // Blink light
+    renderNGEBlinkLight(x + graphW - 42, graphY + 4, '#f80', 600);
+
+    // Graph area
+    const gx = x + 28;
+    const gy = graphY + 14;
+    const gw = graphW - 28 - 6;
+    const gh = 48;
+
+    // Grid lines (horizontal)
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i <= 2; i++) {
+        const ly = gy + gh - (i / 2) * gh;
+        ctx.beginPath(); ctx.moveTo(gx, ly); ctx.lineTo(gx + gw, ly); ctx.stroke();
+    }
+
+    // Grid lines (vertical, every 5s = 30 samples)
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
+    for (let i = 1; i < 6; i++) {
+        const lx = gx + (i / 6) * gw;
+        ctx.beginPath(); ctx.moveTo(lx, gy); ctx.lineTo(lx, gy + gh); ctx.stroke();
+    }
+
+    // Y-axis labels
+    ctx.fillStyle = '#666';
+    ctx.font = '7px monospace';
+    ctx.textAlign = 'right';
+    const yMax = Math.max(10, energyTimeSeries.smoothPeak * 1.2);
+    ctx.fillText(Math.round(yMax).toString(), gx - 2, gy + 4);
+    ctx.fillText(Math.round(yMax / 2).toString(), gx - 2, gy + gh / 2 + 2);
+    ctx.fillText('0', gx - 2, gy + gh);
+    ctx.textAlign = 'left';
+
+    // X-axis labels
+    ctx.fillStyle = '#555';
+    ctx.fillText('-30s', gx, gy + gh + 8);
+    ctx.textAlign = 'right';
+    ctx.fillText('now', gx + gw, gy + gh + 8);
+    ctx.textAlign = 'left';
+
+    // Draw lines from ring buffer
+    const idx = energyTimeSeries.writeIndex;
+    const mapY = (val) => gy + gh - (Math.min(val, yMax) / yMax) * gh;
+
+    // OUTPUT line (red) with fill
+    ctx.beginPath();
+    ctx.strokeStyle = 'rgba(255, 68, 68, 0.8)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 180; i++) {
+        const bufIdx = (idx + i) % 180;
+        const px = gx + (i / 179) * gw;
+        const py = mapY(energyTimeSeries.outputBuffer[bufIdx]);
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+
+    // Output fill
+    const outGrad = ctx.createLinearGradient(0, gy, 0, gy + gh);
+    outGrad.addColorStop(0, 'rgba(255, 68, 68, 0.15)');
+    outGrad.addColorStop(1, 'rgba(255, 68, 68, 0)');
+    ctx.lineTo(gx + gw, gy + gh);
+    ctx.lineTo(gx, gy + gh);
+    ctx.closePath();
+    ctx.fillStyle = outGrad;
+    ctx.fill();
+
+    // INTAKE line (green) with fill
+    ctx.beginPath();
+    ctx.strokeStyle = 'rgba(0, 255, 0, 0.8)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 180; i++) {
+        const bufIdx = (idx + i) % 180;
+        const px = gx + (i / 179) * gw;
+        const py = mapY(energyTimeSeries.intakeBuffer[bufIdx]);
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+
+    // Intake fill
+    const inGrad = ctx.createLinearGradient(0, gy, 0, gy + gh);
+    inGrad.addColorStop(0, 'rgba(0, 255, 0, 0.12)');
+    inGrad.addColorStop(1, 'rgba(0, 255, 0, 0)');
+    ctx.lineTo(gx + gw, gy + gh);
+    ctx.lineTo(gx, gy + gh);
+    ctx.closePath();
+    ctx.fillStyle = inGrad;
+    ctx.fill();
 }
 
 function renderWeaponsZone(zone) {
@@ -13314,6 +13479,14 @@ function renderWeaponsZone(zone) {
     panelH += 8; // bottom pad
 
     renderNGEPanel(x, y, w, panelH, { color: '#f44', cutCorners: ['bl'], label: 'ORD.SYS' });
+
+    // Panel indicators
+    renderNGEIndicator(x + 4, y + 4, 'triangle', '#f44', 'steady', { rate: 500 });
+    const anyRecharging = (playerInventory.bombRechargeTimers && playerInventory.bombRechargeTimers.length > 0) ||
+        (missileGroups && missileGroups.some(g => !g.ready));
+    renderNGEIndicator(x + w - 8, y + 4, 'square', '#f44', anyRecharging ? 'double' : 'steady', { rate: 800 });
+    renderNGEIndicator(x + 14, y + panelH - 8, 'cross', '#f44', 'random', { seedId: 'wep_n' });
+    renderNGEIndicator(x + w - 8, y + panelH - 8, 'circle', '#f44', 'steady', { rate: 400 });
 
     let curY = y + 22;
 
@@ -13523,6 +13696,14 @@ function renderFleetZone(zone) {
 
     renderNGEPanel(x, y, w, Math.max(panelH, 50), { color: '#48f', cutCorners: ['tr'], label: 'FLEET.CMD' });
 
+    // Panel indicators
+    const fleetPanelH = Math.max(panelH, 50);
+    renderNGEIndicator(x + 4, y + 4, 'diamond', '#48f', 'steady', { rate: 700 });
+    renderNGEIndicator(x + 4, y + fleetPanelH - 8, 'square', '#48f', 'cascade', { cascadeIndex: 0, cascadeTotal: 3 });
+    renderNGEIndicator(x + 12, y + fleetPanelH - 8, 'square', '#48f', 'cascade', { cascadeIndex: 1, cascadeTotal: 3 });
+    renderNGEIndicator(x + 20, y + fleetPanelH - 8, 'square', '#48f', 'cascade', { cascadeIndex: 2, cascadeTotal: 3 });
+    renderNGEIndicator(x + w - 8, y + fleetPanelH - 8, 'circle', '#48f', 'steady', { rate: 1000 });
+
     // Slot counter
     const subDroneCount = activeCoordinators.reduce((sum, c) => sum + (c.subDrones ? c.subDrones.filter(d => d.alive).length : 0), 0);
     const totalDrones = activeDrones.length + subDroneCount;
@@ -13675,6 +13856,8 @@ function renderCommanderZone(zone) {
 
     // "INCOMING TRANSMISSION" header with blinking light
     renderNGEBlinkLight(x + 8, y + 6, '#0f0', 250);
+    // Bottom-left indicator
+    renderNGEIndicator(x + 4, y + h - 8, 'triangle', '#0f0', 'double', {});
     ctx.fillStyle = '#0f0';
     ctx.font = 'bold 10px monospace';
     ctx.textAlign = 'left';
@@ -13718,6 +13901,111 @@ function renderCommanderZone(zone) {
                 ctx.fillText(lines[i], dialogueX, portraitY + 10 + i * 13);
             }
         }
+    }
+}
+
+// Tech readout chip definitions
+const TECH_CHIP_DEFS = [
+    { id: 'pg1', text: 'PG1 CONDUIT', width: 58, track: 'powerGrid' },
+    { id: 'pg2', text: 'PG2 EFFIC', width: 44, track: 'powerGrid' },
+    { id: 'pg3', text: 'PG3 BCAST', width: 44, track: 'powerGrid' },
+    { id: 'pg4', text: 'PG4 REACT', width: 44, track: 'powerGrid' },
+    { id: 'pg5', text: 'PG5 S.GRID', width: 52, track: 'powerGrid' },
+    { id: 'dc1', text: 'DC1 UPLINK', width: 52, track: 'droneCommand' },
+    { id: 'dc2', text: 'DC2 H.CORD', width: 52, track: 'droneCommand' },
+    { id: 'dc3', text: 'DC3 A.CORD', width: 52, track: 'droneCommand' },
+    { id: 'dc4', text: 'DC4 EXPND', width: 44, track: 'droneCommand' },
+    { id: 'dc5', text: 'DC5 SWARM', width: 44, track: 'droneCommand' },
+    { id: 'dn1', text: 'DN1 THRST', width: 44, track: 'defenseNetwork' },
+    { id: 'dn2', text: 'DN2 ARMOR', width: 44, track: 'defenseNetwork' },
+    { id: 'dn3', text: 'DN3 SHLD.T', width: 52, track: 'defenseNetwork' },
+    { id: 'dn4', text: 'DN4 RESIL', width: 44, track: 'defenseNetwork' },
+    { id: 'dn5', text: 'DN5 S.SHLD', width: 52, track: 'defenseNetwork' }
+];
+
+const TRACK_COLORS = {
+    powerGrid: '#ff0',
+    droneCommand: '#48f',
+    defenseNetwork: '#f80'
+};
+
+function renderTechChips(layout) {
+    const researched = techTree.researched;
+    if (researched.size === 0) return;
+
+    const statusEnd = layout.statusZone.x + layout.statusZone.w;
+    const missionStart = layout.missionZone.x;
+    const gapStartX = statusEnd + 4;
+    const gapEndX = missionStart - 4;
+    const gapW = gapEndX - gapStartX;
+    if (gapW < 44) return;
+
+    let curX = gapStartX;
+    let curY = 6;
+    let lastTrack = null;
+
+    for (const chipDef of TECH_CHIP_DEFS) {
+        if (!researched.has(chipDef.id)) continue;
+
+        const chipW = chipDef.width;
+        const trackColor = TRACK_COLORS[chipDef.track];
+
+        // Track separator
+        if (lastTrack && lastTrack !== chipDef.track) {
+            if (curX + 2 <= gapEndX) {
+                ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(curX, curY + 2);
+                ctx.lineTo(curX, curY + 16);
+                ctx.stroke();
+                curX += 4;
+            }
+        }
+
+        // Wrap to next row if needed
+        if (curX + chipW > gapEndX) {
+            curX = gapStartX;
+            curY += 21;
+        }
+
+        // Chip background with cut corner
+        ctx.fillStyle = 'rgba(5, 8, 18, 0.5)';
+        ctx.beginPath();
+        ctx.moveTo(curX, curY);
+        ctx.lineTo(curX + chipW - 4, curY);
+        ctx.lineTo(curX + chipW, curY + 4);
+        ctx.lineTo(curX + chipW, curY + 18);
+        ctx.lineTo(curX, curY + 18);
+        ctx.closePath();
+        ctx.fill();
+
+        // Chip border
+        ctx.strokeStyle = trackColor;
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+
+        // Chip text - prefix in track color
+        ctx.fillStyle = trackColor;
+        ctx.globalAlpha = 0.7;
+        ctx.font = 'bold 7px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(chipDef.text.substring(0, 3), curX + 2, curY + 11);
+        // Suffix in white
+        ctx.fillStyle = 'rgba(255,255,255,0.6)';
+        ctx.globalAlpha = 1;
+        ctx.font = '7px monospace';
+        ctx.fillText(chipDef.text.substring(4), curX + 20, curY + 11);
+
+        // Status blink light (2x2)
+        const blinkOn = Math.floor(Date.now() / 1200) % 2 === 0;
+        ctx.fillStyle = blinkOn ? trackColor : 'rgba(255,255,255,0.08)';
+        if (blinkOn) { ctx.shadowColor = trackColor; ctx.shadowBlur = 3; }
+        ctx.fillRect(curX + chipW - 5, curY + 8, 2, 2);
+        ctx.shadowBlur = 0;
+
+        lastTrack = chipDef.track;
+        curX += chipW + 3;
     }
 }
 
