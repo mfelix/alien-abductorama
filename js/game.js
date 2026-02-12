@@ -292,13 +292,13 @@ const CONFIG = {
     // === EXPANSION: Missile Swarm ===
     MISSILE_SWARM_CAPACITY: 3,
     MISSILE_SWARM_DAMAGE: 35,
-    MISSILE_SWARM_SPEED: 600,
+    MISSILE_SWARM_SPEED: 900,
     MISSILE_RECHARGE_TIME: 5,
-    MISSILE_LAUNCH_UP_SPEED: 350,
-    MISSILE_LAUNCH_DURATION: 0.3,
-    MISSILE_DECEL_DURATION: 0.3,
-    MISSILE_APEX_DURATION: 0.2,
-    MISSILE_DIVE_RAMP_SPEED: 600,
+    MISSILE_LAUNCH_UP_SPEED: 500,
+    MISSILE_LAUNCH_DURATION: 0.25,
+    MISSILE_DECEL_DURATION: 0.12,
+    MISSILE_APEX_DURATION: 0.06,
+    MISSILE_DIVE_RAMP_SPEED: 950,
 
     // === EXPANSION: Bomb Upgrade Tiers ===
     BOMB_BLAST_TIERS: [120, 160, 200],
@@ -1279,9 +1279,15 @@ const SFX = {
 
     countdownTick: (remaining) => {
         if (!audioCtx) return;
-        // Descending pitch as countdown approaches 0
-        const freq = 400 + remaining * 100;
-        playTone(freq, 0.08, 'triangle', 0.1);
+        if (remaining > 0) {
+            // Descending pitch as countdown approaches 0
+            const freq = 400 + remaining * 100;
+            playTone(freq, 0.08, 'triangle', 0.1);
+        } else {
+            // Final resolving tone — lower octave + brief harmonic
+            playTone(400, 0.15, 'triangle', 0.12);
+            playTone(200, 0.2, 'sine', 0.06);
+        }
     },
 
     bombBounce: () => {
@@ -5997,7 +6003,7 @@ class Projectile {
 
     checkCollisionWithDrones() {
         for (const drone of activeDrones) {
-            if (!drone.alive || drone.state === 'FALLING') continue;
+            if (!drone.alive) continue;
             const dx = this.x - drone.x;
             const dy = this.y - drone.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
@@ -6010,7 +6016,7 @@ class Projectile {
         }
         // Check collision with coordinators and their sub-drones
         for (const coord of activeCoordinators) {
-            if (!coord.alive || coord.state === 'DEPLOYING' || coord.state === 'DYING') continue;
+            if (!coord.alive || coord.state === 'DYING') continue;
             // Coordinator itself
             const cdx = this.x - coord.x;
             const cdy = this.y - coord.y;
@@ -6023,7 +6029,7 @@ class Projectile {
             }
             // Sub-drones under this coordinator
             for (const drone of coord.subDrones) {
-                if (!drone.alive || drone.state === 'FALLING') continue;
+                if (!drone.alive) continue;
                 const ddx = this.x - drone.x;
                 const ddy = this.y - drone.y;
                 const ddist = Math.sqrt(ddx * ddx + ddy * ddy);
@@ -6407,57 +6413,42 @@ class Missile {
 
         } else if (this.phase === 'LAUNCH') {
             // === Phase 1: Launch burst upward (0 to ~0.3s) ===
-            let speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
-            if (speed > 0) {
-                let perpX = -this.vy / speed;
-                let perpY = this.vx / speed;
-                let spiralOffset = Math.sin(this.age * this.spiralFreq + this.spiralPhase) * this.spiralAmp * 0.5;
-                this.x += (this.vx + perpX * spiralOffset * 3) * dt;
-                this.y += (this.vy + perpY * spiralOffset * 3) * dt;
-            } else {
-                this.x += this.vx * dt;
-                this.y += this.vy * dt;
-            }
+            // Clean rocket launch — minimal wobble, mostly straight up
+            let spiralOffset = Math.sin(this.age * this.spiralFreq + this.spiralPhase) * this.spiralAmp * 0.1;
+            this.x += (this.vx + spiralOffset) * dt;
+            this.y += this.vy * dt;
             if (this.age > this.launchDuration) {
                 this.phase = 'DECEL';
             }
 
         } else if (this.phase === 'DECEL') {
-            // === Phase 2: Rising deceleration (0.3s to ~0.6s) ===
-            // Bleed off upward momentum with drag
-            const decelFactor = 0.92; // per-frame drag
-            this.vx *= decelFactor;
-            this.vy *= decelFactor;
-            // Gravity pulls down slightly
-            this.vy += 200 * dt;
+            // === Phase 2: Quick arc-over (0.3s to ~0.45s) ===
+            const phaseAge = this.age - this.launchDuration;
+            const t = Math.min(1, phaseAge / this.decelDuration);
+            // Smooth velocity blend rather than per-frame drag
+            const keepFactor = 1 - t * 0.8;
+            this.vx *= 0.96;
+            this.vy = this.vy * 0.96 + 300 * dt; // gravity curves them over
 
+            let spiralOffset = Math.sin(this.age * this.spiralFreq + this.spiralPhase) * this.spiralAmp * (0.1 + t * 0.2);
             let speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
             if (speed > 0) {
                 let perpX = -this.vy / speed;
                 let perpY = this.vx / speed;
-                let spiralOffset = Math.sin(this.age * this.spiralFreq + this.spiralPhase) * this.spiralAmp;
-                this.x += (this.vx + perpX * spiralOffset * 3) * dt;
-                this.y += (this.vy + perpY * spiralOffset * 3) * dt;
+                this.x += (this.vx + perpX * spiralOffset) * dt;
+                this.y += (this.vy + perpY * spiralOffset) * dt;
             } else {
                 this.x += this.vx * dt;
                 this.y += this.vy * dt;
             }
 
-            const phaseAge = this.age - this.launchDuration;
             if (phaseAge > this.decelDuration) {
                 this.phase = 'APEX';
                 this.apexStart = this.age;
             }
 
         } else if (this.phase === 'APEX') {
-            // === Phase 3: Apex tension (~0.6s to ~0.8s) ===
-            // Nearly weightless hang — tiny drift, subtle wobble
-            this.vx *= 0.85;
-            this.vy *= 0.85;
-            let spiralOffset = Math.sin(this.age * this.spiralFreq * 2 + this.spiralPhase) * this.spiralAmp * 0.3;
-            this.x += (this.vx + spiralOffset * 0.5) * dt;
-            this.y += this.vy * dt;
-
+            // === Phase 3: Brief apex flash then immediately dive ===
             // Apex flash (brief bright pulse at lock-on moment)
             if (!this.apexFlashed) {
                 this.apexFlashed = true;
@@ -6466,14 +6457,22 @@ class Missile {
             if (this.apexFlashTimer > 0) {
                 this.apexFlashTimer -= dt;
             }
+            // Minimal drift during flash
+            this.x += this.vx * 0.3 * dt;
+            this.y += this.vy * 0.3 * dt;
 
             const apexAge = this.age - this.apexStart;
             if (apexAge > this.apexDuration) {
                 this.phase = 'DIVE';
             }
 
-        } else if (this.phase === 'DIVE') {
-            // === Phase 4: Attack dive (0.8s+) — snap toward target ===
+        } else if (this.phase === 'DIVE' || this.phase === 'HOMING') {
+            // Fuel decay: maneuverability degrades over missile lifetime
+            const fuel = Math.max(0, 1 - this.age / 3); // full at birth, zero at 3s
+            const chaos = (1 - fuel); // increases as fuel drops
+            const baseSpeed = this.phase === 'DIVE' ? CONFIG.MISSILE_DIVE_RAMP_SPEED : CONFIG.MISSILE_SWARM_SPEED;
+
+            this.retarget();
             if (this.targetTank && this.targetTank.alive !== false) {
                 let tx = this.targetTank.x + (this.targetTank.width || 0) / 2;
                 let ty = this.targetTank.y + (this.targetTank.height || 0) / 2;
@@ -6482,76 +6481,65 @@ class Missile {
                 let dist = Math.sqrt(dx * dx + dy * dy);
                 if (dist < 1) dist = 1;
 
-                const diveAge = this.age - this.apexStart - this.apexDuration;
-                let speed = CONFIG.MISSILE_DIVE_RAMP_SPEED;
-                let homingStrength = Math.min(1, diveAge * 3); // locks in fast
+                const diveAge = this.phase === 'DIVE'
+                    ? this.age - this.apexStart - this.apexDuration
+                    : this.age - this.launchDuration;
+                // Homing ramps up fast initially, then decays with fuel
+                let homingStrength = Math.min(1, diveAge * 3) * fuel;
 
-                let perpX = -dy / dist;
-                let perpY = dx / dist;
+                let desiredVx = dx / dist * baseSpeed;
+                let desiredVy = dy / dist * baseSpeed;
+                this.vx += (desiredVx - this.vx) * homingStrength * 8 * dt;
+                this.vy += (desiredVy - this.vy) * homingStrength * 8 * dt;
+
+                // Spiral wobble increases as fuel drops (less stable)
                 let spiralOffset = Math.sin(this.age * this.spiralFreq + this.spiralPhase) * this.spiralAmp;
-                spiralOffset *= Math.max(0, 1 - homingStrength * 0.7); // spiral tightens
-
-                this.vx = (dx / dist * speed * homingStrength) + perpX * spiralOffset * 3;
-                this.vy = (dy / dist * speed * homingStrength) + perpY * spiralOffset * 3;
-
-                this.x += this.vx * dt;
-                this.y += this.vy * dt;
+                spiralOffset *= chaos * 0.5 + 0.1;
+                let perpX = -this.vy, perpY = this.vx;
+                let pLen = Math.sqrt(perpX * perpX + perpY * perpY);
+                if (pLen > 0) { perpX /= pLen; perpY /= pLen; }
+                this.x += (this.vx + perpX * spiralOffset) * dt;
+                this.y += (this.vy + perpY * spiralOffset) * dt;
 
                 if (dist < 30) {
                     this.hit();
                 }
             } else {
-                this.retarget();
-                let speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
-                if (speed < 1) speed = 1;
-                let dirX = this.vx / speed;
-                let dirY = this.vy / speed;
-                let perpX = -dirY;
-                let perpY = dirX;
-                let spiralOffset = Math.sin(this.age * this.spiralFreq + this.spiralPhase) * this.spiralAmp;
-                this.x += (this.vx + perpX * spiralOffset * 3) * dt;
-                this.y += (this.vy + perpY * spiralOffset * 3) * dt;
-            }
-
-        } else if (this.phase === 'HOMING') {
-            // === Legacy homing phase (for UFO-launched missiles) ===
-            if (this.targetTank && this.targetTank.alive !== false) {
-                let tx = this.targetTank.x + (this.targetTank.width || 0) / 2;
-                let ty = this.targetTank.y + (this.targetTank.height || 0) / 2;
-                let dx = tx - this.x;
-                let dy = ty - this.y;
-                let dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist < 1) dist = 1;
-
-                let speed = CONFIG.MISSILE_SWARM_SPEED;
-                let homingStrength = Math.min(1, (this.age - this.launchDuration) * 2);
-
-                let perpX = -dy / dist;
-                let perpY = dx / dist;
-                let spiralOffset = Math.sin(this.age * this.spiralFreq + this.spiralPhase) * this.spiralAmp;
-                spiralOffset *= Math.max(0, 1 - homingStrength * 0.5);
-
-                this.vx = (dx / dist * speed * homingStrength) + perpX * spiralOffset * 3;
-                this.vy = (dy / dist * speed * homingStrength) + perpY * spiralOffset * 3;
-
-                this.x += this.vx * dt;
-                this.y += this.vy * dt;
-
-                if (dist < 30) {
-                    this.hit();
+                // No targets — go increasingly wild as fuel burns out
+                if (!this.wanderAngle) this.wanderAngle = Math.atan2(this.vy || 1, this.vx || 0);
+                // Direction jitter escalates from gentle to insane
+                const jitter = 2 + chaos * 14; // 2 rad/s at full fuel → 16 rad/s at empty
+                this.wanderAngle += (Math.random() - 0.5) * jitter * dt;
+                // Sharp random direction snaps when low on fuel
+                if (chaos > 0.5 && Math.random() < chaos * 2 * dt) {
+                    this.wanderAngle += (Math.random() - 0.5) * Math.PI;
                 }
-            } else {
-                this.retarget();
+
+                const wanderSpeed = baseSpeed * (0.5 + chaos * 0.5);
+                this.vx += (Math.cos(this.wanderAngle) * wanderSpeed - this.vx) * 6 * dt;
+                this.vy += (Math.sin(this.wanderAngle) * wanderSpeed - this.vy) * 6 * dt;
+                // Light gravity tug at very end of life
+                this.vy += chaos * chaos * 200 * dt;
+
+                let spiralOffset = Math.sin(this.age * this.spiralFreq * (1 + chaos * 2) + this.spiralPhase)
+                    * this.spiralAmp * (0.3 + chaos * 1.2);
                 let speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
-                if (speed < 1) speed = 1;
-                let dirX = this.vx / speed;
-                let dirY = this.vy / speed;
-                let perpX = -dirY;
-                let perpY = dirX;
-                let spiralOffset = Math.sin(this.age * this.spiralFreq + this.spiralPhase) * this.spiralAmp;
-                this.x += (this.vx + perpX * spiralOffset * 3) * dt;
-                this.y += (this.vy + perpY * spiralOffset * 3) * dt;
+                if (speed > 0) {
+                    this.x += (this.vx + (-this.vy / speed) * spiralOffset) * dt;
+                    this.y += (this.vy + (this.vx / speed) * spiralOffset) * dt;
+                } else {
+                    this.x += this.vx * dt;
+                    this.y += this.vy * dt;
+                }
             }
+        }
+
+        // Ground collision — explode on impact
+        const groundY = canvas.height - 60;
+        if (this.y >= groundY) {
+            this.alive = false;
+            createExplosion(this.x, groundY, 'small');
+            screenShake = Math.max(screenShake, 0.12);
         }
 
         // Off screen check
@@ -6560,7 +6548,7 @@ class Missile {
         }
 
         // Max lifetime — explode on timeout
-        if (this.age > 5) {
+        if (this.age > 3) {
             this.alive = false;
             createExplosion(this.x, this.y, 'small');
             screenShake = Math.max(screenShake, 0.1);
@@ -6961,12 +6949,38 @@ class Powerup {
 
         switch (this.type) {
             case 'health_pack':
-                // Green cross/plus shape
+                // Metroid-inspired energy tank — cubic green canister with "E"
+                const tw = 26, th = 22;
+                const tx = x - tw / 2, ty = y - th / 2;
+
+                // Dark fill (tank body)
+                ctx.fillStyle = '#062';
+                ctx.fillRect(tx, ty, tw, th);
+
+                // Bright green border
+                ctx.strokeStyle = '#0f0';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(tx, ty, tw, th);
+
+                // Inner highlight border (inset 3px)
+                ctx.strokeStyle = 'rgba(0, 255, 80, 0.4)';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(tx + 3, ty + 3, tw - 6, th - 6);
+
+                // "E" letter
                 ctx.fillStyle = '#0f0';
-                ctx.fillRect(x - 5, y - 15, 10, 30);
-                ctx.fillRect(x - 15, y - 5, 30, 10);
-                ctx.strokeRect(x - 5, y - 15, 10, 30);
-                ctx.strokeRect(x - 15, y - 5, 30, 10);
+                ctx.font = 'bold 14px monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('E', x, y);
+
+                // Top-edge highlight line
+                ctx.strokeStyle = 'rgba(180, 255, 180, 0.6)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(tx + 1, ty + 1);
+                ctx.lineTo(tx + tw - 1, ty + 1);
+                ctx.stroke();
                 break;
 
             case 'rapid_abduct':
@@ -7801,6 +7815,40 @@ class HarvesterDrone {
 
     update(dt) {
         if (!this.alive) return;
+
+        // Power-off sequence: flickering, then tipping over
+        if (this.state === 'POWER_OFF') {
+            this.powerOffSparkTimer += dt;
+            if (this.powerOffDelay > 0) {
+                // Flickering phase - capacitors still running
+                this.powerOffDelay -= dt;
+                // Sparks at increasing frequency as power drains
+                const sparkInterval = 0.08 + this.powerOffDelay * 0.1;
+                if (this.powerOffSparkTimer > sparkInterval) {
+                    this.powerOffSparkTimer = 0;
+                    particles.push(new Particle(this.x + (Math.random() - 0.5) * 30, this.y - 10,
+                        (Math.random() - 0.5) * 80, -30 - Math.random() * 60,
+                        Math.random() < 0.5 ? 'rgb(0, 255, 255)' : 'rgb(255, 200, 0)', 2, 0.25));
+                }
+            } else {
+                // Tipping over phase
+                this.powerOffTiltSpeed += 5 * dt;
+                this.powerOffTilt += this.powerOffTiltDir * this.powerOffTiltSpeed * dt;
+                // Sparks during fall
+                if (this.powerOffSparkTimer > 0.06) {
+                    this.powerOffSparkTimer = 0;
+                    particles.push(new Particle(this.x + (Math.random() - 0.5) * 20, this.y,
+                        (Math.random() - 0.5) * 50, -20 - Math.random() * 40,
+                        'rgb(0, 255, 255)', 1.5, 0.2));
+                }
+                // Tipped over far enough - explode
+                if (Math.abs(this.powerOffTilt) > 1.4) {
+                    this.die();
+                }
+            }
+            return;
+        }
+
         const drainRate = techFlags.energyEfficiency ? 0.7 : 1.0;
         this.energyTimer -= drainRate * dt;
         if (techFlags.selfSustainingGrid) {
@@ -7978,6 +8026,31 @@ class HarvesterDrone {
         }
     }
 
+    powerOff() {
+        // Drones still deploying just die instantly
+        if (this.state === 'FALLING' || this.state === 'LANDING' || this.state === 'UNFOLDING') {
+            this.die();
+            return;
+        }
+        if (this.state === 'POWER_OFF') return;
+        this.state = 'POWER_OFF';
+        // Clear harvest effects on current target
+        if (this.target) { this.target.harvestShake = 0; this.target.harvestShrink = 0; this.target = null; }
+        // Release collected targets as lost biomatter
+        if (this.collectedTargets.length > 0) {
+            const bmLost = CONFIG.BIO_MATTER_RATES.harvester_batch || 2;
+            waveStats.lostDeliveries += this.collectedTargets.length;
+            waveStats.lostBioMatter += bmLost;
+            createFloatingText(this.x, this.y - 30, `-${bmLost} BM LOST`, '#f80', { fontSize: 18 });
+            this.collectedTargets = [];
+        }
+        this.powerOffDelay = 0.3 + Math.random() * 1.5;
+        this.powerOffTiltDir = Math.random() < 0.5 ? -1 : 1;
+        this.powerOffTilt = 0;
+        this.powerOffTiltSpeed = 0;
+        this.powerOffSparkTimer = 0;
+    }
+
     die() {
         this.alive = false;
         // Clear harvest effects on current target
@@ -8021,6 +8094,23 @@ class HarvesterDrone {
             ctx.beginPath(); ctx.roundRect(cx + sp, cy - 32 + p * 16, 24, 64 - p * 32, 6); ctx.fill();
             if (p > 0.3) { ctx.globalAlpha = (p - 0.3) / 0.7; this.renderSpiderBody(cx, cy); ctx.globalAlpha = 1; }
             if (p > 0.4) { this.renderLegs(cx, cy, (p - 0.4) / 0.6); }
+        } else if (this.state === 'POWER_OFF') {
+            ctx.save();
+            // Pivot at the drone's feet for tipping over
+            const pivotY = cy + this.height / 2;
+            ctx.translate(cx, pivotY);
+            ctx.rotate(this.powerOffTilt);
+            ctx.translate(-cx, -pivotY);
+            // Flicker opacity during delay phase
+            if (this.powerOffDelay > 0) {
+                ctx.globalAlpha = Math.random() < 0.3 ? 0.2 : 0.6 + Math.random() * 0.4;
+            } else {
+                ctx.globalAlpha = Math.max(0.3, 1 - Math.abs(this.powerOffTilt) * 0.5);
+            }
+            this.renderSpiderBody(cx, cy);
+            this.renderLegs(cx, cy, 1);
+            ctx.globalAlpha = 1;
+            ctx.restore();
         } else {
             this.renderSpiderBody(cx, cy);
             this.renderLegs(cx, cy, 1);
@@ -8125,7 +8215,7 @@ class HarvesterDrone {
                 }
             }
         }
-        if (this.state !== 'FALLING') {
+        if (this.state !== 'FALLING' && this.state !== 'POWER_OFF') {
             const bw = 50, bh = 4, bx = cx - bw / 2, by = cy - 44;
             const ep = this.energyTimer / this.maxEnergy;
             ctx.fillStyle = '#333'; ctx.fillRect(bx, by, bw, bh);
@@ -8187,6 +8277,38 @@ class BattleDrone {
 
     update(dt) {
         if (!this.alive) return;
+
+        // Power-off sequence: flickering, then tipping over
+        if (this.state === 'POWER_OFF') {
+            this.powerOffSparkTimer += dt;
+            if (this.powerOffDelay > 0) {
+                // Flickering phase - capacitors still running
+                this.powerOffDelay -= dt;
+                const sparkInterval = 0.08 + this.powerOffDelay * 0.1;
+                if (this.powerOffSparkTimer > sparkInterval) {
+                    this.powerOffSparkTimer = 0;
+                    particles.push(new Particle(this.x + (Math.random() - 0.5) * 30, this.y - 10,
+                        (Math.random() - 0.5) * 80, -30 - Math.random() * 60,
+                        Math.random() < 0.5 ? 'rgb(255, 100, 50)' : 'rgb(255, 200, 0)', 2, 0.25));
+                }
+            } else {
+                // Tipping over phase
+                this.powerOffTiltSpeed += 5 * dt;
+                this.powerOffTilt += this.powerOffTiltDir * this.powerOffTiltSpeed * dt;
+                // Sparks during fall
+                if (this.powerOffSparkTimer > 0.06) {
+                    this.powerOffSparkTimer = 0;
+                    particles.push(new Particle(this.x + (Math.random() - 0.5) * 20, this.y,
+                        (Math.random() - 0.5) * 50, -20 - Math.random() * 40,
+                        'rgb(255, 100, 50)', 1.5, 0.2));
+                }
+                if (Math.abs(this.powerOffTilt) > 1.4) {
+                    this.die();
+                }
+            }
+            return;
+        }
+
         const drainRate = techFlags.energyEfficiency ? 0.7 : 1.0;
         this.energyTimer -= drainRate * dt;
         if (techFlags.selfSustainingGrid) {
@@ -8281,6 +8403,22 @@ class BattleDrone {
         }
     }
 
+    powerOff() {
+        // Drones still deploying just die instantly
+        if (this.state === 'FALLING' || this.state === 'LANDING' || this.state === 'UNFOLDING') {
+            this.die();
+            return;
+        }
+        if (this.state === 'POWER_OFF') return;
+        this.state = 'POWER_OFF';
+        this.target = null;
+        this.powerOffDelay = 0.3 + Math.random() * 1.5;
+        this.powerOffTiltDir = Math.random() < 0.5 ? -1 : 1;
+        this.powerOffTilt = 0;
+        this.powerOffTiltSpeed = 0;
+        this.powerOffSparkTimer = 0;
+    }
+
     die() {
         this.alive = false;
         SFX.droneDestroy && SFX.droneDestroy('battle');
@@ -8315,6 +8453,21 @@ class BattleDrone {
             ctx.beginPath(); ctx.roundRect(cx + sp, cy - 36 + p * 20, 28, 72 - p * 40, 6); ctx.fill();
             if (p > 0.3) { ctx.globalAlpha = (p - 0.3) / 0.7; this.renderSpiderBody(cx, cy); ctx.globalAlpha = 1; }
             if (p > 0.4) { this.renderLegs(cx, cy, (p - 0.4) / 0.6); }
+        } else if (this.state === 'POWER_OFF') {
+            ctx.save();
+            const pivotY = cy + this.height / 2;
+            ctx.translate(cx, pivotY);
+            ctx.rotate(this.powerOffTilt);
+            ctx.translate(-cx, -pivotY);
+            if (this.powerOffDelay > 0) {
+                ctx.globalAlpha = Math.random() < 0.3 ? 0.2 : 0.6 + Math.random() * 0.4;
+            } else {
+                ctx.globalAlpha = Math.max(0.3, 1 - Math.abs(this.powerOffTilt) * 0.5);
+            }
+            this.renderSpiderBody(cx, cy);
+            this.renderLegs(cx, cy, 1);
+            ctx.globalAlpha = 1;
+            ctx.restore();
         } else {
             this.renderSpiderBody(cx, cy);
             this.renderLegs(cx, cy, 1);
@@ -8348,7 +8501,7 @@ class BattleDrone {
                 }
             }
         }
-        if (this.state !== 'FALLING') {
+        if (this.state !== 'FALLING' && this.state !== 'POWER_OFF') {
             const bw = 50, bh = 4, bx = cx - bw / 2, by = cy - 48;
             const ep = this.energyTimer / this.maxEnergy;
             ctx.fillStyle = '#333'; ctx.fillRect(bx, by, bw, bh);
@@ -8690,9 +8843,20 @@ class Coordinator {
         this.alive = false;
         screenShake = 1.2;
 
-        // Kill all sub-drones
+        // Power off sub-drones instead of killing instantly
+        // Drones close to the blast get destroyed, others lose power and tip over
+        const instantKillRadius = 80;
         for (const drone of this.subDrones) {
-            if (drone.alive) drone.die();
+            if (!drone.alive) continue;
+            const dist = Math.hypot(drone.x - this.x, (drone.y + drone.height / 2) - this.y);
+            if (dist < instantKillRadius) {
+                // Direct hit from coordinator explosion
+                drone.die();
+            } else {
+                drone.powerOff();
+                // Transfer to activeDrones so they keep updating after coordinator is removed
+                activeDrones.push(drone);
+            }
         }
         this.subDrones = [];
 
@@ -8712,6 +8876,24 @@ class Coordinator {
             const dist = Math.hypot(target.x + target.width/2 - this.x, target.y + target.height/2 - this.y);
             if (dist < blastRadius) {
                 target.blastAway(this.x, this.y);
+            }
+        }
+        // Damage drones from other coordinators and activeDrones in blast radius
+        for (const coord of activeCoordinators) {
+            if (coord === this) continue;
+            for (const drone of coord.subDrones) {
+                if (!drone.alive) continue;
+                const dist = Math.hypot(drone.x - this.x, (drone.y + drone.height / 2) - this.y);
+                if (dist < blastRadius) {
+                    drone.takeDamage(15);
+                }
+            }
+        }
+        for (const drone of activeDrones) {
+            if (!drone.alive) continue;
+            const dist = Math.hypot(drone.x - this.x, (drone.y + drone.height / 2) - this.y);
+            if (dist < blastRadius) {
+                drone.takeDamage(15);
             }
         }
 
@@ -9465,14 +9647,14 @@ function updateCoordinators(dt) {
             autoDeployCooldown -= dt;
         } else {
             const maxCoords = techFlags.fleetExpansion ? 2 : 1;
+            let deployed = false;
             if (techFlags.harvesterCoordinator && harvesterUnlocked) {
                 const harvCount = activeCoordinators.filter(c => c.type === 'harvester' && c.alive).length;
                 if (harvCount < maxCoords && ufo.energy >= CONFIG.DRONE_ENERGY_COST) {
                     ufo.energy -= CONFIG.DRONE_ENERGY_COST;
                     activeCoordinators.push(new HarvesterCoordinator(ufo.x, ufo.y + ufo.height / 2));
-                    autoDeployCooldown = 5;
                     createFloatingText(ufo.x, ufo.y + 50, 'AUTO-DEPLOY!', '#0ff');
-                    return; // one deploy per tick
+                    deployed = true;
                 }
             }
             if (techFlags.attackCoordinator && battleDroneUnlocked) {
@@ -9480,11 +9662,11 @@ function updateCoordinators(dt) {
                 if (atkCount < maxCoords && ufo.energy >= CONFIG.DRONE_ENERGY_COST) {
                     ufo.energy -= CONFIG.DRONE_ENERGY_COST;
                     activeCoordinators.push(new AttackCoordinator(ufo.x, ufo.y + ufo.height / 2));
-                    autoDeployCooldown = 5;
                     createFloatingText(ufo.x, ufo.y + 50, 'AUTO-DEPLOY!', '#f44');
-                    return;
+                    deployed = true;
                 }
             }
+            if (deployed) autoDeployCooldown = 5;
         }
     }
 }
@@ -10047,6 +10229,62 @@ function updateMissiles(dt) {
     for (const missile of playerMissiles) {
         missile.update(dt);
     }
+
+    // Collision with ANY enemy — missiles explode and deal damage on contact
+    const allEnemies = [...tanks, ...heavyTanks];
+    for (const missile of playerMissiles) {
+        if (!missile.alive) continue;
+        // Skip during upward launch phases
+        if (missile.phase === 'LAUNCH' || missile.phase === 'DECEL' || missile.phase === 'APEX') continue;
+
+        for (const enemy of allEnemies) {
+            if (enemy.alive === false) continue;
+            const cx = enemy.x + (enemy.width || 0) / 2;
+            const cy = enemy.y + (enemy.height || 0) / 2;
+            const dist = Math.hypot(missile.x - cx, missile.y - cy);
+            const hitRadius = Math.max(30, (enemy.width || 0) / 3);
+            if (dist < hitRadius) {
+                // Use the missile's own hit logic for scoring/effects
+                missile.targetTank = enemy;
+                missile.hit();
+                break;
+            }
+        }
+    }
+
+    // Collision with friendly units (drones, coordinators) — missiles explode on contact
+    for (const missile of playerMissiles) {
+        if (!missile.alive) continue;
+        if (missile.phase === 'LAUNCH' || missile.phase === 'DECEL' || missile.phase === 'APEX') continue;
+
+        for (const drone of activeDrones) {
+            if (!drone.alive) continue;
+            const cx = drone.x + (drone.width || 0) / 2;
+            const cy = drone.y + (drone.height || 0) / 2;
+            const dist = Math.hypot(missile.x - cx, missile.y - cy);
+            if (dist < 30) {
+                missile.alive = false;
+                createExplosion(missile.x, missile.y, 'small');
+                screenShake = Math.max(screenShake, 0.15);
+                drone.takeDamage(missile.damage * 0.5);
+                break;
+            }
+        }
+        if (!missile.alive) continue;
+
+        for (const coord of activeCoordinators) {
+            if (!coord.alive || coord.state === 'DYING') continue;
+            const dist = Math.hypot(missile.x - coord.x, missile.y - coord.y);
+            if (dist < 35) {
+                missile.alive = false;
+                createExplosion(missile.x, missile.y, 'small');
+                screenShake = Math.max(screenShake, 0.15);
+                coord.takeDamage(missile.damage * 0.3);
+                break;
+            }
+        }
+    }
+
     playerMissiles = playerMissiles.filter(m => m.alive);
 
     // Update targeting reticles
@@ -11336,13 +11574,41 @@ function renderNGEValue(x, y, text, color = '#0ff', align = 'left') {
     ctx.fillText(text, x, y);
 }
 
-// Horizontal scanline overlay
-function renderNGEScanlines(x, y, w, h, alpha = 0.03) {
+// Horizontal scanline overlay with glitch
+function renderNGEScanlines(x, y, w, h, alpha = 0.015) {
     ctx.save();
-    ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
-    for (let sy = y; sy < y + h; sy += 3) {
-        ctx.fillRect(x, sy, w, 1);
+    ctx.beginPath();
+    ctx.rect(x, y, w, h);
+    ctx.clip();
+
+    const offset = hudAnimState.scanlineOffset;
+    const now = Date.now();
+
+    // Scrolling scanlines
+    for (let sy = -4; sy < h + 4; sy += 3) {
+        const lineY = y + ((sy + offset) % (h + 4));
+        if (lineY < y || lineY >= y + h) continue;
+        ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+        ctx.fillRect(x, lineY, w, 1);
     }
+
+    // Glitch bands — fast-moving bright bars that appear intermittently
+    const glitchSeed = Math.floor(now / 60);
+    const glitchCount = ((glitchSeed * 7) % 5 === 0) ? 1 + ((glitchSeed * 3) % 3) : 0;
+    for (let g = 0; g < glitchCount; g++) {
+        const gy = y + (((glitchSeed * 13 + g * 47) % 97) / 97) * h;
+        const gh = 1 + ((glitchSeed + g * 11) % 3);
+        const gAlpha = 0.04 + ((glitchSeed + g * 7) % 10) * 0.006;
+        ctx.fillStyle = `rgba(255, 255, 255, ${gAlpha})`;
+        ctx.fillRect(x, gy, w, gh);
+        // Occasional horizontal tear
+        if ((glitchSeed + g) % 3 === 0) {
+            const tearShift = (((glitchSeed * 3 + g) % 7) - 3) * 2;
+            ctx.fillStyle = `rgba(255, 255, 255, ${gAlpha * 0.7})`;
+            ctx.fillRect(x + tearShift, gy + gh, w, 1);
+        }
+    }
+
     ctx.restore();
 }
 
@@ -11704,7 +11970,7 @@ function renderStatusZone(zone) {
     renderNGEPanel(x, y, w, 120, { color: '#0ff', cutCorners: ['tl'], label: 'SYS.STATUS' });
 
     // Subtle scanlines
-    renderNGEScanlines(x, y, w, 120, 0.02);
+    renderNGEScanlines(x, y, w, 120, 0.012);
 
     // Score
     const scoreText = score.toLocaleString();
@@ -12066,17 +12332,40 @@ function renderSystemsZone(zone) {
 function renderWeaponsZone(zone) {
     const { x, y, w } = zone;
     const pad = 8;
-    let curY = y;
+    const gridStartX = x + pad + 70;
+    const availableGridW = (x + w - pad) - gridStartX;
 
-    // Calculate panel height based on what's unlocked
-    let panelH = 16; // header
-    if (playerInventory.maxBombs > 0) panelH += 52;
-    if (missileUnlocked) panelH += 56;
+    // Bomb dimensions
+    const bombSize = 16;
+    const bombSpacing = 6;
+
+    // Missile dimensions
+    const missileW = 6;
+    const missileH = 14;
+    const missileSpacing = 5;
+    const missileRowH = missileH + 4;
+
+    // Dynamic columns based on available width
+    const bombCols = playerInventory.maxBombs > 0
+        ? Math.max(1, Math.floor(availableGridW / (bombSize + bombSpacing))) : 0;
+    const missileCols = (missileUnlocked && missileMaxAmmo > 0)
+        ? Math.max(1, Math.floor(availableGridW / (missileW + missileSpacing))) : 0;
+
+    // Calculate panel height dynamically from actual content
+    let panelH = 22; // header
+    if (playerInventory.maxBombs > 0) {
+        const bombRows = Math.ceil(playerInventory.maxBombs / bombCols);
+        panelH += 4 + bombRows * (bombSize + bombSpacing) + 6;
+    }
+    if (missileUnlocked && missileMaxAmmo > 0) {
+        const missileRows = Math.ceil(missileMaxAmmo / missileCols);
+        panelH += 4 + missileRows * missileRowH + 8;
+    }
     panelH += 8; // bottom pad
 
     renderNGEPanel(x, y, w, panelH, { color: '#f44', cutCorners: ['bl'], label: 'ORD.SYS' });
 
-    curY += 22;
+    let curY = y + 22;
 
     // Bombs section
     if (playerInventory.maxBombs > 0) {
@@ -12088,17 +12377,11 @@ function renderWeaponsZone(zone) {
         renderNGEKeyBadge(x + pad + 44, curY - 10, 'X');
         curY += 4;
 
-        // Compact 3-column grid
-        const bombSize = 16;
-        const cols = 3;
-        const spacing = 6;
-        const gridStartX = x + pad + 70;
-
         for (let i = 0; i < maxBombs; i++) {
-            const col = i % cols;
-            const row = Math.floor(i / cols);
-            const bx = gridStartX + col * (bombSize + spacing) + bombSize / 2;
-            const by = curY + row * (bombSize + spacing) + bombSize / 2;
+            const col = i % bombCols;
+            const row = Math.floor(i / bombCols);
+            const bx = gridStartX + col * (bombSize + bombSpacing) + bombSize / 2;
+            const by = curY + row * (bombSize + bombSpacing) + bombSize / 2;
             const filled = i < bombCount;
 
             // Bomb body
@@ -12133,8 +12416,8 @@ function renderWeaponsZone(zone) {
             }
         }
 
-        const bombRows = Math.ceil(maxBombs / cols);
-        curY += bombRows * (bombSize + spacing) + 6;
+        const bombRows = Math.ceil(maxBombs / bombCols);
+        curY += bombRows * (bombSize + bombSpacing) + 6;
     }
 
     // Missiles section
@@ -12154,18 +12437,11 @@ function renderWeaponsZone(zone) {
 
         curY += 4;
 
-        // Missile icons as RECTANGLES WITH POINTED TIPS
-        const missileW = 6;
-        const missileH = 14;
-        const cols = 4;
-        const spacing = 5;
-        const gridStartX = x + pad + 70;
-
         for (let i = 0; i < missileMaxAmmo; i++) {
-            const col = i % cols;
-            const row = Math.floor(i / cols);
-            const mx = gridStartX + col * (missileW + spacing);
-            const my = curY + row * (missileH + 4);
+            const col = i % missileCols;
+            const row = Math.floor(i / missileCols);
+            const mx = gridStartX + col * (missileW + missileSpacing);
+            const my = curY + row * missileRowH;
             const filled = i < missileAmmo;
 
             ctx.save();
@@ -12209,10 +12485,11 @@ function renderWeaponsZone(zone) {
 
         // Recharge bar
         if (missileAmmo < missileMaxAmmo && missileRechargeTimer > 0) {
-            const missileRows = Math.ceil(missileMaxAmmo / cols);
-            const rechargeY = curY + missileRows * (missileH + 4) + 2;
+            const missileRows = Math.ceil(missileMaxAmmo / missileCols);
+            const rechargeY = curY + missileRows * missileRowH + 2;
             const progress = 1 - (missileRechargeTimer / CONFIG.MISSILE_RECHARGE_TIME);
-            renderNGEBar(gridStartX, rechargeY, cols * (missileW + spacing), 3, progress, '#f40', { segments: 6 });
+            const barW = Math.min(missileCols * (missileW + missileSpacing), availableGridW);
+            renderNGEBar(gridStartX, rechargeY, barW, 3, progress, '#f40', { segments: 6 });
         }
     }
 }
@@ -12408,7 +12685,7 @@ function renderCommanderZone(zone) {
     ctx.fillText('INCOMING TRANSMISSION', x + 16, y + 12);
 
     // Scanline effect over entire panel
-    renderNGEScanlines(x, y, w, h, 0.04);
+    renderNGEScanlines(x, y, w, h, 0.025);
 
     // Commander portrait (left side)
     const portraitSize = h - 24;
@@ -12538,7 +12815,7 @@ function triggerMissionCommander(category = null) {
 // Update HUD animations each frame
 function updateHUDAnimations(dt) {
     hudAnimState.energyFlowPhase += dt;
-    hudAnimState.scanlineOffset = (hudAnimState.scanlineOffset + dt * 30) % 100;
+    hudAnimState.scanlineOffset = (hudAnimState.scanlineOffset + dt * 120) % 300;
 
     // Energy pulse animation (~3.5 second cycle)
     hudAnimState.energyPulseTimer += dt;
@@ -15815,7 +16092,7 @@ function updateWaveSummary(dt) {
         waveSummaryState.postCompleteTimer += dt;
         // Countdown tick sounds
         const remaining = Math.max(0, Math.ceil(WAVE_SUMMARY_TIMING.autoContinue - waveSummaryState.postCompleteTimer));
-        if (remaining !== waveSummaryState.lastCountdownSecond && remaining > 0 && remaining < WAVE_SUMMARY_TIMING.autoContinue) {
+        if (remaining !== waveSummaryState.lastCountdownSecond && remaining >= 0 && remaining < WAVE_SUMMARY_TIMING.autoContinue) {
             waveSummaryState.lastCountdownSecond = remaining;
             SFX.countdownTick && SFX.countdownTick(remaining);
         }
@@ -16484,6 +16761,9 @@ function updateWaveTransition(dt) {
         waveTimer = CONFIG.WAVE_DURATION;
         lastTimerWarningSecond = -1; // Reset timer warning
         gameState = 'PLAYING';
+
+        // Reset auto-deploy cooldown so coordinators deploy immediately
+        autoDeployCooldown = 0;
 
         // Spawn tanks for new wave
         spawnTanks();
