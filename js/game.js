@@ -5222,35 +5222,121 @@ class UFO {
     }
 
     renderEnergyBar(y) {
-        const barWidth = 120;
-        const barHeight = 12;
+        const barWidth = 130;
+        const barHeight = 14;
         const x = this.x - barWidth / 2;
+        const energyPercent = this.energy / this.maxEnergy;
+
+        // NRG micro-label
+        ctx.fillStyle = '#556';
+        ctx.font = 'bold 7px monospace';
+        ctx.textAlign = 'right';
+        ctx.fillText('NRG', x - 3, y + barHeight - 2);
+
+        // Segmented energy bar (Metroid style)
+        const segments = 12;
+        const gap = 1.5;
+        const segWidth = (barWidth - gap * (segments - 1)) / segments;
+        const filledSegments = Math.ceil(energyPercent * segments);
 
         // Background
-        ctx.fillStyle = '#333';
+        ctx.fillStyle = '#0a0c14';
         ctx.fillRect(x, y, barWidth, barHeight);
 
-        // Energy level
-        const energyPercent = this.energy / this.maxEnergy;
-        let color;
-        if (energyPercent > 0.5) {
-            color = '#0f0';
-        } else if (energyPercent > 0.25) {
-            color = '#ff0';
-        } else {
-            color = '#f00';
-            // Pulse effect when low
-            const pulse = Math.sin(Date.now() / 100) * 0.3 + 0.7;
-            ctx.globalAlpha = pulse;
-        }
-        ctx.fillStyle = color;
-        ctx.fillRect(x, y, barWidth * energyPercent, barHeight);
-        ctx.globalAlpha = 1;
+        for (let i = 0; i < segments; i++) {
+            const segX = x + i * (segWidth + gap);
+            const isFilled = i < filledSegments;
 
-        // Border
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 1;
+            if (isFilled) {
+                // Color based on position in bar
+                const segPercent = i / segments;
+                let color;
+                if (segPercent > 0.5) color = '#0f0';
+                else if (segPercent > 0.25) color = '#bf0';
+                else color = '#f60';
+
+                // Pulse last filled segments when low
+                if (energyPercent < 0.25 && i >= filledSegments - 2) {
+                    const pulse = Math.sin(Date.now() / 100) * 0.4 + 0.6;
+                    ctx.globalAlpha = pulse;
+                    color = '#f00';
+                }
+
+                ctx.fillStyle = color;
+                ctx.fillRect(segX, y + 1, segWidth, barHeight - 2);
+                ctx.globalAlpha = 1;
+
+                // Segment highlight (top edge)
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+                ctx.fillRect(segX, y + 1, segWidth, 1);
+            } else {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+                ctx.fillRect(segX, y + 1, segWidth, barHeight - 2);
+            }
+        }
+
+        // Border with NGE styling
+        ctx.strokeStyle = 'rgba(0, 255, 255, 0.4)';
+        ctx.lineWidth = 0.8;
         ctx.strokeRect(x, y, barWidth, barHeight);
+
+        // Angular corner accents
+        const accentLen = 4;
+        ctx.strokeStyle = 'rgba(0, 255, 255, 0.6)';
+        ctx.lineWidth = 1.5;
+        // Top-left
+        ctx.beginPath();
+        ctx.moveTo(x, y + accentLen);
+        ctx.lineTo(x, y);
+        ctx.lineTo(x + accentLen, y);
+        ctx.stroke();
+        // Bottom-right
+        ctx.beginPath();
+        ctx.moveTo(x + barWidth, y + barHeight - accentLen);
+        ctx.lineTo(x + barWidth, y + barHeight);
+        ctx.lineTo(x + barWidth - accentLen, y + barHeight);
+        ctx.stroke();
+
+        // Energy cubes above bar (Metroid energy tanks)
+        const cells = playerInventory.energyCells;
+        if (cells > 0) {
+            const cubeSize = 8;
+            const cubeSpacing = 3;
+            const totalCubeWidth = cells * (cubeSize + cubeSpacing) - cubeSpacing;
+            const cubeStartX = this.x - totalCubeWidth / 2;
+            const cubeY = y - cubeSize - 3;
+
+            for (let i = 0; i < cells; i++) {
+                const cx = cubeStartX + i * (cubeSize + cubeSpacing);
+                const pulse = Math.sin(Date.now() / 200 + i * 0.8) * 0.3 + 0.7;
+
+                // Glow
+                ctx.fillStyle = `rgba(255, 85, 85, ${pulse * 0.2})`;
+                ctx.fillRect(cx - 1, cubeY - 1, cubeSize + 2, cubeSize + 2);
+
+                // Cube body
+                ctx.fillStyle = `rgba(255, 85, 85, ${pulse})`;
+                ctx.fillRect(cx, cubeY, cubeSize, cubeSize);
+
+                // Inner swirl
+                const angle = Date.now() / 250 + i;
+                ctx.fillStyle = `rgba(255, 200, 200, ${pulse * 0.5})`;
+                ctx.beginPath();
+                ctx.arc(cx + cubeSize/2 + Math.cos(angle) * 1.5, cubeY + cubeSize/2 + Math.sin(angle) * 1.5, 2, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Border
+                ctx.strokeStyle = `rgba(255, 120, 120, ${pulse * 0.6})`;
+                ctx.lineWidth = 0.5;
+                ctx.strokeRect(cx, cubeY, cubeSize, cubeSize);
+            }
+        }
+
+        // Numerical value
+        ctx.fillStyle = '#aab';
+        ctx.font = 'bold 8px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(`${Math.ceil(this.energy)}`, x + barWidth + 3, y + barHeight - 2);
     }
 }
 
@@ -7911,6 +7997,7 @@ class HarvesterDrone {
                 i % 2 === 0 ? 'rgb(0, 255, 255)' : 'rgb(255, 200, 0)', 3, 0.4));
         }
         createExplosion(this.x, this.y + this.height / 2, 'small');
+        triggerMissionCommander('droneDestroyed');
     }
 
     render() {
@@ -8204,6 +8291,7 @@ class BattleDrone {
             particles.push(new Particle(this.x, this.y, Math.cos(angle) * speed, Math.sin(angle) * speed,
                 i % 2 === 0 ? 'rgb(255, 100, 50)' : 'rgb(255, 200, 0)', 4, 0.5));
         }
+        triggerMissionCommander('droneDestroyed');
     }
 
     render() {
@@ -10837,6 +10925,31 @@ function startGame() {
     commanderState.entranceTimer = 0;
     commanderState.visible = false;
 
+    // Reset NGE HUD state
+    hudAnimState = {
+        weaponsPanelVisible: false,
+        weaponsPanelSlide: 0,
+        fleetPanelVisible: false,
+        fleetPanelSlide: 0,
+        commanderPanelSlide: 0,
+        energyFlowPhase: 0,
+        scanlineOffset: 0
+    };
+    missionCommanderState = {
+        visible: false,
+        dialogue: '',
+        typewriterIndex: 0,
+        typewriterTimer: 0,
+        displayTimer: 0,
+        displayDuration: 6,
+        slideProgress: 0,
+        emotion: 'neutral',
+        cooldownTimer: 15,
+        minCooldown: 20,
+        maxCooldown: 40,
+        triggeredThisWave: false
+    };
+
     techTree = {
         researched: new Set(),
         queue: [],
@@ -10893,6 +11006,1454 @@ function startGame() {
     }
 
     initTutorial();
+}
+
+// ============================================
+// NGE HUD RENDERING UTILITIES
+// ============================================
+
+// Evangelion-inspired angular panel with cut corners
+function renderNGEPanel(x, y, w, h, opts = {}) {
+    const {
+        color = '#0ff',
+        alpha = 0.65,
+        cutCorners = [],
+        label = '',
+        labelColor = null,
+        filled = true,
+        borderOnly = false
+    } = opts;
+
+    const cut = 10; // 45-degree corner cut size
+
+    ctx.save();
+
+    // Build angular path with cut corners
+    ctx.beginPath();
+    if (cutCorners.includes('tl')) {
+        ctx.moveTo(x + cut, y);
+    } else {
+        ctx.moveTo(x, y);
+    }
+
+    if (cutCorners.includes('tr')) {
+        ctx.lineTo(x + w - cut, y);
+        ctx.lineTo(x + w, y + cut);
+    } else {
+        ctx.lineTo(x + w, y);
+    }
+
+    if (cutCorners.includes('br')) {
+        ctx.lineTo(x + w, y + h - cut);
+        ctx.lineTo(x + w - cut, y + h);
+    } else {
+        ctx.lineTo(x + w, y + h);
+    }
+
+    if (cutCorners.includes('bl')) {
+        ctx.lineTo(x + cut, y + h);
+        ctx.lineTo(x, y + h - cut);
+    } else {
+        ctx.lineTo(x, y + h);
+    }
+
+    if (cutCorners.includes('tl')) {
+        ctx.lineTo(x, y + cut);
+        ctx.lineTo(x + cut, y);
+    } else {
+        ctx.lineTo(x, y);
+    }
+
+    ctx.closePath();
+
+    // Fill
+    if (filled && !borderOnly) {
+        ctx.fillStyle = `rgba(5, 8, 18, ${alpha})`;
+        ctx.fill();
+
+        // Inner hex-grid texture (subtle)
+        ctx.save();
+        ctx.clip();
+        ctx.globalAlpha = 0.04;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 0.5;
+        const hexSize = 12;
+        for (let hx = x; hx < x + w + hexSize; hx += hexSize * 1.5) {
+            for (let hy = y; hy < y + h + hexSize; hy += hexSize * 1.7) {
+                const offsetX = (Math.floor((hy - y) / (hexSize * 1.7)) % 2) * hexSize * 0.75;
+                renderHexagon(hx + offsetX, hy, hexSize * 0.5);
+            }
+        }
+        ctx.globalAlpha = 1;
+        ctx.restore();
+    }
+
+    // Border
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    // Rebuild path for stroke
+    ctx.beginPath();
+    if (cutCorners.includes('tl')) {
+        ctx.moveTo(x + cut, y);
+    } else {
+        ctx.moveTo(x, y);
+    }
+    if (cutCorners.includes('tr')) {
+        ctx.lineTo(x + w - cut, y);
+        ctx.lineTo(x + w, y + cut);
+    } else {
+        ctx.lineTo(x + w, y);
+    }
+    if (cutCorners.includes('br')) {
+        ctx.lineTo(x + w, y + h - cut);
+        ctx.lineTo(x + w - cut, y + h);
+    } else {
+        ctx.lineTo(x + w, y + h);
+    }
+    if (cutCorners.includes('bl')) {
+        ctx.lineTo(x + cut, y + h);
+        ctx.lineTo(x, y + h - cut);
+    } else {
+        ctx.lineTo(x, y + h);
+    }
+    if (cutCorners.includes('tl')) {
+        ctx.lineTo(x, y + cut);
+        ctx.lineTo(x + cut, y);
+    } else {
+        ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.stroke();
+
+    // Inner glow line (1px inset, dimmer)
+    ctx.strokeStyle = `rgba(${hexToRgb(color)}, 0.15)`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    const inset = 2;
+    if (cutCorners.includes('tl')) {
+        ctx.moveTo(x + cut + inset, y + inset);
+    } else {
+        ctx.moveTo(x + inset, y + inset);
+    }
+    if (cutCorners.includes('tr')) {
+        ctx.lineTo(x + w - cut - inset, y + inset);
+        ctx.lineTo(x + w - inset, y + cut + inset);
+    } else {
+        ctx.lineTo(x + w - inset, y + inset);
+    }
+    if (cutCorners.includes('br')) {
+        ctx.lineTo(x + w - inset, y + h - cut - inset);
+        ctx.lineTo(x + w - cut - inset, y + h - inset);
+    } else {
+        ctx.lineTo(x + w - inset, y + h - inset);
+    }
+    if (cutCorners.includes('bl')) {
+        ctx.lineTo(x + cut + inset, y + h - inset);
+        ctx.lineTo(x + inset, y + h - cut - inset);
+    } else {
+        ctx.lineTo(x + inset, y + h - inset);
+    }
+    if (cutCorners.includes('tl')) {
+        ctx.lineTo(x + inset, y + cut + inset);
+        ctx.lineTo(x + cut + inset, y + inset);
+    } else {
+        ctx.lineTo(x + inset, y + inset);
+    }
+    ctx.closePath();
+    ctx.stroke();
+
+    // Label in top-left
+    if (label) {
+        ctx.font = 'bold 10px monospace';
+        ctx.fillStyle = labelColor || color;
+        ctx.textAlign = 'left';
+        const labelX = x + (cutCorners.includes('tl') ? cut + 4 : 6);
+        ctx.fillText(label, labelX, y + 12);
+    }
+
+    ctx.restore();
+}
+
+// Helper: draw a small hexagon
+function renderHexagon(cx, cy, r) {
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+        const angle = (Math.PI / 3) * i - Math.PI / 6;
+        const px = cx + r * Math.cos(angle);
+        const py = cy + r * Math.sin(angle);
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.stroke();
+}
+
+// Helper: convert hex color to "r, g, b" string
+function hexToRgb(hex) {
+    if (hex.startsWith('rgba') || hex.startsWith('rgb')) return '0, 255, 255';
+    hex = hex.replace('#', '');
+    if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+    return `${r}, ${g}, ${b}`;
+}
+
+// NGE-style segmented progress bar
+function renderNGEBar(x, y, w, h, percent, color, opts = {}) {
+    const {
+        segments = 10,
+        glow = false,
+        pulse = false,
+        showValue = false,
+        valueText = '',
+        bgColor = '#0a0c14'
+    } = opts;
+
+    percent = Math.max(0, Math.min(1, percent));
+    const gap = 2;
+    const segWidth = (w - gap * (segments - 1)) / segments;
+    const filledSegments = Math.ceil(percent * segments);
+    const partialFill = (percent * segments) % 1;
+
+    // Background
+    ctx.fillStyle = bgColor;
+    ctx.fillRect(x, y, w, h);
+
+    // Segments
+    for (let i = 0; i < segments; i++) {
+        const segX = x + i * (segWidth + gap);
+        const isFilled = i < filledSegments;
+        const isPartial = i === filledSegments - 1 && partialFill > 0 && partialFill < 1;
+
+        if (isFilled) {
+            // Color gradient across bar
+            const segPercent = i / segments;
+            let segColor = color;
+            if (typeof color === 'string') {
+                segColor = color;
+            }
+
+            if (pulse && i >= filledSegments - 2) {
+                const p = Math.sin(Date.now() / 150) * 0.3 + 0.7;
+                ctx.globalAlpha = p;
+            }
+
+            if (glow) {
+                ctx.shadowColor = segColor;
+                ctx.shadowBlur = 4;
+            }
+
+            ctx.fillStyle = segColor;
+            if (isPartial) {
+                ctx.fillRect(segX, y, segWidth * partialFill, h);
+            } else {
+                ctx.fillRect(segX, y, segWidth, h);
+            }
+
+            ctx.shadowBlur = 0;
+            ctx.globalAlpha = 1;
+
+            // Segment highlight (top edge shine)
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+            ctx.fillRect(segX, y, segWidth, 1);
+        } else {
+            // Empty segment
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+            ctx.fillRect(segX, y, segWidth, h);
+        }
+    }
+
+    // Border
+    ctx.strokeStyle = `rgba(${hexToRgb(typeof color === 'string' ? color : '#0ff')}, 0.4)`;
+    ctx.lineWidth = 0.5;
+    ctx.strokeRect(x, y, w, h);
+
+    // Value text
+    if (showValue && valueText) {
+        ctx.font = 'bold 9px monospace';
+        ctx.fillStyle = '#fff';
+        ctx.textAlign = 'right';
+        ctx.fillText(valueText, x + w - 2, y + h - 2);
+    }
+}
+
+// NGE status indicator dot
+function renderNGEStatusDot(x, y, status, size = 4) {
+    const colors = {
+        nominal: '#0f0',
+        caution: '#fc0',
+        critical: '#f33',
+        offline: '#333'
+    };
+    const color = colors[status] || colors.nominal;
+
+    let alpha = 1;
+    if (status === 'caution') {
+        alpha = Math.sin(Date.now() / 400) * 0.3 + 0.7;
+    } else if (status === 'critical') {
+        alpha = Math.sin(Date.now() / 120) * 0.5 + 0.5;
+    }
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    // Glow
+    ctx.fillStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.arc(x, y, size, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Core
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#fff';
+    ctx.globalAlpha = alpha * 0.4;
+    ctx.beginPath();
+    ctx.arc(x, y, size * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+}
+
+// NGE-style label with dot separators
+function renderNGELabel(x, y, text, color = '#888') {
+    ctx.font = 'bold 10px monospace';
+    ctx.fillStyle = color;
+    ctx.textAlign = 'left';
+    ctx.fillText(text, x, y);
+}
+
+// NGE-style value display
+function renderNGEValue(x, y, text, color = '#0ff', align = 'left') {
+    ctx.font = 'bold 14px monospace';
+    ctx.fillStyle = color;
+    ctx.textAlign = align;
+    ctx.fillText(text, x, y);
+}
+
+// Horizontal scanline overlay
+function renderNGEScanlines(x, y, w, h, alpha = 0.03) {
+    ctx.save();
+    ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+    for (let sy = y; sy < y + h; sy += 3) {
+        ctx.fillRect(x, sy, w, 1);
+    }
+    ctx.restore();
+}
+
+// Scrolling hex data stream background
+function renderNGEDataStream(x, y, w, h, color = '#0ff') {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y, w, h);
+    ctx.clip();
+
+    ctx.font = '8px monospace';
+    ctx.fillStyle = `rgba(${hexToRgb(color)}, 0.08)`;
+    ctx.textAlign = 'left';
+
+    const offset = (Date.now() / 50) % 20;
+    const chars = '0123456789ABCDEF';
+    for (let dy = -20; dy < h + 20; dy += 10) {
+        let line = '';
+        for (let dx = 0; dx < w; dx += 7) {
+            line += chars[Math.floor(Math.random() * 16 + (dy * 3 + dx + Date.now() / 1000)) % 16];
+        }
+        ctx.fillText(line, x, y + dy + offset);
+    }
+    ctx.restore();
+}
+
+// Animated chevron pattern (>>> scrolling)
+function renderNGEChevrons(x, y, w, color = '#0ff', speed = 1) {
+    ctx.save();
+    ctx.font = 'bold 10px monospace';
+    ctx.fillStyle = color;
+    ctx.textAlign = 'left';
+    const offset = (Date.now() / (300 / speed)) % 20;
+    ctx.beginPath();
+    ctx.rect(x, y - 6, w, 12);
+    ctx.clip();
+    for (let cx = x - 20 + offset; cx < x + w; cx += 20) {
+        ctx.fillText('\u00BB', cx, y + 4); // » character
+    }
+    ctx.restore();
+}
+
+// Blinking status light
+function renderNGEBlinkLight(x, y, color = '#0f0', rate = 500) {
+    const on = Math.floor(Date.now() / rate) % 2 === 0;
+    if (on) {
+        ctx.fillStyle = color;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 4;
+        ctx.fillRect(x, y, 4, 4);
+        ctx.shadowBlur = 0;
+    } else {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+        ctx.fillRect(x, y, 4, 4);
+    }
+}
+
+// Energy flow animated line between two points
+function renderEnergyFlowLine(fromX, fromY, toX, toY, color = '#0ff', active = false) {
+    ctx.save();
+    const alpha = active ? 0.35 : 0.12;
+    ctx.strokeStyle = `rgba(${hexToRgb(color)}, ${alpha})`;
+    ctx.lineWidth = active ? 1.5 : 0.8;
+    ctx.setLineDash([4, 6]);
+    ctx.lineDashOffset = -(Date.now() / 40) % 20;
+    ctx.beginPath();
+    ctx.moveTo(fromX, fromY);
+    ctx.lineTo(toX, toY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+}
+
+// Key badge renderer (used for weapon hotkeys)
+function renderNGEKeyBadge(x, y, text, width = 20, height = 18) {
+    // Key background (raised look)
+    ctx.fillStyle = '#333';
+    ctx.beginPath();
+    ctx.roundRect(x, y, width, height, 3);
+    ctx.fill();
+
+    // Key top surface
+    ctx.fillStyle = '#555';
+    ctx.beginPath();
+    ctx.roundRect(x + 1, y + 1, width - 2, height - 3, 2);
+    ctx.fill();
+
+    // Key letter
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(text, x + width / 2, y + height / 2 + 3);
+}
+
+// ============================================
+// HUD STATE
+// ============================================
+
+let hudAnimState = {
+    weaponsPanelVisible: false,
+    weaponsPanelSlide: 0,
+    fleetPanelVisible: false,
+    fleetPanelSlide: 0,
+    commanderPanelSlide: 0,
+    energyFlowPhase: 0,
+    scanlineOffset: 0
+};
+
+let missionCommanderState = {
+    visible: false,
+    dialogue: '',
+    typewriterIndex: 0,
+    typewriterTimer: 0,
+    displayTimer: 0,
+    displayDuration: 6,
+    slideProgress: 0,
+    emotion: 'neutral',
+    cooldownTimer: 15,
+    minCooldown: 20,
+    maxCooldown: 40,
+    triggeredThisWave: false
+};
+
+const MISSION_COMMANDER_DIALOGUES = {
+    quotaBehind: [
+        "You're falling behind on quota. The mothership is watching.",
+        "At this rate, we'll be reassigned to asteroid mining.",
+        "QUOTA DEFICIT DETECTED. Pick up the pace.",
+        "Command is not pleased with your collection rate.",
+    ],
+    quotaOnTrack: [
+        "Adequate progress. Don't get complacent.",
+        "Bio-matter collection within parameters.",
+        "Harvest rate... acceptable. For now.",
+    ],
+    droneDestroyed: [
+        "We lost a drone! Those aren't cheap to fabricate.",
+        "Drone down. Requisition a replacement when able.",
+        "Another drone destroyed. Try to keep them alive.",
+    ],
+    coordinatorLowEnergy: [
+        "Coordinator energy critical! Get over there!",
+        "Your coordinator is dying. CHARGE IT. NOW.",
+        "Coordinator power failure imminent. Move!",
+    ],
+    killStreak: [
+        "Impressive tank elimination rate. Continue.",
+        "The humans' defenses crumble before us.",
+        "Excellent combat performance. Noted in your file.",
+    ],
+    lowShield: [
+        "Shield integrity failing! Evade!",
+        "WARNING: Hull breach imminent! Take cover!",
+        "You're taking too much damage. FLY BETTER.",
+    ],
+    waveStart: [
+        "New wave. Stay focused.",
+        "Sensors detecting increased surface resistance.",
+        "Fresh targets deploying. Harvest everything.",
+    ],
+    energyLow: [
+        "Energy reserves critical. Conserve beam.",
+        "Power levels dropping. Manage your output.",
+        "You're burning through energy too fast.",
+    ],
+    idle: [
+        "Status report: I'm still here. Watching.",
+        "Don't forget, I see everything you do.",
+        "Efficiency metrics are being recorded.",
+        "The mothership expects results, not excuses.",
+        "Just checking in. Don't mind me.",
+        "I've filed seventeen reports on you today.",
+    ]
+};
+
+// ============================================
+// HUD LAYOUT ENGINE
+// ============================================
+
+function getHUDLayout() {
+    const margin = 10;
+    const leftW = Math.min(210, canvas.width * 0.18);
+    const rightW = Math.min(195, canvas.width * 0.16);
+    const centerW = 280;
+    const centerX = (canvas.width - centerW) / 2;
+
+    return {
+        statusZone: { x: margin, y: margin, w: leftW, h: 120 },
+        missionZone: { x: centerX, y: 4, w: centerW, h: 110 },
+        systemsZone: { x: canvas.width - rightW - margin, y: margin, w: rightW, h: 90 },
+        weaponsZone: { x: margin, y: 140, w: leftW, h: 200 },
+        fleetZone: { x: canvas.width - rightW - margin, y: 108, w: rightW, h: 300 },
+        commanderZone: { x: margin, y: canvas.height - 110, w: Math.min(260, canvas.width * 0.22), h: 100 }
+    };
+}
+
+function renderHUDFrame() {
+    const layout = getHUDLayout();
+
+    // Always render these zones
+    renderStatusZone(layout.statusZone);
+    renderMissionZone(layout.missionZone);
+    renderSystemsZone(layout.systemsZone);
+
+    // Weapons zone: slide in when weapons are unlocked
+    const hasWeapons = playerInventory.maxBombs > 0 || missileUnlocked;
+    if (hasWeapons) {
+        hudAnimState.weaponsPanelVisible = true;
+    }
+    if (hudAnimState.weaponsPanelVisible) {
+        if (hudAnimState.weaponsPanelSlide < 1) {
+            hudAnimState.weaponsPanelSlide = Math.min(1, hudAnimState.weaponsPanelSlide + 0.04);
+        }
+        ctx.save();
+        const slideOffset = (1 - easeOutCubic(hudAnimState.weaponsPanelSlide)) * -layout.weaponsZone.w;
+        ctx.translate(slideOffset, 0);
+        renderWeaponsZone(layout.weaponsZone);
+        ctx.restore();
+    }
+
+    // Fleet zone: slide in when drones/coordinators unlocked
+    const hasFleet = harvesterUnlocked || battleDroneUnlocked || activeCoordinators.length > 0;
+    if (hasFleet) {
+        hudAnimState.fleetPanelVisible = true;
+    }
+    if (hudAnimState.fleetPanelVisible) {
+        if (hudAnimState.fleetPanelSlide < 1) {
+            hudAnimState.fleetPanelSlide = Math.min(1, hudAnimState.fleetPanelSlide + 0.04);
+        }
+        ctx.save();
+        const slideOffset = (1 - easeOutCubic(hudAnimState.fleetPanelSlide)) * layout.fleetZone.w;
+        ctx.translate(slideOffset, 0);
+        renderFleetZone(layout.fleetZone);
+        ctx.restore();
+    }
+
+    // Commander zone: slide in when active
+    if (missionCommanderState.visible && wave >= 2) {
+        if (hudAnimState.commanderPanelSlide < 1) {
+            hudAnimState.commanderPanelSlide = Math.min(1, hudAnimState.commanderPanelSlide + 0.05);
+        }
+        ctx.save();
+        const slideOffset = (1 - easeOutCubic(hudAnimState.commanderPanelSlide)) * -layout.commanderZone.w;
+        ctx.translate(slideOffset, 0);
+        renderCommanderZone(layout.commanderZone);
+        ctx.restore();
+    } else {
+        if (hudAnimState.commanderPanelSlide > 0) {
+            hudAnimState.commanderPanelSlide = Math.max(0, hudAnimState.commanderPanelSlide - 0.05);
+            if (hudAnimState.commanderPanelSlide > 0.01) {
+                ctx.save();
+                const slideOffset = (1 - easeOutCubic(hudAnimState.commanderPanelSlide)) * -layout.commanderZone.w;
+                ctx.translate(slideOffset, 0);
+                renderCommanderZone(layout.commanderZone);
+                ctx.restore();
+            }
+        }
+    }
+
+    // Energy flow lines (when beam conduit researched)
+    if (techFlags.beamConduit && ufo) {
+        renderEnergyFlows(layout);
+    }
+
+    // Coordinator distress arrows (kept separate - they're world-space indicators)
+    renderCoordDistressArrows();
+}
+
+function easeOutCubic(t) {
+    return 1 - Math.pow(1 - t, 3);
+}
+
+// ============================================
+// ZONE RENDERERS
+// ============================================
+
+function renderStatusZone(zone) {
+    const { x, y, w } = zone;
+    const pad = 8;
+
+    // Panel
+    renderNGEPanel(x, y, w, 120, { color: '#0ff', cutCorners: ['tl'], label: 'SYS.STATUS' });
+
+    // Subtle scanlines
+    renderNGEScanlines(x, y, w, 120, 0.02);
+
+    // Score
+    const scoreText = score.toLocaleString();
+    ctx.fillStyle = '#0ff';
+    ctx.font = 'bold 26px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(scoreText, x + pad + 4, y + 32);
+
+    // High score
+    ctx.fillStyle = '#445';
+    ctx.font = '11px monospace';
+    ctx.fillText(`HI ${highScore.toLocaleString()}`, x + pad + 4, y + 46);
+
+    // Wave + Timer line
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 16px monospace';
+    ctx.fillText(`WAVE ${wave}`, x + pad + 4, y + 66);
+
+    // Timer
+    const displayTime = Math.max(0, waveTimer);
+    const minutes = Math.floor(displayTime / 60);
+    const seconds = Math.floor(displayTime % 60);
+    const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+    if (waveTimer <= 10 && gameState === 'PLAYING') {
+        const pulse = Math.sin(Date.now() / 100) * 0.5 + 0.5;
+        ctx.fillStyle = `rgb(255, ${Math.floor(pulse * 80)}, ${Math.floor(pulse * 80)})`;
+        ctx.font = 'bold 16px monospace';
+    } else {
+        ctx.fillStyle = '#8899aa';
+        ctx.font = '14px monospace';
+    }
+    ctx.fillText(timeStr, x + pad + 100, y + 66);
+
+    // Combo
+    if (combo > 0) {
+        const multiplier = CONFIG.COMBO_MULTIPLIERS[Math.min(combo, CONFIG.COMBO_MULTIPLIERS.length - 1)];
+        ctx.shadowColor = '#ff0';
+        ctx.shadowBlur = 6;
+        ctx.fillStyle = '#ff0';
+        ctx.font = 'bold 14px monospace';
+        ctx.fillText(`${combo}x`, x + pad + 4, y + 84);
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#aa8800';
+        ctx.font = '11px monospace';
+        ctx.fillText(`(${multiplier}x)`, x + pad + 36, y + 84);
+    }
+
+    // Bio-matter
+    if (bioMatter > 0 || (techTree.activeResearch || techTree.researched.size > 0)) {
+        renderNGELabel(x + pad + 4, y + 100, 'B.MTR:', '#0a0');
+        ctx.fillStyle = '#0f0';
+        ctx.font = 'bold 12px monospace';
+        ctx.fillText(bioMatter.toString(), x + pad + 55, y + 100);
+    }
+
+    // Blinking status light
+    renderNGEBlinkLight(x + w - 12, y + 8, '#0ff', 800);
+
+    // Active powerups (below status panel)
+    renderPowerupsInStatus(x, y + 124);
+}
+
+function renderPowerupsInStatus(startX, startY) {
+    const barWidth = 170;
+    const barHeight = 14;
+    const barSpacing = 3;
+    let y = startY;
+
+    ctx.font = 'bold 9px monospace';
+    ctx.textAlign = 'left';
+
+    for (const [key, state] of Object.entries(activePowerups)) {
+        if (!state.active) continue;
+
+        const cfg = CONFIG.POWERUPS[key];
+        let progress = 0;
+        let label = '';
+
+        if (state.timer > 0) {
+            progress = state.timer / state.maxTimer;
+            label = `${cfg.name} ${state.timer.toFixed(1)}s`;
+        } else if (state.charges > 0) {
+            progress = state.charges / state.maxCharges;
+            label = `${cfg.name} x${state.charges}`;
+        }
+
+        if (progress <= 0) continue;
+
+        renderNGEBar(startX + 8, y, barWidth, barHeight, progress, cfg.color, { segments: 8 });
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 9px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(label, startX + 12, y + barHeight - 3);
+
+        y += barHeight + barSpacing;
+    }
+}
+
+function renderMissionZone(zone) {
+    const { x, y, w } = zone;
+
+    // Quota bar (enlarged, better contrast)
+    if (quotaTarget > 0) {
+        const barH = 26;
+        const barY = y;
+
+        renderNGEPanel(x, barY, w, barH, { color: '#0a0', cutCorners: ['tr'], alpha: 0.7 });
+
+        const progress = Math.min(1, quotaProgress / quotaTarget);
+        const waveElapsed = CONFIG.WAVE_DURATION - waveTimer;
+        const expectedProgress = waveElapsed / CONFIG.WAVE_DURATION;
+
+        let barColor;
+        if (quotaProgress >= quotaTarget) {
+            barColor = '#0f0';
+        } else if (progress >= expectedProgress * 0.7) {
+            barColor = '#0a0';
+        } else if (progress >= expectedProgress * 0.4) {
+            barColor = '#ca0';
+        } else {
+            barColor = '#f44';
+        }
+
+        // Progress fill with chevron pattern
+        const fillW = (w - 8) * progress;
+        if (fillW > 0) {
+            ctx.fillStyle = barColor;
+            ctx.fillRect(x + 4, barY + 4, fillW, barH - 8);
+
+            // Animated chevron overlay on fill
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(x + 4, barY + 4, fillW, barH - 8);
+            ctx.clip();
+            ctx.globalAlpha = 0.15;
+            ctx.fillStyle = '#fff';
+            const chevOffset = (Date.now() / 100) % 16;
+            for (let cx = x - 16 + chevOffset; cx < x + fillW + 16; cx += 16) {
+                ctx.font = 'bold 14px monospace';
+                ctx.fillText('\u00BB', cx, barY + barH - 7);
+            }
+            ctx.restore();
+        }
+
+        // Quota text (high contrast)
+        const quotaText = quotaProgress >= quotaTarget
+            ? `QUOTA MET ${quotaProgress}/${quotaTarget}`
+            : `QUOTA ${quotaProgress}/${quotaTarget}`;
+
+        ctx.fillStyle = '#000';
+        ctx.font = 'bold 12px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(quotaText, x + w / 2 + 1, barY + barH / 2 + 5);
+        ctx.fillStyle = '#fff';
+        ctx.fillText(quotaText, x + w / 2, barY + barH / 2 + 4);
+
+        // Warning pulsing border when behind
+        if (progress < expectedProgress * 0.4 && quotaProgress < quotaTarget) {
+            const pulse = Math.sin(Date.now() / 150) * 0.4 + 0.6;
+            ctx.strokeStyle = `rgba(255, 50, 50, ${pulse})`;
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x + 1, barY + 1, w - 2, barH - 2);
+        }
+
+        // Celebration when met
+        if (quotaProgress >= quotaTarget && quotaProgress > 0) {
+            const pulse = Math.sin(Date.now() / 80) * 0.3 + 0.7;
+            ctx.strokeStyle = `rgba(0, 255, 0, ${pulse})`;
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x - 1, barY - 1, w + 2, barH + 2);
+        }
+    }
+
+    // Harvest counter
+    const harvestY = y + 30;
+    renderHarvestCounterNGE(x, harvestY, w);
+
+    // Research progress
+    if (techTree.activeResearch) {
+        const node = getTechNode(techTree.activeResearch.nodeId);
+        if (node) {
+            const resY = harvestY + 52;
+            const progress = 1 - (techTree.activeResearch.timeRemaining / techTree.activeResearch.totalTime);
+            const timeLeft = Math.ceil(techTree.activeResearch.timeRemaining);
+
+            renderNGEPanel(x, resY, w, 22, { color: '#0a4', cutCorners: [], alpha: 0.6 });
+            renderNGEBar(x + 4, resY + 4, w - 8, 14, progress, '#0a4', { segments: 15 });
+
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 9px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(`RSRCH: ${node.name} ${timeLeft}s`, x + w / 2, resY + 15);
+
+            // Blinking research indicator
+            renderNGEBlinkLight(x + w - 10, resY + 5, '#0f0', 300);
+        }
+    }
+}
+
+function renderHarvestCounterNGE(x, y, w) {
+    const baseIconSize = 22;
+    const spacing = w / (TARGET_TYPES.length + 0.5);
+    const panelH = 48;
+
+    renderNGEPanel(x, y, w, panelH, { color: '#0aa', cutCorners: [], alpha: 0.5 });
+
+    const startX = x + spacing / 2;
+    const baseY = y + 18;
+
+    ctx.textAlign = 'center';
+
+    for (let i = 0; i < TARGET_TYPES.length; i++) {
+        const type = TARGET_TYPES[i];
+        const ix = startX + i * spacing;
+        const count = harvestCount[type];
+
+        const bounce = harvestBounce[type];
+        const bounceScale = 1 + bounce * 0.5;
+        const bounceY = -bounce * 8;
+        const iconSize = baseIconSize * bounceScale;
+        const iy = baseY + bounceY;
+
+        if (harvestBounce[type] > 0) {
+            harvestBounce[type] = Math.max(0, harvestBounce[type] - 0.05);
+        }
+
+        const img = images[type];
+        if (img && img.complete) {
+            const aspectRatio = img.width / img.height;
+            let drawWidth, drawHeight;
+            if (aspectRatio > 1) {
+                drawWidth = iconSize;
+                drawHeight = iconSize / aspectRatio;
+            } else {
+                drawHeight = iconSize;
+                drawWidth = iconSize * aspectRatio;
+            }
+            ctx.drawImage(img, ix - drawWidth / 2, iy - drawHeight / 2, drawWidth, drawHeight);
+        } else {
+            const colors = { human: '#ffccaa', cow: '#fff', sheep: '#eee', cat: '#ff9944', dog: '#aa7744', tank: '#556b2f' };
+            ctx.fillStyle = colors[type];
+            if (type === 'tank') {
+                ctx.fillRect(ix - 8, iy - 4, 16, 8);
+            } else {
+                ctx.beginPath();
+                ctx.arc(ix, iy, iconSize / 3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        if (bounce > 0.3) {
+            ctx.shadowColor = '#0f0';
+            ctx.shadowBlur = 8;
+        }
+        ctx.fillStyle = count > 0 ? '#0f0' : '#334';
+        ctx.font = bounce > 0.3 ? 'bold 13px monospace' : 'bold 11px monospace';
+        ctx.fillText(count.toString(), ix, baseY + baseIconSize / 2 + 10);
+        ctx.shadowBlur = 0;
+    }
+}
+
+function renderSystemsZone(zone) {
+    const { x, y, w } = zone;
+    const pad = 6;
+
+    renderNGEPanel(x, y, w, 88, { color: '#f80', cutCorners: ['tr'], label: 'SYS.INTG' });
+
+    // Shield bar (segmented)
+    const shieldY = y + 18;
+    const healthPercent = ufo ? ufo.health / CONFIG.UFO_START_HEALTH : finalHealth / CONFIG.UFO_START_HEALTH;
+
+    let shieldColor;
+    if (healthPercent > 0.5) shieldColor = '#0f6';
+    else if (healthPercent > 0.25) shieldColor = '#fc0';
+    else shieldColor = '#f33';
+
+    renderNGELabel(x + pad, shieldY, 'SHLD', '#f80');
+    const shieldVal = ufo ? Math.ceil(ufo.health) : Math.ceil(finalHealth);
+    ctx.fillStyle = shieldColor;
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(`${shieldVal}/${CONFIG.UFO_START_HEALTH}`, x + w - pad, shieldY);
+    ctx.textAlign = 'left';
+
+    renderNGEBar(x + pad, shieldY + 6, w - pad * 2, 16, healthPercent, shieldColor, {
+        segments: 10,
+        pulse: healthPercent < 0.25,
+        glow: true
+    });
+
+    // Status dot
+    const shieldStatus = healthPercent > 0.5 ? 'nominal' : healthPercent > 0.25 ? 'caution' : 'critical';
+    renderNGEStatusDot(x + w - pad - 2, shieldY + 14, shieldStatus);
+
+    // Energy Cubes (revive cells)
+    const cells = playerInventory.energyCells;
+    const cellY = shieldY + 28;
+
+    if (cells > 0) {
+        renderNGELabel(x + pad, cellY + 4, 'REVIVE', '#f55');
+        const cellSize = 14;
+        const cellSpacing = 4;
+        const cellStartX = x + pad + 52;
+
+        for (let i = 0; i < cells; i++) {
+            const cx = cellStartX + i * (cellSize + cellSpacing);
+            const cy = cellY - 2;
+            const pulse = Math.sin(Date.now() / 200 + i * 0.8) * 0.3 + 0.7;
+
+            // Glow
+            ctx.fillStyle = `rgba(255, 85, 85, ${pulse * 0.25})`;
+            ctx.fillRect(cx - 2, cy - 2, cellSize + 4, cellSize + 4);
+
+            // Cube body
+            ctx.fillStyle = `rgba(255, 85, 85, ${pulse})`;
+            ctx.fillRect(cx, cy, cellSize, cellSize);
+
+            // Inner energy swirl
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(cx, cy, cellSize, cellSize);
+            ctx.clip();
+            const angle = Date.now() / 300 + i;
+            ctx.fillStyle = `rgba(255, 200, 200, ${pulse * 0.5})`;
+            ctx.beginPath();
+            ctx.arc(cx + cellSize/2 + Math.cos(angle) * 2, cy + cellSize/2 + Math.sin(angle) * 2, 3, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+
+            // Border
+            ctx.strokeStyle = `rgba(255, 120, 120, ${pulse * 0.8})`;
+            ctx.lineWidth = 1;
+            ctx.strokeRect(cx, cy, cellSize, cellSize);
+        }
+    }
+
+    // Speed indicator (compact)
+    if (playerInventory.speedBonus > 0) {
+        const speedY = cellY + 22;
+        const bonusPercent = Math.round(playerInventory.speedBonus * 100);
+        renderNGELabel(x + pad, speedY, `SPD +${bonusPercent}%`, '#ff0');
+        renderNGEStatusDot(x + w - pad - 2, speedY - 3, 'nominal');
+    }
+
+    // Energy bonus indicator (compact)
+    if (playerInventory.maxEnergyBonus > 0) {
+        const enY = cellY + (playerInventory.speedBonus > 0 ? 36 : 22);
+        renderNGELabel(x + pad, enY, `NRG +${playerInventory.maxEnergyBonus}`, '#7ff');
+        renderNGEStatusDot(x + w - pad - 2, enY - 3, 'nominal');
+    }
+}
+
+function renderWeaponsZone(zone) {
+    const { x, y, w } = zone;
+    const pad = 8;
+    let curY = y;
+
+    // Calculate panel height based on what's unlocked
+    let panelH = 16; // header
+    if (playerInventory.maxBombs > 0) panelH += 52;
+    if (missileUnlocked) panelH += 56;
+    panelH += 8; // bottom pad
+
+    renderNGEPanel(x, y, w, panelH, { color: '#f44', cutCorners: ['bl'], label: 'ORD.SYS' });
+
+    curY += 18;
+
+    // Bombs section
+    if (playerInventory.maxBombs > 0) {
+        const bombCount = playerInventory.bombs;
+        const maxBombs = playerInventory.maxBombs;
+        const rechargeTimers = playerInventory.bombRechargeTimers || [];
+
+        renderNGELabel(x + pad, curY, 'ORD.B', '#f80');
+        renderNGEKeyBadge(x + pad + 44, curY - 10, 'X');
+        curY += 4;
+
+        // Compact 3-column grid
+        const bombSize = 16;
+        const cols = 3;
+        const spacing = 6;
+        const gridStartX = x + pad + 70;
+
+        for (let i = 0; i < maxBombs; i++) {
+            const col = i % cols;
+            const row = Math.floor(i / cols);
+            const bx = gridStartX + col * (bombSize + spacing) + bombSize / 2;
+            const by = curY + row * (bombSize + spacing) + bombSize / 2;
+            const filled = i < bombCount;
+
+            // Bomb body
+            ctx.fillStyle = filled ? '#444' : '#1a1a1a';
+            ctx.beginPath();
+            ctx.arc(bx, by, bombSize / 2, 0, Math.PI * 2);
+            ctx.fill();
+
+            if (filled) {
+                ctx.fillStyle = '#666';
+                ctx.beginPath();
+                ctx.arc(bx - 2, by - 2, bombSize / 4, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Fuse spark
+                const sparkIntensity = Math.sin(Date.now() / 100 + i) * 0.5 + 0.5;
+                ctx.fillStyle = `rgba(255, ${150 + sparkIntensity * 100}, 0, ${0.7 + sparkIntensity * 0.3})`;
+                ctx.beginPath();
+                ctx.arc(bx, by - bombSize / 2 - 2, 2 + sparkIntensity, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Recharge arc
+            const missingIndex = i - bombCount;
+            if (missingIndex >= 0 && missingIndex < rechargeTimers.length) {
+                const progress = 1 - (rechargeTimers[missingIndex] / CONFIG.BOMB_RECHARGE_TIME);
+                ctx.strokeStyle = 'rgba(255, 200, 0, 0.8)';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(bx, by, bombSize / 2 + 3, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress);
+                ctx.stroke();
+            }
+        }
+
+        const bombRows = Math.ceil(maxBombs / cols);
+        curY += bombRows * (bombSize + spacing) + 6;
+    }
+
+    // Missiles section
+    if (missileUnlocked && missileMaxAmmo > 0) {
+        renderNGELabel(x + pad, curY, 'ORD.M', '#f40');
+        renderNGEKeyBadge(x + pad + 44, curY - 10, 'C');
+
+        // SWARM RDY indicator
+        if (missileAmmo >= missileMaxAmmo) {
+            const pulse = Math.sin(Date.now() / 200) * 0.4 + 0.6;
+            ctx.fillStyle = `rgba(255, 68, 0, ${pulse})`;
+            ctx.font = 'bold 9px monospace';
+            ctx.textAlign = 'right';
+            ctx.fillText('SWARM RDY', x + w - pad, curY);
+            ctx.textAlign = 'left';
+        }
+
+        curY += 4;
+
+        // Missile icons as RECTANGLES WITH POINTED TIPS
+        const missileW = 6;
+        const missileH = 14;
+        const cols = 4;
+        const spacing = 5;
+        const gridStartX = x + pad + 70;
+
+        for (let i = 0; i < missileMaxAmmo; i++) {
+            const col = i % cols;
+            const row = Math.floor(i / cols);
+            const mx = gridStartX + col * (missileW + spacing);
+            const my = curY + row * (missileH + 4);
+            const filled = i < missileAmmo;
+
+            ctx.save();
+            if (filled) {
+                // Missile body (rectangle)
+                ctx.fillStyle = '#cc2200';
+                ctx.fillRect(mx, my + 3, missileW, missileH - 3);
+
+                // Pointed nose cone (triangle)
+                ctx.beginPath();
+                ctx.moveTo(mx, my + 3);
+                ctx.lineTo(mx + missileW / 2, my);
+                ctx.lineTo(mx + missileW, my + 3);
+                ctx.closePath();
+                ctx.fill();
+
+                // Fins at bottom
+                ctx.fillStyle = '#881100';
+                ctx.fillRect(mx - 1, my + missileH - 2, missileW + 2, 2);
+
+                // Glow tip
+                const pulse = Math.sin(Date.now() / 150 + i) * 0.3 + 0.7;
+                ctx.fillStyle = `rgba(255, 170, 0, ${pulse})`;
+                ctx.beginPath();
+                ctx.arc(mx + missileW / 2, my + 1, 1.5, 0, Math.PI * 2);
+                ctx.fill();
+            } else {
+                // Empty missile outline
+                ctx.strokeStyle = '#333';
+                ctx.lineWidth = 0.8;
+                ctx.strokeRect(mx, my + 3, missileW, missileH - 3);
+                ctx.beginPath();
+                ctx.moveTo(mx, my + 3);
+                ctx.lineTo(mx + missileW / 2, my);
+                ctx.lineTo(mx + missileW, my + 3);
+                ctx.closePath();
+                ctx.stroke();
+            }
+            ctx.restore();
+        }
+
+        // Recharge bar
+        if (missileAmmo < missileMaxAmmo && missileRechargeTimer > 0) {
+            const missileRows = Math.ceil(missileMaxAmmo / cols);
+            const rechargeY = curY + missileRows * (missileH + 4) + 2;
+            const progress = 1 - (missileRechargeTimer / CONFIG.MISSILE_RECHARGE_TIME);
+            renderNGEBar(gridStartX, rechargeY, cols * (missileW + spacing), 3, progress, '#f40', { segments: 6 });
+        }
+    }
+}
+
+function renderFleetZone(zone) {
+    const { x, y, w } = zone;
+    const pad = 6;
+
+    if (!harvesterUnlocked && !battleDroneUnlocked && activeCoordinators.length === 0) return;
+    if (droneSlots <= 0 && activeCoordinators.length === 0) return;
+
+    // Calculate dynamic height
+    let totalRows = 0;
+    const rowH = 18;
+    const headerH = 22;
+    const coordHeaderH = 16;
+
+    // Count coordinator entries + their sub-drones
+    for (const coord of activeCoordinators) {
+        if (!coord.alive || coord.state === 'DYING') continue;
+        totalRows++; // coordinator itself
+        if (coord.subDrones) {
+            totalRows += coord.subDrones.filter(d => d.alive).length;
+        }
+    }
+
+    // Count raw drones (not attached to coordinators)
+    const rawDrones = activeDrones.length;
+    if (rawDrones > 0) {
+        totalRows++; // "RAW DRONES" header
+        totalRows += rawDrones;
+    }
+
+    const panelH = headerH + totalRows * rowH + pad * 2 + 4;
+
+    renderNGEPanel(x, y, w, Math.max(panelH, 50), { color: '#48f', cutCorners: ['tr'], label: 'FLEET.CMD' });
+
+    // Slot counter
+    const subDroneCount = activeCoordinators.reduce((sum, c) => sum + (c.subDrones ? c.subDrones.filter(d => d.alive).length : 0), 0);
+    const totalDrones = activeDrones.length + subDroneCount;
+    ctx.fillStyle = '#8af';
+    ctx.font = 'bold 9px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(`${totalDrones}/${droneSlots}`, x + w - pad, y + 14);
+    ctx.textAlign = 'left';
+
+    let curY = y + headerH + pad;
+    const barW = 40;
+    const barH = 5;
+
+    // Render coordinator trees
+    for (const coord of activeCoordinators) {
+        if (!coord.alive || coord.state === 'DYING') continue;
+
+        const isLast = activeCoordinators.filter(c => c.alive && c.state !== 'DYING').indexOf(coord) ===
+                       activeCoordinators.filter(c => c.alive && c.state !== 'DYING').length - 1 && rawDrones === 0;
+        const treeChar = isLast ? '\u2514' : '\u251C'; // └ or ├
+
+        const isHarvester = coord.type === 'harvester';
+        const coordLabel = isHarvester ? 'COORD.H' : 'COORD.A';
+        const coordColor = isHarvester ? '#0dc' : '#fa0';
+        const energyPercent = coord.energyTimer / coord.maxEnergy;
+        const timeLeft = Math.ceil(coord.energyTimer);
+
+        // Tree connector
+        ctx.fillStyle = '#445';
+        ctx.font = '10px monospace';
+        ctx.fillText(treeChar + '\u2500', x + pad, curY + 4);
+
+        // Coordinator label
+        ctx.fillStyle = coordColor;
+        ctx.font = 'bold 9px monospace';
+        ctx.fillText(coordLabel, x + pad + 20, curY + 4);
+
+        // Energy bar
+        const coordBarX = x + pad + 66;
+        renderNGEBar(coordBarX, curY - 2, barW, barH, energyPercent, coordColor, {
+            segments: 6,
+            pulse: energyPercent < 0.25
+        });
+
+        // Time
+        ctx.fillStyle = energyPercent < 0.25 ? '#f44' : '#889';
+        ctx.font = '9px monospace';
+        ctx.fillText(`${timeLeft}s`, coordBarX + barW + 4, curY + 4);
+
+        // Status dot
+        const status = energyPercent > 0.5 ? 'nominal' : energyPercent > 0.25 ? 'caution' : 'critical';
+        renderNGEStatusDot(x + w - pad - 4, curY, status, 3);
+
+        curY += rowH;
+
+        // Sub-drones
+        const aliveSubDrones = coord.subDrones ? coord.subDrones.filter(d => d.alive) : [];
+        for (let si = 0; si < aliveSubDrones.length; si++) {
+            const sub = aliveSubDrones[si];
+            const isLastSub = si === aliveSubDrones.length - 1;
+            const subTreeChar = isLastSub ? '\u2514' : '\u251C';
+
+            // Vertical connector
+            if (!isLast || !isLastSub) {
+                ctx.fillStyle = '#334';
+                ctx.fillRect(x + pad + 4, curY - rowH + 6, 1, rowH);
+            }
+
+            // Sub tree connector
+            ctx.fillStyle = '#334';
+            ctx.font = '9px monospace';
+            ctx.fillText('\u2502  ' + subTreeChar + '\u2500', x + pad, curY + 3);
+
+            // Drone label
+            const subIsHarvester = sub.type === 'harvester';
+            const subLabel = subIsHarvester ? `H-${String(si + 1).padStart(2, '0')}` : `A-${String(si + 1).padStart(2, '0')}`;
+            ctx.fillStyle = subIsHarvester ? '#0a0' : '#a44';
+            ctx.font = '8px monospace';
+            ctx.fillText(subLabel, x + pad + 28, curY + 3);
+
+            // Sub energy bar
+            const subEnergyPercent = sub.energyTimer / sub.maxEnergy;
+            renderNGEBar(coordBarX, curY - 3, barW * 0.7, 4, subEnergyPercent, subIsHarvester ? '#0a0' : '#a44', {
+                segments: 4
+            });
+
+            // Sub time
+            ctx.fillStyle = '#667';
+            ctx.font = '8px monospace';
+            ctx.fillText(`${Math.ceil(sub.energyTimer)}s`, coordBarX + barW * 0.7 + 3, curY + 3);
+
+            curY += rowH;
+        }
+    }
+
+    // Raw drones (not attached to coordinators)
+    if (rawDrones > 0) {
+        const isLast = true;
+        const treeChar = '\u2514';
+
+        ctx.fillStyle = '#445';
+        ctx.font = '10px monospace';
+        ctx.fillText(treeChar + '\u2500', x + pad, curY + 4);
+
+        ctx.fillStyle = '#889';
+        ctx.font = 'bold 8px monospace';
+        ctx.fillText(`DRONES: ${rawDrones}`, x + pad + 20, curY + 4);
+
+        curY += rowH;
+
+        for (let i = 0; i < activeDrones.length; i++) {
+            const drone = activeDrones[i];
+            const isLastDrone = i === activeDrones.length - 1;
+            const droneTreeChar = isLastDrone ? '\u2514' : '\u251C';
+
+            ctx.fillStyle = '#334';
+            ctx.font = '9px monospace';
+            ctx.fillText('   ' + droneTreeChar + '\u2500', x + pad, curY + 3);
+
+            const isHarvester = drone.type === 'harvester';
+            const droneLabel = isHarvester ? `H-${String(i + 1).padStart(2, '0')}` : `B-${String(i + 1).padStart(2, '0')}`;
+            ctx.fillStyle = isHarvester ? '#0a0' : '#a44';
+            ctx.font = '8px monospace';
+            ctx.fillText(droneLabel, x + pad + 28, curY + 3);
+
+            const droneEnergyPercent = drone.energyTimer / drone.maxEnergy;
+            const droneBarX = x + pad + 66;
+            renderNGEBar(droneBarX, curY - 3, barW * 0.7, 4, droneEnergyPercent, isHarvester ? '#0a0' : '#a44', {
+                segments: 4
+            });
+
+            ctx.fillStyle = '#667';
+            ctx.font = '8px monospace';
+            ctx.fillText(`${Math.ceil(drone.energyTimer)}s`, droneBarX + barW * 0.7 + 3, curY + 3);
+
+            // Warning flash for low energy
+            if (drone.energyTimer < 5 && Math.floor(Date.now() / 300) % 2 === 0) {
+                renderNGEStatusDot(x + w - pad - 4, curY, 'critical', 2);
+            }
+
+            curY += rowH;
+        }
+    }
+}
+
+function renderCommanderZone(zone) {
+    const { x, y, w, h } = zone;
+
+    renderNGEPanel(x, y, w, h, { color: '#0f0', cutCorners: ['tl', 'br'], alpha: 0.75 });
+
+    // "INCOMING TRANSMISSION" header with blinking light
+    renderNGEBlinkLight(x + 8, y + 6, '#0f0', 250);
+    ctx.fillStyle = '#0f0';
+    ctx.font = 'bold 9px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('INCOMING TRANSMISSION', x + 16, y + 12);
+
+    // Scanline effect over entire panel
+    renderNGEScanlines(x, y, w, h, 0.04);
+
+    // Commander portrait (left side)
+    const portraitSize = h - 24;
+    const portraitX = x + 6;
+    const portraitY = y + 18;
+    renderCommanderPortrait(portraitX, portraitY, portraitSize, missionCommanderState.emotion);
+
+    // Dialogue (right of portrait)
+    const dialogueX = portraitX + portraitSize + 6;
+    const dialogueW = w - portraitSize - 18;
+    if (missionCommanderState.dialogue) {
+        const displayed = missionCommanderState.dialogue.substring(0, missionCommanderState.typewriterIndex);
+        if (displayed.length > 0) {
+            ctx.fillStyle = '#0f0';
+            ctx.font = '10px monospace';
+            ctx.textAlign = 'left';
+
+            // Word wrap
+            const words = displayed.split(' ');
+            const lines = [];
+            let currentLine = '';
+            for (const word of words) {
+                const testLine = currentLine ? currentLine + ' ' + word : word;
+                if (ctx.measureText(testLine).width > dialogueW - 4) {
+                    if (currentLine) lines.push(currentLine);
+                    currentLine = word;
+                } else {
+                    currentLine = testLine;
+                }
+            }
+            if (currentLine) lines.push(currentLine);
+
+            for (let i = 0; i < Math.min(lines.length, 4); i++) {
+                ctx.fillText(lines[i], dialogueX, portraitY + 10 + i * 13);
+            }
+        }
+    }
+}
+
+function renderEnergyFlows(layout) {
+    if (!ufo) return;
+
+    const ufoX = ufo.x;
+    const ufoY = ufo.y - 20;
+
+    // Flow to fleet zone (drone power)
+    if (hudAnimState.fleetPanelVisible) {
+        const fz = layout.fleetZone;
+        const active = ufo.beamActive || false;
+        renderEnergyFlowLine(ufoX + 60, ufoY, fz.x, fz.y + fz.h / 2, '#48f', active);
+    }
+
+    // Flow to weapons zone (ordnance power)
+    if (hudAnimState.weaponsPanelVisible) {
+        const wz = layout.weaponsZone;
+        const active = false; // weapons don't drain continuous energy
+        renderEnergyFlowLine(ufoX - 60, ufoY, wz.x + wz.w, wz.y + wz.h / 2, '#f44', active);
+    }
+}
+
+// Commander in-mission update
+function updateMissionCommander(dt) {
+    if (gameState !== 'PLAYING' || wave < 2) return;
+
+    // Update typewriter
+    if (missionCommanderState.visible && missionCommanderState.dialogue) {
+        missionCommanderState.typewriterTimer += dt;
+        missionCommanderState.typewriterIndex = Math.min(
+            Math.floor(missionCommanderState.typewriterTimer * 25),
+            missionCommanderState.dialogue.length
+        );
+
+        // Garbled speech
+        if (missionCommanderState.typewriterIndex > 0 &&
+            missionCommanderState.typewriterIndex < missionCommanderState.dialogue.length &&
+            missionCommanderState.typewriterIndex % 3 === 0) {
+            SFX.commanderSpeechGarble && SFX.commanderSpeechGarble();
+        }
+
+        missionCommanderState.displayTimer += dt;
+        if (missionCommanderState.displayTimer >= missionCommanderState.displayDuration) {
+            missionCommanderState.visible = false;
+        }
+    }
+
+    // Cooldown
+    if (!missionCommanderState.visible) {
+        missionCommanderState.cooldownTimer -= dt;
+        if (missionCommanderState.cooldownTimer <= 0) {
+            triggerMissionCommander();
+        }
+    }
+}
+
+function triggerMissionCommander(category = null) {
+    if (missionCommanderState.visible) return;
+
+    // Pick category based on game state if not specified
+    if (!category) {
+        const healthPercent = ufo ? ufo.health / CONFIG.UFO_START_HEALTH : 1;
+        const energyPercent = ufo ? ufo.energy / ufo.maxEnergy : 1;
+        const quotaPercent = quotaTarget > 0 ? quotaProgress / quotaTarget : 1;
+        const waveElapsed = CONFIG.WAVE_DURATION - waveTimer;
+        const expectedProgress = waveElapsed / CONFIG.WAVE_DURATION;
+
+        if (healthPercent < 0.25) category = 'lowShield';
+        else if (energyPercent < 0.15) category = 'energyLow';
+        else if (quotaTarget > 0 && quotaPercent < expectedProgress * 0.5) category = 'quotaBehind';
+        else if (Math.random() < 0.4) category = 'idle';
+        else category = 'quotaOnTrack';
+    }
+
+    const dialogues = MISSION_COMMANDER_DIALOGUES[category];
+    if (!dialogues || dialogues.length === 0) return;
+
+    missionCommanderState.visible = true;
+    missionCommanderState.dialogue = dialogues[Math.floor(Math.random() * dialogues.length)];
+    missionCommanderState.typewriterIndex = 0;
+    missionCommanderState.typewriterTimer = 0;
+    missionCommanderState.displayTimer = 0;
+    missionCommanderState.emotion = category === 'lowShield' || category === 'quotaBehind' ? 'angry' :
+                                     category === 'killStreak' ? 'pleased' : 'neutral';
+    missionCommanderState.cooldownTimer = missionCommanderState.minCooldown +
+        Math.random() * (missionCommanderState.maxCooldown - missionCommanderState.minCooldown);
+}
+
+// Update HUD animations each frame
+function updateHUDAnimations(dt) {
+    hudAnimState.energyFlowPhase += dt;
+    hudAnimState.scanlineOffset = (hudAnimState.scanlineOffset + dt * 30) % 100;
 }
 
 // ============================================
@@ -14898,8 +16459,8 @@ function renderWaveTransition() {
     waveText += ' incoming!';
     ctx.fillText(waveText, canvas.width / 2, canvas.height / 2 + 100);
 
-    // Render UI
-    renderUI();
+    // Render HUD (NGE style overlays wave transition)
+    renderHUDFrame();
 }
 
 // ============================================
@@ -16920,6 +18481,10 @@ function update(dt) {
     // Update tech tree research
     updateResearch(dt);
 
+    // Update HUD systems
+    updateMissionCommander(dt);
+    updateHUDAnimations(dt);
+
     // Update research flash timer
     if (researchFlashTimer > 0) {
         researchFlashTimer -= dt;
@@ -17125,11 +18690,8 @@ function render() {
 
     ctx.restore(); // End screen shake
 
-    // Render UI (not affected by shake)
-    renderUI();
-
-    // Render active powerup indicators
-    renderActivePowerups();
+    // Render UI (not affected by shake) - NGE Evangelion HUD
+    renderHUDFrame();
 
     // Render tutorial hints (wave 1 only, above UI, below full-screen overlays)
     if (tutorialState && tutorialState.phase !== 'COMPLETE') {
