@@ -5229,7 +5229,7 @@ class UFO {
 
         // NRG micro-label
         ctx.fillStyle = '#556';
-        ctx.font = 'bold 7px monospace';
+        ctx.font = 'bold 8px monospace';
         ctx.textAlign = 'right';
         ctx.fillText('NRG', x - 3, y + barHeight - 2);
 
@@ -5334,7 +5334,7 @@ class UFO {
 
         // Numerical value
         ctx.fillStyle = '#aab';
-        ctx.font = 'bold 8px monospace';
+        ctx.font = 'bold 9px monospace';
         ctx.textAlign = 'left';
         ctx.fillText(`${Math.ceil(this.energy)}`, x + barWidth + 3, y + barHeight - 2);
     }
@@ -10933,7 +10933,10 @@ function startGame() {
         fleetPanelSlide: 0,
         commanderPanelSlide: 0,
         energyFlowPhase: 0,
-        scanlineOffset: 0
+        scanlineOffset: 0,
+        energyPulseTimer: 0,
+        energyPulseActive: false,
+        energyPulseY: 0
     };
     missionCommanderState = {
         visible: false,
@@ -11164,11 +11167,11 @@ function renderNGEPanel(x, y, w, h, opts = {}) {
 
     // Label in top-left
     if (label) {
-        ctx.font = 'bold 10px monospace';
+        ctx.font = 'bold 11px monospace';
         ctx.fillStyle = labelColor || color;
         ctx.textAlign = 'left';
         const labelX = x + (cutCorners.includes('tl') ? cut + 4 : 6);
-        ctx.fillText(label, labelX, y + 12);
+        ctx.fillText(label, labelX, y + 13);
     }
 
     ctx.restore();
@@ -11319,7 +11322,7 @@ function renderNGEStatusDot(x, y, status, size = 4) {
 
 // NGE-style label with dot separators
 function renderNGELabel(x, y, text, color = '#888') {
-    ctx.font = 'bold 10px monospace';
+    ctx.font = 'bold 11px monospace';
     ctx.fillStyle = color;
     ctx.textAlign = 'left';
     ctx.fillText(text, x, y);
@@ -11327,7 +11330,7 @@ function renderNGELabel(x, y, text, color = '#888') {
 
 // NGE-style value display
 function renderNGEValue(x, y, text, color = '#0ff', align = 'left') {
-    ctx.font = 'bold 14px monospace';
+    ctx.font = 'bold 16px monospace';
     ctx.fillStyle = color;
     ctx.textAlign = align;
     ctx.fillText(text, x, y);
@@ -11445,7 +11448,10 @@ let hudAnimState = {
     fleetPanelSlide: 0,
     commanderPanelSlide: 0,
     energyFlowPhase: 0,
-    scanlineOffset: 0
+    scanlineOffset: 0,
+    energyPulseTimer: 0,
+    energyPulseActive: false,
+    energyPulseY: 0
 };
 
 let missionCommanderState = {
@@ -11536,6 +11542,77 @@ function getHUDLayout() {
     };
 }
 
+// Energy pulse sweep animation across HUD panels
+function renderHUDEnergyPulse(layout) {
+    if (!hudAnimState.energyPulseActive) return;
+
+    const pulseY = hudAnimState.energyPulseY;
+    const pulseHeight = 3;
+
+    ctx.save();
+
+    // Helper: draw pulse line across a zone if the sweep is currently passing through it
+    function drawPulseOnZone(zone, color) {
+        if (!zone) return;
+        const zy = zone.y;
+        const zh = zone.h || 120; // fallback height
+        const localY = pulseY - zy;
+        if (localY < -10 || localY > zh + 10) return;
+
+        // Clamp drawing to zone bounds
+        const drawY = Math.max(zy, Math.min(zy + zh, pulseY));
+
+        ctx.beginPath();
+        ctx.moveTo(zone.x + 2, drawY);
+        ctx.lineTo(zone.x + zone.w - 2, drawY);
+
+        // Bright core line
+        ctx.strokeStyle = 'rgba(180, 255, 255, 0.7)';
+        ctx.lineWidth = pulseHeight;
+        ctx.shadowColor = '#0ff';
+        ctx.shadowBlur = 12;
+        ctx.stroke();
+
+        // Inner white-hot line
+        ctx.beginPath();
+        ctx.moveTo(zone.x + 4, drawY);
+        ctx.lineTo(zone.x + zone.w - 4, drawY);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.lineWidth = 1;
+        ctx.shadowBlur = 6;
+        ctx.stroke();
+
+        ctx.shadowBlur = 0;
+
+        // Brief brightness on panel border as pulse passes
+        const proximity = Math.max(0, 1 - Math.abs(localY - zh / 2) / (zh / 2));
+        if (proximity > 0.5) {
+            const borderAlpha = (proximity - 0.5) * 0.4;
+            ctx.strokeStyle = `rgba(180, 255, 255, ${borderAlpha})`;
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(zone.x, zone.y, zone.w, zh);
+        }
+    }
+
+    // Apply pulse to Status zone (top-left, 120px tall)
+    drawPulseOnZone({ x: layout.statusZone.x, y: layout.statusZone.y, w: layout.statusZone.w, h: 120 }, '#0ff');
+
+    // Apply pulse to Systems zone (top-right, 88px tall)
+    drawPulseOnZone({ x: layout.systemsZone.x, y: layout.systemsZone.y, w: layout.systemsZone.w, h: 88 }, '#f80');
+
+    // Apply pulse to Weapons zone (left side)
+    if (hudAnimState.weaponsPanelVisible) {
+        drawPulseOnZone({ x: layout.weaponsZone.x, y: layout.weaponsZone.y, w: layout.weaponsZone.w, h: layout.weaponsZone.h }, '#f44');
+    }
+
+    // Apply pulse to Fleet zone (right side)
+    if (hudAnimState.fleetPanelVisible) {
+        drawPulseOnZone({ x: layout.fleetZone.x, y: layout.fleetZone.y, w: layout.fleetZone.w, h: layout.fleetZone.h }, '#48f');
+    }
+
+    ctx.restore();
+}
+
 function renderHUDFrame() {
     const layout = getHUDLayout();
 
@@ -11604,6 +11681,9 @@ function renderHUDFrame() {
         renderEnergyFlows(layout);
     }
 
+    // Energy pulse sweep effect across HUD panels
+    renderHUDEnergyPulse(layout);
+
     // Coordinator distress arrows (kept separate - they're world-space indicators)
     renderCoordDistressArrows();
 }
@@ -11629,19 +11709,19 @@ function renderStatusZone(zone) {
     // Score
     const scoreText = score.toLocaleString();
     ctx.fillStyle = '#0ff';
-    ctx.font = 'bold 26px monospace';
+    ctx.font = 'bold 30px monospace';
     ctx.textAlign = 'left';
-    ctx.fillText(scoreText, x + pad + 4, y + 32);
+    ctx.fillText(scoreText, x + pad + 4, y + 36);
 
     // High score
     ctx.fillStyle = '#445';
     ctx.font = '11px monospace';
-    ctx.fillText(`HI ${highScore.toLocaleString()}`, x + pad + 4, y + 46);
+    ctx.fillText(`HI ${highScore.toLocaleString()}`, x + pad + 4, y + 50);
 
     // Wave + Timer line
     ctx.fillStyle = '#fff';
-    ctx.font = 'bold 16px monospace';
-    ctx.fillText(`WAVE ${wave}`, x + pad + 4, y + 66);
+    ctx.font = 'bold 18px monospace';
+    ctx.fillText(`WAVE ${wave}`, x + pad + 4, y + 70);
 
     // Timer
     const displayTime = Math.max(0, waveTimer);
@@ -11652,12 +11732,12 @@ function renderStatusZone(zone) {
     if (waveTimer <= 10 && gameState === 'PLAYING') {
         const pulse = Math.sin(Date.now() / 100) * 0.5 + 0.5;
         ctx.fillStyle = `rgb(255, ${Math.floor(pulse * 80)}, ${Math.floor(pulse * 80)})`;
-        ctx.font = 'bold 16px monospace';
+        ctx.font = 'bold 18px monospace';
     } else {
         ctx.fillStyle = '#8899aa';
-        ctx.font = '14px monospace';
+        ctx.font = '16px monospace';
     }
-    ctx.fillText(timeStr, x + pad + 100, y + 66);
+    ctx.fillText(timeStr, x + pad + 100, y + 70);
 
     // Combo
     if (combo > 0) {
@@ -11665,27 +11745,52 @@ function renderStatusZone(zone) {
         ctx.shadowColor = '#ff0';
         ctx.shadowBlur = 6;
         ctx.fillStyle = '#ff0';
-        ctx.font = 'bold 14px monospace';
-        ctx.fillText(`${combo}x`, x + pad + 4, y + 84);
+        ctx.font = 'bold 16px monospace';
+        ctx.fillText(`${combo}x`, x + pad + 4, y + 88);
         ctx.shadowBlur = 0;
         ctx.fillStyle = '#aa8800';
         ctx.font = '11px monospace';
-        ctx.fillText(`(${multiplier}x)`, x + pad + 36, y + 84);
+        ctx.fillText(`(${multiplier}x)`, x + pad + 40, y + 88);
     }
 
     // Bio-matter
     if (bioMatter > 0 || (techTree.activeResearch || techTree.researched.size > 0)) {
-        renderNGELabel(x + pad + 4, y + 100, 'B.MTR:', '#0a0');
+        renderNGELabel(x + pad + 4, y + 104, 'B.MTR:', '#0a0');
         ctx.fillStyle = '#0f0';
-        ctx.font = 'bold 12px monospace';
-        ctx.fillText(bioMatter.toString(), x + pad + 55, y + 100);
+        ctx.font = 'bold 14px monospace';
+        ctx.fillText(bioMatter.toString(), x + pad + 58, y + 104);
+    }
+
+    // Research progress (relocated from mission zone to avoid UFO energy bar overlap)
+    let statusBottomY = y + 120;
+    if (techTree.activeResearch) {
+        const node = getTechNode(techTree.activeResearch.nodeId);
+        if (node) {
+            const resY = statusBottomY + 2;
+            const resH = 28;
+            const progress = 1 - (techTree.activeResearch.timeRemaining / techTree.activeResearch.totalTime);
+            const timeLeft = Math.ceil(techTree.activeResearch.timeRemaining);
+
+            renderNGEPanel(x, resY, w, resH, { color: '#0a4', cutCorners: [], alpha: 0.6 });
+            renderNGEBar(x + 4, resY + 4, w - 8, resH - 8, progress, '#0a4', { segments: 15 });
+
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 11px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(`RSRCH: ${node.name} ${timeLeft}s`, x + w / 2, resY + resH / 2 + 4);
+
+            // Blinking research indicator
+            renderNGEBlinkLight(x + w - 10, resY + 6, '#0f0', 300);
+
+            statusBottomY = resY + resH;
+        }
     }
 
     // Blinking status light
     renderNGEBlinkLight(x + w - 12, y + 8, '#0ff', 800);
 
-    // Active powerups (below status panel)
-    renderPowerupsInStatus(x, y + 124);
+    // Active powerups (below status panel and research bar)
+    renderPowerupsInStatus(x, statusBottomY + 4);
 }
 
 function renderPowerupsInStatus(startX, startY) {
@@ -11776,7 +11881,7 @@ function renderMissionZone(zone) {
             : `QUOTA ${quotaProgress}/${quotaTarget}`;
 
         ctx.fillStyle = '#000';
-        ctx.font = 'bold 12px monospace';
+        ctx.font = 'bold 13px monospace';
         ctx.textAlign = 'center';
         ctx.fillText(quotaText, x + w / 2 + 1, barY + barH / 2 + 5);
         ctx.fillStyle = '#fff';
@@ -11803,26 +11908,6 @@ function renderMissionZone(zone) {
     const harvestY = y + 30;
     renderHarvestCounterNGE(x, harvestY, w);
 
-    // Research progress
-    if (techTree.activeResearch) {
-        const node = getTechNode(techTree.activeResearch.nodeId);
-        if (node) {
-            const resY = harvestY + 52;
-            const progress = 1 - (techTree.activeResearch.timeRemaining / techTree.activeResearch.totalTime);
-            const timeLeft = Math.ceil(techTree.activeResearch.timeRemaining);
-
-            renderNGEPanel(x, resY, w, 22, { color: '#0a4', cutCorners: [], alpha: 0.6 });
-            renderNGEBar(x + 4, resY + 4, w - 8, 14, progress, '#0a4', { segments: 15 });
-
-            ctx.fillStyle = '#fff';
-            ctx.font = 'bold 9px monospace';
-            ctx.textAlign = 'center';
-            ctx.fillText(`RSRCH: ${node.name} ${timeLeft}s`, x + w / 2, resY + 15);
-
-            // Blinking research indicator
-            renderNGEBlinkLight(x + w - 10, resY + 5, '#0f0', 300);
-        }
-    }
 }
 
 function renderHarvestCounterNGE(x, y, w) {
@@ -11881,7 +11966,7 @@ function renderHarvestCounterNGE(x, y, w) {
             ctx.shadowBlur = 8;
         }
         ctx.fillStyle = count > 0 ? '#0f0' : '#334';
-        ctx.font = bounce > 0.3 ? 'bold 13px monospace' : 'bold 11px monospace';
+        ctx.font = bounce > 0.3 ? 'bold 15px monospace' : 'bold 13px monospace';
         ctx.fillText(count.toString(), ix, baseY + baseIconSize / 2 + 10);
         ctx.shadowBlur = 0;
     }
@@ -11894,7 +11979,7 @@ function renderSystemsZone(zone) {
     renderNGEPanel(x, y, w, 88, { color: '#f80', cutCorners: ['tr'], label: 'SYS.INTG' });
 
     // Shield bar (segmented)
-    const shieldY = y + 18;
+    const shieldY = y + 22;
     const healthPercent = ufo ? ufo.health / CONFIG.UFO_START_HEALTH : finalHealth / CONFIG.UFO_START_HEALTH;
 
     let shieldColor;
@@ -11905,7 +11990,7 @@ function renderSystemsZone(zone) {
     renderNGELabel(x + pad, shieldY, 'SHLD', '#f80');
     const shieldVal = ufo ? Math.ceil(ufo.health) : Math.ceil(finalHealth);
     ctx.fillStyle = shieldColor;
-    ctx.font = 'bold 10px monospace';
+    ctx.font = 'bold 11px monospace';
     ctx.textAlign = 'right';
     ctx.fillText(`${shieldVal}/${CONFIG.UFO_START_HEALTH}`, x + w - pad, shieldY);
     ctx.textAlign = 'left';
@@ -11991,7 +12076,7 @@ function renderWeaponsZone(zone) {
 
     renderNGEPanel(x, y, w, panelH, { color: '#f44', cutCorners: ['bl'], label: 'ORD.SYS' });
 
-    curY += 18;
+    curY += 22;
 
     // Bombs section
     if (playerInventory.maxBombs > 0) {
@@ -12061,7 +12146,7 @@ function renderWeaponsZone(zone) {
         if (missileAmmo >= missileMaxAmmo) {
             const pulse = Math.sin(Date.now() / 200) * 0.4 + 0.6;
             ctx.fillStyle = `rgba(255, 68, 0, ${pulse})`;
-            ctx.font = 'bold 9px monospace';
+            ctx.font = 'bold 10px monospace';
             ctx.textAlign = 'right';
             ctx.fillText('SWARM RDY', x + w - pad, curY);
             ctx.textAlign = 'left';
@@ -12169,12 +12254,12 @@ function renderFleetZone(zone) {
     const subDroneCount = activeCoordinators.reduce((sum, c) => sum + (c.subDrones ? c.subDrones.filter(d => d.alive).length : 0), 0);
     const totalDrones = activeDrones.length + subDroneCount;
     ctx.fillStyle = '#8af';
-    ctx.font = 'bold 9px monospace';
+    ctx.font = 'bold 10px monospace';
     ctx.textAlign = 'right';
-    ctx.fillText(`${totalDrones}/${droneSlots}`, x + w - pad, y + 14);
+    ctx.fillText(`${totalDrones}/${droneSlots}`, x + w - pad, y + 18);
     ctx.textAlign = 'left';
 
-    let curY = y + headerH + pad;
+    let curY = y + headerH + pad + 4;
     const barW = 40;
     const barH = 5;
 
@@ -12199,7 +12284,7 @@ function renderFleetZone(zone) {
 
         // Coordinator label
         ctx.fillStyle = coordColor;
-        ctx.font = 'bold 9px monospace';
+        ctx.font = 'bold 10px monospace';
         ctx.fillText(coordLabel, x + pad + 20, curY + 4);
 
         // Energy bar
@@ -12211,7 +12296,7 @@ function renderFleetZone(zone) {
 
         // Time
         ctx.fillStyle = energyPercent < 0.25 ? '#f44' : '#889';
-        ctx.font = '9px monospace';
+        ctx.font = '10px monospace';
         ctx.fillText(`${timeLeft}s`, coordBarX + barW + 4, curY + 4);
 
         // Status dot
@@ -12235,14 +12320,14 @@ function renderFleetZone(zone) {
 
             // Sub tree connector
             ctx.fillStyle = '#334';
-            ctx.font = '9px monospace';
+            ctx.font = '10px monospace';
             ctx.fillText('\u2502  ' + subTreeChar + '\u2500', x + pad, curY + 3);
 
             // Drone label
             const subIsHarvester = sub.type === 'harvester';
             const subLabel = subIsHarvester ? `H-${String(si + 1).padStart(2, '0')}` : `A-${String(si + 1).padStart(2, '0')}`;
             ctx.fillStyle = subIsHarvester ? '#0a0' : '#a44';
-            ctx.font = '8px monospace';
+            ctx.font = '9px monospace';
             ctx.fillText(subLabel, x + pad + 28, curY + 3);
 
             // Sub energy bar
@@ -12253,7 +12338,7 @@ function renderFleetZone(zone) {
 
             // Sub time
             ctx.fillStyle = '#667';
-            ctx.font = '8px monospace';
+            ctx.font = '9px monospace';
             ctx.fillText(`${Math.ceil(sub.energyTimer)}s`, coordBarX + barW * 0.7 + 3, curY + 3);
 
             curY += rowH;
@@ -12270,7 +12355,7 @@ function renderFleetZone(zone) {
         ctx.fillText(treeChar + '\u2500', x + pad, curY + 4);
 
         ctx.fillStyle = '#889';
-        ctx.font = 'bold 8px monospace';
+        ctx.font = 'bold 9px monospace';
         ctx.fillText(`DRONES: ${rawDrones}`, x + pad + 20, curY + 4);
 
         curY += rowH;
@@ -12281,13 +12366,13 @@ function renderFleetZone(zone) {
             const droneTreeChar = isLastDrone ? '\u2514' : '\u251C';
 
             ctx.fillStyle = '#334';
-            ctx.font = '9px monospace';
+            ctx.font = '10px monospace';
             ctx.fillText('   ' + droneTreeChar + '\u2500', x + pad, curY + 3);
 
             const isHarvester = drone.type === 'harvester';
             const droneLabel = isHarvester ? `H-${String(i + 1).padStart(2, '0')}` : `B-${String(i + 1).padStart(2, '0')}`;
             ctx.fillStyle = isHarvester ? '#0a0' : '#a44';
-            ctx.font = '8px monospace';
+            ctx.font = '9px monospace';
             ctx.fillText(droneLabel, x + pad + 28, curY + 3);
 
             const droneEnergyPercent = drone.energyTimer / drone.maxEnergy;
@@ -12297,7 +12382,7 @@ function renderFleetZone(zone) {
             });
 
             ctx.fillStyle = '#667';
-            ctx.font = '8px monospace';
+            ctx.font = '9px monospace';
             ctx.fillText(`${Math.ceil(drone.energyTimer)}s`, droneBarX + barW * 0.7 + 3, curY + 3);
 
             // Warning flash for low energy
@@ -12318,7 +12403,7 @@ function renderCommanderZone(zone) {
     // "INCOMING TRANSMISSION" header with blinking light
     renderNGEBlinkLight(x + 8, y + 6, '#0f0', 250);
     ctx.fillStyle = '#0f0';
-    ctx.font = 'bold 9px monospace';
+    ctx.font = 'bold 10px monospace';
     ctx.textAlign = 'left';
     ctx.fillText('INCOMING TRANSMISSION', x + 16, y + 12);
 
@@ -12338,7 +12423,7 @@ function renderCommanderZone(zone) {
         const displayed = missionCommanderState.dialogue.substring(0, missionCommanderState.typewriterIndex);
         if (displayed.length > 0) {
             ctx.fillStyle = '#0f0';
-            ctx.font = '10px monospace';
+            ctx.font = '11px monospace';
             ctx.textAlign = 'left';
 
             // Word wrap
@@ -12454,6 +12539,20 @@ function triggerMissionCommander(category = null) {
 function updateHUDAnimations(dt) {
     hudAnimState.energyFlowPhase += dt;
     hudAnimState.scanlineOffset = (hudAnimState.scanlineOffset + dt * 30) % 100;
+
+    // Energy pulse animation (~3.5 second cycle)
+    hudAnimState.energyPulseTimer += dt;
+    if (!hudAnimState.energyPulseActive && hudAnimState.energyPulseTimer >= 3.5) {
+        hudAnimState.energyPulseActive = true;
+        hudAnimState.energyPulseY = 0;
+        hudAnimState.energyPulseTimer = 0;
+    }
+    if (hudAnimState.energyPulseActive) {
+        hudAnimState.energyPulseY += dt * 220; // pixels per second sweep speed
+        if (hudAnimState.energyPulseY > canvas.height) {
+            hudAnimState.energyPulseActive = false;
+        }
+    }
 }
 
 // ============================================
