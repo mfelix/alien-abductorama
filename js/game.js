@@ -12625,19 +12625,30 @@ function renderHUDFrame() {
     const layout = getHUDLayout();
     const booting = hudBootState.phase === 'booting';
 
-    // Always render these zones
-    renderStatusZone(layout.statusZone);
+    // Helper: true if a panel's boot is done and real content should render
+    const panelReady = (key) => !booting || !hudBootState.panels[key].active || hudBootState.panels[key].phase === 'online';
+
+    // Status zone: only render real content after boot completes
+    if (panelReady('status')) {
+        renderStatusZone(layout.statusZone);
+    }
     if (booting && hudBootState.panels.status.phase !== 'waiting') {
         renderPanelBootOverlay(layout.statusZone, 120, '#0ff', 'SYS.STATUS', hudBootState.panels.status, hudBootState.bootLines.status);
     }
+
+    // Mission zone: deferred on wave 1 until beam tutorial, hidden during boot
     const missionVisible = wave !== 1 || !tutorialState || tutorialState.beamHintShown;
-    if (missionVisible) {
+    if (missionVisible && panelReady('mission')) {
         renderMissionZone(layout.missionZone);
     }
     if (missionVisible && booting && hudBootState.panels.mission.phase !== 'waiting') {
         renderPanelBootOverlay(layout.missionZone, 110, '#0a0', 'MISSION.CTL', hudBootState.panels.mission, hudBootState.bootLines.mission);
     }
-    renderSystemsZone(layout.systemsZone);
+
+    // Systems zone
+    if (panelReady('systems')) {
+        renderSystemsZone(layout.systemsZone);
+    }
     if (booting && hudBootState.panels.systems.phase !== 'waiting') {
         renderPanelBootOverlay(layout.systemsZone, 88, '#f80', 'SYS.INTG', hudBootState.panels.systems, hudBootState.bootLines.systems);
     }
@@ -12655,15 +12666,17 @@ function renderHUDFrame() {
         ctx.save();
         const slideOffset = (1 - easeOutCubic(hudAnimState.weaponsPanelSlide)) * -layout.weaponsZone.w;
         ctx.translate(slideOffset, 0);
-        weaponsPanelH = renderWeaponsZone(layout.weaponsZone) || layout.weaponsZone.h;
+        if (panelReady('weapons')) {
+            weaponsPanelH = renderWeaponsZone(layout.weaponsZone) || layout.weaponsZone.h;
+        }
         if (booting && hudBootState.panels.weapons.active && hudBootState.panels.weapons.phase !== 'waiting') {
             renderPanelBootOverlay(layout.weaponsZone, layout.weaponsZone.h, '#f44', 'ORD.SYS', hudBootState.panels.weapons, hudBootState.bootLines.weapons);
         }
         ctx.restore();
     }
 
-    // Research progress bar: render below weapons zone
-    if (techTree.activeResearch) {
+    // Research progress bar: render below weapons zone (suppress during boot)
+    if (techTree.activeResearch && !booting) {
         const node = getTechNode(techTree.activeResearch.nodeId);
         if (node) {
             const rX = layout.weaponsZone.x;
@@ -12707,7 +12720,9 @@ function renderHUDFrame() {
         ctx.save();
         const slideOffset = (1 - easeOutCubic(hudAnimState.fleetPanelSlide)) * layout.fleetZone.w;
         ctx.translate(slideOffset, 0);
-        renderFleetZone(layout.fleetZone);
+        if (panelReady('fleet')) {
+            renderFleetZone(layout.fleetZone);
+        }
         if (booting && hudBootState.panels.fleet.active && hudBootState.panels.fleet.phase !== 'waiting') {
             renderPanelBootOverlay(layout.fleetZone, layout.fleetZone.h, '#48f', 'FLEET.CMD', hudBootState.panels.fleet, hudBootState.bootLines.fleet);
         }
@@ -12723,7 +12738,9 @@ function renderHUDFrame() {
         ctx.save();
         const slideOffset = (1 - easeOutCubic(hudAnimState.commanderPanelSlide)) * -layout.commanderZone.w;
         ctx.translate(slideOffset, 0);
-        renderCommanderZone(layout.commanderZone);
+        if (panelReady('commander')) {
+            renderCommanderZone(layout.commanderZone);
+        }
         if (commanderBooting) {
             renderPanelBootOverlay(layout.commanderZone, layout.commanderZone.h, '#0f0', 'COMMS.SYS', hudBootState.panels.commander, hudBootState.bootLines.commander);
         }
@@ -12744,13 +12761,15 @@ function renderHUDFrame() {
         }
     }
 
-    // Energy flow lines (when beam conduit researched)
-    if (techFlags.beamConduit && ufo) {
+    // Energy flow lines (when beam conduit researched) - suppress during boot
+    if (techFlags.beamConduit && ufo && !booting) {
         renderEnergyFlows(layout);
     }
 
-    // Energy pulse sweep effect across HUD panels
-    renderHUDEnergyPulse(layout);
+    // Energy pulse sweep effect across HUD panels - suppress during boot
+    if (!booting) {
+        renderHUDEnergyPulse(layout);
+    }
 
     // Coordinator distress arrows (kept separate - they're world-space indicators)
     renderCoordDistressArrows();
@@ -13680,6 +13699,7 @@ function updateHUDAnimations(dt) {
 function initHUDBoot() {
     hudBootState.phase = 'booting';
     hudBootState.timer = 0;
+    hudBootState.duration = 3.5;
     hudBootState._allOnlinePlayed = false;
 
     // Snapshot current tech state
@@ -13712,10 +13732,12 @@ function initHUDBoot() {
 
     p.commander.active = wave >= 2;
 
-    // Reset all panel states
+    // Reset all panel states and restore default stagger times
+    const defaultStartTimes = { status: 0.0, mission: 0.15, systems: 0.3, weapons: 0.6, fleet: 0.9, commander: 1.2 };
     for (const key of Object.keys(p)) {
         p[key].progress = 0;
         p[key].phase = 'waiting';
+        p[key].startTime = defaultStartTimes[key] || 0;
     }
 
     // Generate boot text lines for each active panel
