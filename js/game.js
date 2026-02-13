@@ -21678,7 +21678,7 @@ function renderHexDecodeText(text, centerX, y, fontSize, progress, opts = {}) {
 
 function renderDotLeader(x1, x2, y, color = 'rgba(0, 255, 255, 0.15)') {
     ctx.save();
-    ctx.font = '9px monospace';
+    ctx.font = '11px monospace';
     ctx.fillStyle = color;
     ctx.textAlign = 'left';
     const dotW = ctx.measureText('.').width + 1;
@@ -21701,14 +21701,14 @@ function renderSystemCheckLine(x, y, width, label, earned, detail, age, opts = {
     renderNGEIndicator(x, y - 3, 'diamond', diamondColor, 'steady', { rate: 99999 });
 
     // >> prefix
-    ctx.font = '9px monospace';
+    ctx.font = '11px monospace';
     ctx.textAlign = 'left';
     ctx.fillStyle = 'rgba(0, 255, 255, 0.5)';
     ctx.fillText('>>', x + 8, y);
 
     // Label
     ctx.fillStyle = earned ? '#0f0' : '#445';
-    ctx.fillText(label, x + 24, y);
+    ctx.fillText(label, x + 26, y);
 
     // Stamp
     const stamp = earned ? '[OK]' : '[SKIP]';
@@ -21716,7 +21716,7 @@ function renderSystemCheckLine(x, y, width, label, earned, detail, age, opts = {
     const stampX = x + width - stampWidth - (detail ? ctx.measureText(`(${detail})`).width + 8 : 0);
 
     // Dot leader between label end and stamp
-    const labelEndX = x + 24 + ctx.measureText(label).width + 4;
+    const labelEndX = x + 26 + ctx.measureText(label).width + 4;
     renderDotLeader(labelEndX, stampX - 4, y);
 
     // Green glow on earned stamp
@@ -21730,7 +21730,7 @@ function renderSystemCheckLine(x, y, width, label, earned, detail, age, opts = {
 
     // Detail text
     if (detail) {
-        ctx.font = '7px monospace';
+        ctx.font = '9px monospace';
         ctx.fillStyle = '#666';
         ctx.fillText(`(${detail})`, stampX + stampWidth + 4, y);
     }
@@ -22575,8 +22575,8 @@ function renderTargetRow(counts, totals, startX, y, iconSize, spacing, revealCou
 
         // Count text with mini hex-decode
         const label = totals ? `${count}/${spawned}` : count.toString();
-        const countY = y + iconSize / 2 + 14;
-        ctx.font = 'bold 11px monospace';
+        const countY = y + iconSize / 2 + 16;
+        ctx.font = 'bold 14px monospace';
         ctx.textAlign = 'center';
 
         if (timeSinceReveal < 0.10 && timeSinceReveal > 0) {
@@ -22601,9 +22601,9 @@ function renderTargetRow(counts, totals, startX, y, iconSize, spacing, revealCou
         }
 
         // Type abbreviation label
-        ctx.font = '7px monospace';
+        ctx.font = '9px monospace';
         ctx.fillStyle = '#445';
-        ctx.fillText(TYPE_ABBR[i], x, countY + 11);
+        ctx.fillText(TYPE_ABBR[i], x, countY + 13);
 
         ctx.restore();
     }
@@ -22905,8 +22905,8 @@ function renderWaveSummary() {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // B. Panel dimensions
-    const panelW = Math.min(680, canvas.width * 0.82);
-    const panelH = Math.min(560, canvas.height * 0.85);
+    const panelW = Math.min(720, canvas.width * 0.85);
+    const panelH = Math.min(620, canvas.height * 0.88);
     const panelX = (canvas.width - panelW) / 2;
     const panelY = (canvas.height - panelH) / 2;
     const contentLeft = panelX + 20;
@@ -22915,9 +22915,6 @@ function renderWaveSummary() {
     const centerX = panelX + panelW / 2;
     const st = waveSummaryState;
     const elapsed = st.elapsed;
-
-    // C. Corner L-brackets
-    renderCornerBrackets(panelX, panelY, panelW, panelH, 8, 20, st.bracketAlpha);
 
     // D. Panel rendering
     if (st.borderTraceProgress < 1) {
@@ -22930,13 +22927,13 @@ function renderWaveSummary() {
         renderNGEPanel(panelX, panelY, panelW, panelH, { color: '#0ff', alpha: 0.88, cutCorners: ['tl', 'br'] });
     }
 
-    // WAV.ANALYSIS label (8px, manual typewriter)
+    // WAV.ANALYSIS label (11px, manual typewriter — matches HUD panel labels)
     if (st.labelTypewriterChars > 0) {
         ctx.save();
-        ctx.font = 'bold 8px monospace';
+        ctx.font = 'bold 11px monospace';
         ctx.fillStyle = '#0ff';
         ctx.textAlign = 'left';
-        ctx.fillText('WAV.ANALYSIS'.substring(0, st.labelTypewriterChars), panelX + 10, panelY + 10);
+        ctx.fillText('WAV.ANALYSIS'.substring(0, st.labelTypewriterChars), panelX + 14, panelY + 13);
         ctx.restore();
     }
 
@@ -22946,7 +22943,7 @@ function renderWaveSummary() {
     cursorY += 14;
     ctx.save();
     ctx.textAlign = 'center';
-    renderHexDecodeText('WAVE ' + waveSummary.wave, centerX, cursorY, 16, st.hexDecodeProgress);
+    renderHexDecodeText('WAVE ' + waveSummary.wave, centerX, cursorY, 22, st.hexDecodeProgress);
     ctx.restore();
     ctx.shadowBlur = 0;
     cursorY += 14;
@@ -22954,7 +22951,7 @@ function renderWaveSummary() {
     // Typewriter subheader
     if (st.typewriterChars > 0) {
         ctx.save();
-        ctx.font = '8px monospace';
+        ctx.font = '11px monospace';
         ctx.fillStyle = 'rgba(0, 255, 255, 0.7)';
         ctx.textAlign = 'center';
         ctx.fillText('>> MISSION DEBRIEF INITIATED'.substring(0, st.typewriterChars), centerX, cursorY);
@@ -22977,7 +22974,7 @@ function renderWaveSummary() {
         const sectionAlpha = Math.min(1, sectionAge / 0.15);
         ctx.save();
         ctx.globalAlpha = sectionAlpha;
-        ctx.font = 'bold 9px monospace';
+        ctx.font = 'bold 11px monospace';
         ctx.fillStyle = 'rgba(0, 255, 255, 0.6)';
         ctx.textAlign = 'left';
         ctx.fillText('TGT.TELEMETRY', contentLeft, cursorY);
@@ -23007,7 +23004,7 @@ function renderWaveSummary() {
         const ptsSectionAlpha = Math.min(1, ptsSectionAge / 0.15);
         ctx.save();
         ctx.globalAlpha = ptsSectionAlpha;
-        ctx.font = 'bold 9px monospace';
+        ctx.font = 'bold 11px monospace';
         ctx.fillStyle = 'rgba(0, 255, 255, 0.6)';
         ctx.textAlign = 'left';
         ctx.fillText('PTS.CALC', contentLeft, cursorY);
@@ -23018,14 +23015,14 @@ function renderWaveSummary() {
     // WAV.POINTS row
     const pointsValue = st.pointsStarted ? st.pointsCount.current : 0;
     if (st.pointsStarted || elapsed >= st.timings.targetsEnd) {
-        ctx.font = '9px monospace';
+        ctx.font = '12px monospace';
         ctx.fillStyle = '#aaa';
         ctx.textAlign = 'left';
         ctx.fillText('WAV.POINTS', contentLeft, cursorY);
 
         // Points value with count-up glow and pop
         ctx.textAlign = 'right';
-        ctx.font = 'bold 14px monospace';
+        ctx.font = 'bold 18px monospace';
         if (st.pointsFinished && st.pointsFinishTime >= 0) {
             const popAge = elapsed - st.pointsFinishTime;
             const popScale = popAge < 0.2 ? 1 + 0.12 * Math.sin(Math.min(1, popAge / 0.2) * Math.PI) : 1;
@@ -23065,12 +23062,12 @@ function renderWaveSummary() {
             const bonusPtsAlpha = Math.min(1, bonusPtsAge / 0.15);
             ctx.save();
             ctx.globalAlpha = bonusPtsAlpha;
-            ctx.font = '9px monospace';
+            ctx.font = '12px monospace';
             ctx.fillStyle = '#666';
             ctx.textAlign = 'left';
             ctx.fillText('BONUS.PTS', contentLeft, cursorY);
             ctx.textAlign = 'right';
-            ctx.font = '11px monospace';
+            ctx.font = '14px monospace';
             ctx.fillStyle = '#0f0';
             ctx.fillText('+' + waveSummary.bonusPoints.toLocaleString(), contentRight, cursorY);
             ctx.restore();
@@ -23085,7 +23082,7 @@ function renderWaveSummary() {
             const bonusAge = Math.max(0, elapsed - bonusRevealTime);
             const dotLabel = bonus.label.replace(/\s+/g, '.');
             renderSystemCheckLine(contentLeft, cursorY, contentWidth, dotLabel, bonus.earned, bonus.detail, bonusAge);
-            cursorY += 14;
+            cursorY += 18;
         }
 
         // Bonus multiplier summary
@@ -23097,7 +23094,7 @@ function renderWaveSummary() {
             if (multAlpha > 0) {
                 ctx.save();
                 ctx.globalAlpha = multAlpha;
-                ctx.font = 'bold 9px monospace';
+                ctx.font = 'bold 11px monospace';
                 ctx.fillStyle = '#fc0';
                 ctx.textAlign = 'left';
                 ctx.fillText('BONUS MULT: +' + (earnedCount * 25) + '%', contentLeft, cursorY);
@@ -23123,14 +23120,14 @@ function renderWaveSummary() {
             cursorY += 8;
 
             // CRED.CALC micro-label
-            ctx.font = '7px monospace';
+            ctx.font = '9px monospace';
             ctx.fillStyle = 'rgba(0, 255, 255, 0.4)';
             ctx.textAlign = 'left';
             ctx.fillText('CRED.CALC', contentLeft, cursorY);
-            cursorY += 10;
+            cursorY += 12;
 
             // BASE.CRED row
-            ctx.font = '9px monospace';
+            ctx.font = '12px monospace';
             ctx.fillStyle = '#aaa';
             ctx.textAlign = 'left';
             ctx.fillText('BASE.CRED', contentLeft, cursorY);
@@ -23160,7 +23157,7 @@ function renderWaveSummary() {
             // TOTAL.CRED with diamond + count-up + pop
             const bucksValue = st.bucksStarted ? st.bucksCount.current : 0;
             renderNGEIndicator(contentLeft, cursorY - 3, 'diamond', '#fc0', 'steady', { rate: 99999 });
-            ctx.font = 'bold 11px monospace';
+            ctx.font = 'bold 14px monospace';
             ctx.fillStyle = '#fc0';
             ctx.textAlign = 'left';
             ctx.fillText('TOTAL.CRED', contentLeft + 10, cursorY);
@@ -23211,13 +23208,13 @@ function renderWaveSummary() {
         ctx.globalAlpha = bioAlpha;
 
         // Section label
-        ctx.font = 'bold 9px monospace';
+        ctx.font = 'bold 11px monospace';
         ctx.fillStyle = 'rgba(0, 255, 0, 0.6)';
         ctx.textAlign = 'left';
         ctx.fillText('BIO.STATUS', contentLeft, cursorY);
-        cursorY += 14;
+        cursorY += 16;
 
-        ctx.font = '9px monospace';
+        ctx.font = '12px monospace';
         // BM.DELIVERED
         if (waveSummary.droneHarvests > 0) {
             renderNGEIndicator(contentLeft, cursorY - 3, 'diamond', '#0f0', 'steady', { rate: 99999 });
@@ -23249,7 +23246,7 @@ function renderWaveSummary() {
                 ctx.shadowColor = '#0f0';
                 ctx.shadowBlur = 4 * (1 - bioAge / 0.5);
             }
-            ctx.font = 'bold 9px monospace';
+            ctx.font = 'bold 12px monospace';
             ctx.fillStyle = '#0f0';
             ctx.textAlign = 'left';
             ctx.fillText('BM.EARNED', contentLeft + 10, cursorY);
@@ -23280,13 +23277,13 @@ function renderWaveSummary() {
         ctx.globalAlpha = scoreAlpha;
 
         renderNGEIndicator(contentLeft, cursorY - 3, 'diamond', '#0ff', 'steady', { rate: 99999 });
-        ctx.font = 'bold 9px monospace';
+        ctx.font = 'bold 12px monospace';
         ctx.fillStyle = '#aaa';
         ctx.textAlign = 'left';
         ctx.fillText('CUMU.SCORE', contentLeft + 10, cursorY);
 
         ctx.textAlign = 'right';
-        ctx.font = 'bold 14px monospace';
+        ctx.font = 'bold 18px monospace';
         if (scoreAge < 0.4) {
             ctx.shadowColor = 'rgba(255, 255, 255, ' + (0.4 * (1 - scoreAge / 0.4)) + ')';
             ctx.shadowBlur = 12;
@@ -23311,7 +23308,7 @@ function renderWaveSummary() {
         const countY = panelY + panelH - 12;
         ctx.translate(countX, countY);
         ctx.scale(countScale, countScale);
-        ctx.font = 'bold 9px monospace';
+        ctx.font = 'bold 12px monospace';
         ctx.textAlign = 'right';
         if (flashAlpha > 0) {
             ctx.shadowColor = 'rgba(255, 255, 255, ' + flashAlpha + ')';
