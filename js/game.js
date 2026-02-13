@@ -6251,8 +6251,8 @@ class UFO {
             ctx.globalAlpha = 1;
         }
 
-        // Energy bar above UFO
-        this.renderEnergyBar(drawY - 20);
+        // Energy bar above UFO (tighter to hull to avoid HUD overlap)
+        this.renderEnergyBar(drawY - 10);
 
         // Render shield bubble if active
         if (activePowerups.shield.active) {
@@ -14065,8 +14065,8 @@ function getHUDLayout() {
 
     return {
         statusZone: { x: margin, y: margin, w: leftW, h: 120 },
-        missionZone: { x: centerX, y: 4, w: centerW, h: 110 },
-        bioMatterZone: { x: bioGapX, y: 4, w: bioGapW, h: 110 },
+        missionZone: { x: centerX, y: margin, w: centerW, h: 100 },
+        bioMatterZone: { x: bioGapX, y: margin, w: bioGapW, h: 100 },
         systemsZone: { x: canvas.width - rightW - margin, y: margin, w: rightW, h: 90 },
         weaponsZone: { x: margin, y: 140, w: leftW, h: 200 },
         fleetZone: { x: canvas.width - rightW - margin, y: fleetY, w: rightW, h: 300 },
@@ -14561,7 +14561,7 @@ function renderPowerupsInStatus(startX, startY) {
 }
 
 function renderMissionZone(zone) {
-    const { x, y, w } = zone;
+    const { x, y, w, h } = zone;
 
     // Quota bar (enlarged, better contrast)
     if (quotaTarget > 0) {
@@ -14636,7 +14636,7 @@ function renderMissionZone(zone) {
     }
 
     // Harvest counter
-    const harvestY = y + 30;
+    const harvestY = y + 28;
     renderHarvestCounterNGE(x, harvestY, w);
 
     // Panel indicators
@@ -14645,9 +14645,9 @@ function renderMissionZone(zone) {
     const missionEColor = quotaPct > 0.8 ? '#0f0' : (quotaPct < 0.5 ? '#ff0' : '#0a0');
     const missionERate = quotaPct > 0.8 ? 9999 : (quotaPct < 0.5 ? 400 : 1000);
     renderNGEIndicator(x + w - 8, y + 4, 'square', missionEColor, 'steady', { rate: missionERate });
-    renderNGEIndicator(x + 4, y + 110 - 6, 'circle', '#0a0', 'steady', { rate: 900 });
-    renderNGEIndicator(x + 12, y + 110 - 6, 'circle', '#0a0', 'steady', { rate: 900, phaseOffset: 450 });
-    renderNGEIndicator(x + w - 8, y + 110 - 6, 'diamond', '#0a0', 'steady', { rate: 1100 });
+    renderNGEIndicator(x + 4, y + h - 6, 'circle', '#0a0', 'steady', { rate: 900 });
+    renderNGEIndicator(x + 12, y + h - 6, 'circle', '#0a0', 'steady', { rate: 900, phaseOffset: 450 });
+    renderNGEIndicator(x + w - 8, y + h - 6, 'diamond', '#0a0', 'steady', { rate: 1100 });
 }
 
 function renderBioMatterPanel(zone) {
@@ -14667,8 +14667,7 @@ function renderBioMatterPanel(zone) {
         label: compact ? 'BIO' : 'BIO-MATTER'
     });
 
-    // Header area (top 22px)
-    // Value display
+    // Header area — value display
     const labelW = compact ? 30 : 80;
     const valX = x + 6 + labelW;
     if (bioMatter > 0) {
@@ -14690,11 +14689,11 @@ function renderBioMatterPanel(zone) {
     renderNGEBlinkLight(x + w - 18, y + 6, '#0f0', 500);
     renderNGEBlinkLight(x + w - 10, y + 6, '#0f0', 500);
 
-    // Stream area
+    // Stream area — FULL WIDTH rows
     const streamX = x + 4;
-    const streamY = y + 24;
+    const streamY = y + 20;
     const streamW = w - 8;
-    const streamH = 80;
+    const streamH = h - 28;
     const hasActiveRows = bioUploadRows.some(r => r.phase !== 'done');
 
     // Stream border
@@ -14710,10 +14709,10 @@ function renderBioMatterPanel(zone) {
     ctx.rect(streamX, streamY, streamW, streamH);
     ctx.clip();
 
-    // Render upload cells or idle state (horizontal flow layout)
+    // Render upload rows or idle state
     const activeRows = bioUploadRows.filter(r => r.phase !== 'done');
     if (activeRows.length === 0) {
-        // IDLE STATE
+        // IDLE STATE — subtle data stream
         const now = Date.now();
         ctx.font = '6px monospace';
         ctx.textAlign = 'left';
@@ -14732,33 +14731,26 @@ function renderBioMatterPanel(zone) {
             ctx.fillText('AWAITING UPLOAD', streamX + streamW / 2, streamY + streamH / 2 + 3);
         }
     } else {
-        // ACTIVE STATE — horizontal flow: one cell per upload
-        const cellW = compact ? 50 : 65;
-        const cellH = 14;
-        const cellGap = 3;
-        const rowH = cellH + 2;
-        const maxCols = Math.floor((streamW + cellGap) / (cellW + cellGap));
-        const maxRows = Math.floor(streamH / rowH);
-        const maxVisible = maxCols * maxRows;
+        // ACTIVE STATE — full-width rows, max 3 visible
+        const maxVisible = 3;
+        const rowGap = 2;
+        const rowH = Math.floor((streamH - (maxVisible - 1) * rowGap) / maxVisible);
         const visibleRows = activeRows.slice(0, maxVisible);
         const queuedCount = Math.max(0, activeRows.length - maxVisible);
 
         for (let i = 0; i < visibleRows.length; i++) {
             const row = visibleRows[i];
-            const col = i % maxCols;
-            const rowIdx = Math.floor(i / maxCols);
-            const cellX = streamX + col * (cellW + cellGap);
-            const cellY = streamY + rowIdx * rowH;
+            const rowY = streamY + i * (rowH + rowGap);
             const age = (Date.now() - row.spawnTime) / 1000;
 
             if (row.phase === 'flash') {
                 const flashAge = Date.now() - row.flashStartTime;
                 if (flashAge > 300) {
                     const collapseProgress = Math.min(1, (flashAge - 200) / 100);
-                    const currentW = cellW * (1 - collapseProgress * collapseProgress * collapseProgress);
+                    const currentW = streamW * (1 - collapseProgress * collapseProgress * collapseProgress);
                     if (currentW < 1) { row.phase = 'done'; continue; }
                     ctx.fillStyle = 'rgba(0, 255, 0, 0.3)';
-                    ctx.fillRect(cellX, cellY, currentW, cellH);
+                    ctx.fillRect(streamX, rowY, currentW, rowH);
                 } else {
                     const flashPhase = Math.floor(flashAge / 25) % 4;
                     let bg, fg;
@@ -14769,11 +14761,11 @@ function renderBioMatterPanel(zone) {
                         default: bg = '#000'; fg = '#fff'; break;
                     }
                     ctx.fillStyle = bg;
-                    ctx.fillRect(cellX, cellY, cellW, cellH);
+                    ctx.fillRect(streamX, rowY, streamW, rowH);
                     ctx.fillStyle = fg;
-                    ctx.font = 'bold 6px monospace';
+                    ctx.font = 'bold 8px monospace';
                     ctx.textAlign = 'center';
-                    ctx.fillText('OK', cellX + cellW / 2, cellY + 10);
+                    ctx.fillText('UPLOAD COMPLETE', streamX + streamW / 2, rowY + rowH / 2 + 3);
                 }
                 continue;
             }
@@ -14794,36 +14786,51 @@ function renderBioMatterPanel(zone) {
                 continue;
             }
 
-            // Cell background
+            // Row background
             ctx.fillStyle = 'rgba(0, 40, 0, 0.4)';
-            ctx.fillRect(cellX, cellY, cellW, cellH);
+            ctx.fillRect(streamX, rowY, streamW, rowH);
 
-            // Progress bar fill
+            // Full-width progress bar fill
             const barColor = progress > 0.9 ? '#0ff' : '#0f0';
             ctx.fillStyle = barColor;
             ctx.globalAlpha = 0.3;
-            ctx.fillRect(cellX, cellY, cellW * progress, cellH);
+            ctx.fillRect(streamX, rowY, streamW * progress, rowH);
             ctx.globalAlpha = 1;
 
-            // Cell border
+            // Animated chevron overlay on fill
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(streamX, rowY, streamW * progress, rowH);
+            ctx.clip();
+            ctx.globalAlpha = 0.12;
+            ctx.fillStyle = '#fff';
+            const chevOffset = (Date.now() / 80) % 12;
+            ctx.font = 'bold 10px monospace';
+            for (let cx = streamX - 12 + chevOffset; cx < streamX + streamW * progress + 12; cx += 12) {
+                ctx.fillText('\u00BB', cx, rowY + rowH / 2 + 4);
+            }
+            ctx.restore();
+
+            // Row border
             ctx.strokeStyle = progress > 0.9 ? 'rgba(0, 255, 255, 0.6)' : 'rgba(0, 255, 0, 0.4)';
             ctx.lineWidth = 0.5;
-            ctx.strokeRect(cellX, cellY, cellW, cellH);
+            ctx.strokeRect(streamX, rowY, streamW, rowH);
 
-            // Chevron + percentage
+            // Left: animated chevron indicator
             ctx.fillStyle = barColor;
             ctx.font = 'bold 7px monospace';
             ctx.textAlign = 'left';
             const chevFrame = Math.floor(Date.now() / 200) % 3;
-            ctx.fillText('>' .repeat(chevFrame + 1), cellX + 2, cellY + 10);
+            ctx.fillText('>' .repeat(chevFrame + 1), streamX + 3, rowY + rowH / 2 + 3);
+
+            // Right: percentage
             ctx.textAlign = 'right';
-            const pctText = `${Math.floor(progress * 100)}%`;
-            ctx.fillText(pctText, cellX + cellW - 2, cellY + 10);
+            ctx.fillText(`${Math.floor(progress * 100)}%`, streamX + streamW - 3, rowY + rowH / 2 + 3);
         }
 
         // Queue overflow indicator
         if (queuedCount > 0) {
-            const queueY = streamY + streamH - 12;
+            const queueY = streamY + streamH - 10;
             const pulse = 0.5 + 0.5 * Math.sin(Date.now() * 0.004);
             ctx.fillStyle = `rgba(0, 255, 0, ${0.3 + pulse * 0.4})`;
             ctx.font = 'bold 7px monospace';
@@ -14835,7 +14842,7 @@ function renderBioMatterPanel(zone) {
     ctx.restore(); // end stream clip
 
     // Footer
-    const footerY = y + h - 6;
+    const footerY = y + h - 4;
     ctx.font = '7px monospace';
     ctx.textAlign = 'left';
     if (hasActiveRows) {
@@ -14846,7 +14853,6 @@ function renderBioMatterPanel(zone) {
         ctx.textAlign = 'right';
         const rate = bioUploadState.bitRate > 0 ? `${Math.round(bioUploadState.bitRate)} b/s` : '0 b/s';
         ctx.fillText('RATE: ' + rate, x + w - 6, footerY);
-        // Fast blink indicator
         renderNGEBlinkLight(x + w - 6, footerY - 8, '#0f0', 200);
     } else {
         ctx.fillStyle = 'rgba(0, 170, 68, 0.4)';
@@ -14859,7 +14865,7 @@ function renderBioMatterPanel(zone) {
 function renderHarvestCounterNGE(x, y, w) {
     const baseIconSize = 22;
     const spacing = w / (TARGET_TYPES.length + 0.5);
-    const panelH = 48;
+    const panelH = 44;
 
     renderNGEPanel(x, y, w, panelH, { color: '#0aa', cutCorners: [], alpha: 0.5 });
 
@@ -16239,21 +16245,29 @@ function renderTechTree(layout) {
         'rgba(221, 102, 0, 0.04)'
     ];
 
-    // Node dimensions scaled to fit
-    const isMicro = treeW < 160;
-    const nodeW = isMicro ? 26 : Math.min(40, Math.floor((treeW - 30) / 5));
-    const nodeH = isMicro ? 12 : Math.min(18, Math.floor((innerH - 20) / 3.6));
-    const nodeGap = isMicro ? 3 : Math.min(6, Math.floor((treeW - 5 * nodeW) / 4));
+    // Node dimensions — fill the container with even padding
     const nodesPerTrack = 5;
+    const edgePadX = 4;  // padding from left/right edges of tree area
+    const edgePadY = 2;  // padding from top/bottom edges of inner area
+    const trackGap = 3;  // gap between track rows
+
+    // Calculate node sizes to fill available space
+    const availW = treeW - edgePadX * 2;
+    const availH = innerH - edgePadY * 2;
+
+    // Horizontal: nodes fill available width with equal gaps
+    const nodeGap = Math.max(3, Math.floor(availW / (nodesPerTrack * 4)));
+    const nodeW = Math.floor((availW - (nodesPerTrack - 1) * nodeGap) / nodesPerTrack);
+
+    // Vertical: 3 rows fill available height
+    const rowH = Math.floor((availH - (2 * trackGap)) / 3);
+    const nodeH = rowH - 2;
+
+    // Starting positions (no centering, fill from edges)
+    const startX = treeX + edgePadX;
+    const baseY = innerY + edgePadY;
     const trackNodeWidth = nodesPerTrack * nodeW + (nodesPerTrack - 1) * nodeGap;
-
-    // Center nodes in tree zone
-    const startX = treeX + Math.max(2, (treeW - trackNodeWidth) / 2);
-
-    // Row positions — centered vertically in inner area
-    const rowH = nodeH + 4;
-    const totalTreeH = 3 * rowH + 2 * 2;
-    const baseY = innerY + Math.max(2, (innerH - totalTreeH) / 2);
+    const isMicro = treeW < 160;
 
     // Update animation state
     techTreeAnimState.dashOffset += 0.5;
@@ -16263,7 +16277,7 @@ function renderTechTree(layout) {
         const track = tracks[t];
         const prefix = trackPrefixes[t];
         const color = TRACK_COLORS[track];
-        const rowY = baseY + t * (rowH + 2);
+        const rowY = baseY + t * (rowH + trackGap);
 
         // Row background tint
         ctx.fillStyle = trackBgColors[t];
