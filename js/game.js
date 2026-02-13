@@ -12914,7 +12914,7 @@ function renderHUDFrame() {
         ctx.restore();
     }
 
-    // Research progress bar: render below weapons zone (suppress during boot)
+    // Research progress bar + queue: render below weapons zone (suppress during boot)
     if (techTree.activeResearch && !booting) {
         const node = getTechNode(techTree.activeResearch.nodeId);
         if (node) {
@@ -12925,21 +12925,80 @@ function renderHUDFrame() {
             const progress = 1 - (techTree.activeResearch.timeRemaining / techTree.activeResearch.totalTime);
             const timeLeft = Math.ceil(techTree.activeResearch.timeRemaining);
 
+            // Get short name from TECH_CHIP_DEFS
+            const chipDef = TECH_CHIP_DEFS.find(c => c.id === techTree.activeResearch.nodeId);
+            const shortName = chipDef ? chipDef.text : node.name;
+
             if (hudAnimState.weaponsPanelVisible) {
                 ctx.save();
                 const slideOffset = (1 - easeOutCubic(hudAnimState.weaponsPanelSlide)) * -layout.weaponsZone.w;
                 ctx.translate(slideOffset, 0);
             }
 
+            // Active research panel (#1)
             renderNGEPanel(rX, rY, rW, rH, { color: '#0a4', cutCorners: [], alpha: 0.6 });
             renderNGEBar(rX + 4, rY + 4, rW - 8, rH - 8, progress, '#0a4', { segments: 15 });
 
+            // Priority number
+            ctx.fillStyle = '#0f0';
+            ctx.font = 'bold 12px monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText('1', rX + 6, rY + rH / 2 + 4);
+
+            // Short research name
             ctx.fillStyle = '#fff';
-            ctx.font = 'bold 11px monospace';
-            ctx.textAlign = 'center';
-            ctx.fillText(`RSRCH: ${node.name} ${timeLeft}s`, rX + rW / 2, rY + rH / 2 + 4);
+            ctx.font = 'bold 10px monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText(shortName, rX + 20, rY + rH / 2 + 4);
+
+            // Countdown timer
+            ctx.textAlign = 'right';
+            ctx.fillText(`${timeLeft}s`, rX + rW - 16, rY + rH / 2 + 4);
 
             renderNGEBlinkLight(rX + rW - 10, rY + 6, '#0f0', 300);
+
+            // Queued research items (#2, #3)
+            const queueItems = techTree.queue.slice(0, 2);
+            if (queueItems.length > 0) {
+                const qLineH = 16;
+                const qPad = 3;
+                const qY = rY + rH + 2;
+                const qH = queueItems.length * qLineH + qPad * 2;
+
+                // Subtle queue background
+                ctx.fillStyle = 'rgba(0, 15, 0, 0.45)';
+                ctx.fillRect(rX + 1, qY, rW - 2, qH);
+                ctx.strokeStyle = 'rgba(0, 170, 68, 0.25)';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(rX + 1, qY, rW - 2, qH);
+
+                for (let i = 0; i < queueItems.length; i++) {
+                    const qNode = getTechNode(queueItems[i]);
+                    const qChip = TECH_CHIP_DEFS.find(c => c.id === queueItems[i]);
+                    const qName = qChip ? qChip.text : (qNode ? qNode.name : '???');
+                    const qNum = i + 2;
+                    const ly = qY + qPad + i * qLineH;
+
+                    // Priority number
+                    ctx.fillStyle = 'rgba(0, 200, 80, 0.5)';
+                    ctx.font = 'bold 10px monospace';
+                    ctx.textAlign = 'left';
+                    ctx.fillText(`${qNum}`, rX + 6, ly + 12);
+
+                    // Name
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+                    ctx.font = '9px monospace';
+                    ctx.textAlign = 'left';
+                    ctx.fillText(qName, rX + 20, ly + 12);
+
+                    // Research time
+                    if (qNode) {
+                        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+                        ctx.textAlign = 'right';
+                        ctx.fillText(`${qNode.researchTime}s`, rX + rW - 8, ly + 12);
+                    }
+                }
+            }
 
             if (hudAnimState.weaponsPanelVisible) {
                 ctx.restore();
@@ -13561,9 +13620,8 @@ function renderEnergyGraph(systemsZone) {
 
 function renderWeaponsZone(zone) {
     const { x, y, w } = zone;
-    const pad = 8;
-    const gridStartX = x + pad + 70;
-    const availableGridW = (x + w - pad) - gridStartX;
+    const labelX = x + 6; // Aligned with "O" in ORD.SYS label
+    const gridStartX = labelX + 62; // After label column
 
     // Bomb dimensions
     const bombSize = 16;
@@ -13583,13 +13641,13 @@ function renderWeaponsZone(zone) {
     const bombCols = 3;
 
     // Calculate panel height dynamically from actual content
-    let panelH = 22; // header
+    let panelH = 28; // header (extra space below ORD.SYS)
     if (playerInventory.maxBombs > 0) {
         const bombRows = Math.ceil(playerInventory.maxBombs / bombCols);
-        panelH += 4 + bombRows * (bombSize + bombSpacing) + 18;
+        panelH += bombRows * (bombSize + bombSpacing) + 14;
     }
     if (missileUnlocked && missileGroupCount > 0) {
-        panelH += 4 + missileRowsPerCol * groupRowH + 8;
+        panelH += missileRowsPerCol * groupRowH + 12;
     }
     panelH += 8; // bottom pad
 
@@ -13603,7 +13661,7 @@ function renderWeaponsZone(zone) {
     renderNGEIndicator(x + 14, y + panelH - 8, 'cross', '#f44', 'random', { seedId: 'wep_n' });
     renderNGEIndicator(x + w - 8, y + panelH - 8, 'circle', '#f44', 'steady', { rate: 400 });
 
-    let curY = y + 22;
+    let curY = y + 28;
 
     // Bombs section
     if (playerInventory.maxBombs > 0) {
@@ -13611,15 +13669,20 @@ function renderWeaponsZone(zone) {
         const maxBombs = playerInventory.maxBombs;
         const rechargeTimers = playerInventory.bombRechargeTimers || [];
 
-        renderNGELabel(x + pad, curY, 'BOMBS', '#f80');
-        renderNGEKeyBadge(x + pad + 44, curY - 10, 'Z');
-        curY += 4;
+        // Label aligned with ORD.SYS left margin
+        renderNGELabel(labelX, curY, 'BOMBS', '#f80');
+        // Keyboard shortcuts underneath label
+        ctx.font = '9px monospace';
+        ctx.fillStyle = '#666';
+        ctx.textAlign = 'left';
+        ctx.fillText('Z / B', labelX, curY + 12);
 
+        // Bomb icons - tops aligned with top of "BOMBS" text
         for (let i = 0; i < maxBombs; i++) {
             const col = i % bombCols;
             const row = Math.floor(i / bombCols);
             const bx = gridStartX + col * (bombSize + bombSpacing) + bombSize / 2;
-            const by = curY + row * (bombSize + bombSpacing) + bombSize / 2;
+            const by = curY + row * (bombSize + bombSpacing);
             const filled = i < bombCount;
 
             // Bomb body
@@ -13655,13 +13718,18 @@ function renderWeaponsZone(zone) {
         }
 
         const bombRows = Math.ceil(maxBombs / bombCols);
-        curY += bombRows * (bombSize + bombSpacing) + 18;
+        curY += bombRows * (bombSize + bombSpacing) + 14;
     }
 
     // Missiles section (grouped layout)
     if (missileUnlocked && missileGroupCount > 0) {
-        renderNGELabel(x + pad, curY, 'MISSILES', '#f40');
-        renderNGEKeyBadge(x + pad + 68, curY - 10, 'X');
+        // Label aligned with ORD.SYS left margin
+        renderNGELabel(labelX, curY, 'MISSILES', '#f40');
+        // Keyboard shortcuts underneath label
+        ctx.font = '9px monospace';
+        ctx.fillStyle = '#666';
+        ctx.textAlign = 'left';
+        ctx.fillText('X / M', labelX, curY + 12);
 
         // SALVO RDY indicator
         const allGroupsReady = missileGroups.every(g => g.ready);
@@ -13670,22 +13738,21 @@ function renderWeaponsZone(zone) {
             ctx.fillStyle = `rgba(255, 68, 0, ${pulse})`;
             ctx.font = 'bold 10px monospace';
             ctx.textAlign = 'right';
-            ctx.fillText('SALVO RDY', x + w - pad, curY);
+            ctx.fillText('SALVO RDY', x + w - 8, curY);
             ctx.textAlign = 'left';
         }
 
-        curY += 4;
-
-        // Up to 3-column grid layout for missile groups
+        // Up to 3-column grid layout for missile groups - tops aligned with label top
         const mColW = groupLabelW + CONFIG.MISSILE_GROUP_SIZE * (missileW + missileSpacing);
         const mGridStartX = gridStartX;
+        const missileTopY = curY - 8; // Align with top of "MISSILES" text
 
         for (let gi = 0; gi < missileGroupCount; gi++) {
             const group = missileGroups[gi];
             const col = Math.floor(gi / missileRowsPerCol);  // column 0, 1, or 2
             const row = gi % missileRowsPerCol;               // row within column
             const colX = mGridStartX + col * (mColW + missileColGap);
-            const rowY = curY + row * groupRowH;
+            const rowY = missileTopY + row * groupRowH;
             const groupLabel = String.fromCharCode(65 + gi);
             const rechargeProgress = group.ready ? 1.0 :
                 1.0 - (group.rechargeTimer / CONFIG.MISSILE_GROUP_RECHARGE_TIME);
@@ -18927,9 +18994,6 @@ function renderWaveTransition() {
     }
     waveText += ' incoming!';
     ctx.fillText(waveText, canvas.width / 2, canvas.height / 2 + 100);
-
-    // Render HUD (NGE style overlays wave transition)
-    renderHUDFrame();
 }
 
 // ============================================
