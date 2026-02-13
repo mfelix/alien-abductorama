@@ -13857,6 +13857,8 @@ let hudBootState = {
         status:    { active: false, startTime: 0.0,  duration: 1.2, progress: 0, phase: 'waiting' },
         mission:   { active: false, startTime: 0.15, duration: 1.0, progress: 0, phase: 'waiting' },
         systems:   { active: false, startTime: 0.3,  duration: 1.0, progress: 0, phase: 'waiting' },
+        techsys:   { active: false, startTime: 0.1,  duration: 0.9, progress: 0, phase: 'waiting' },
+        biomatter: { active: false, startTime: 0.2,  duration: 0.9, progress: 0, phase: 'waiting' },
         weapons:   { active: false, startTime: 0.6,  duration: 1.4, progress: 0, phase: 'waiting' },
         fleet:     { active: false, startTime: 0.9,  duration: 1.4, progress: 0, phase: 'waiting' },
         commander: { active: false, startTime: 1.2,  duration: 1.0, progress: 0, phase: 'waiting' },
@@ -13883,6 +13885,8 @@ let hudBootState = {
         status: [],
         mission: [],
         systems: [],
+        techsys: [],
+        biomatter: [],
         weapons: [],
         fleet: [],
         commander: [],
@@ -14280,14 +14284,28 @@ function renderHUDFrame() {
         renderPanelBootOverlay(layout.missionZone, layout.missionZone.h, '#0a0', 'MISSION.CTL', hudBootState.panels.mission, hudBootState.bootLines.mission);
     }
 
-    // Tech readout chips in top-center gap
-    if (!booting) {
+    // Tech readout chips / TECH.SYS panel (left gap between status and mission)
+    if (panelReady('techsys')) {
         renderTechChips(layout);
+    }
+    if (booting && hudBootState.panels.techsys.active && hudBootState.panels.techsys.phase !== 'waiting') {
+        // Compute tech panel zone for boot overlay
+        const statusEnd = layout.statusZone.x + layout.statusZone.w;
+        const missionStart = layout.missionZone.x;
+        const techBootZone = { x: statusEnd + 6, y: layout.statusZone.y, w: missionStart - 6 - (statusEnd + 6), h: layout.missionZone.h };
+        if (techBootZone.w >= 140) {
+            renderPanelBootOverlay(techBootZone, techBootZone.h, '#0a4', 'TECH.SYS', hudBootState.panels.techsys, hudBootState.bootLines.techsys);
+        }
     }
 
     // Bio-matter upload panel (right gap between mission and systems)
-    if (!booting && layout.bioMatterZone.w >= 120) {
+    if (panelReady('biomatter') && layout.bioMatterZone.w >= 120) {
         renderBioMatterPanel(layout.bioMatterZone);
+    }
+    if (booting && hudBootState.panels.biomatter.active && hudBootState.panels.biomatter.phase !== 'waiting') {
+        if (layout.bioMatterZone.w >= 120) {
+            renderPanelBootOverlay(layout.bioMatterZone, layout.bioMatterZone.h, '#0f0', 'BM.CONDUIT', hudBootState.panels.biomatter, hudBootState.bootLines.biomatter);
+        }
     }
 
     // Systems zone
@@ -16775,6 +16793,8 @@ function initHUDBoot() {
     p.status.active = true;
     p.mission.active = wave !== 1;  // deferred on wave 1 — boots when beam tutorial starts
     p.systems.active = true;
+    p.techsys.active = true;
+    p.biomatter.active = true;
 
     const hasWeapons = hudBootState.techSnapshot.hasBombs || hudBootState.techSnapshot.hasMissiles;
     p.weapons.active = hasWeapons;
@@ -16787,7 +16807,7 @@ function initHUDBoot() {
     p.opslog.active = wave >= 2;
 
     // Reset all panel states and restore default stagger times
-    const defaultStartTimes = { status: 0.0, mission: 0.15, systems: 0.3, diagnostics: 0.45, weapons: 0.6, fleet: 0.9, opslog: 1.1, commander: 1.2 };
+    const defaultStartTimes = { status: 0.0, techsys: 0.1, mission: 0.15, biomatter: 0.2, systems: 0.3, diagnostics: 0.45, weapons: 0.6, fleet: 0.9, opslog: 1.1, commander: 1.2 };
     for (const key of Object.keys(p)) {
         p[key].progress = 0;
         p[key].phase = 'waiting';
@@ -17033,6 +17053,34 @@ function generateBootLines() {
         ];
     } else {
         lines.commander = [];
+    }
+
+    // TECH.SYS panel (if active)
+    if (hudBootState.panels.techsys.active) {
+        lines.techsys = [
+            `>> INIT TECH.SYS`,
+            `SCANNING RESEARCH GRID...`,
+            snap.techResearched.length > 0
+                ? `[OK] ${snap.techResearched.length} MODULES RESEARCHED`
+                : `[OK] RESEARCH GRID EMPTY`,
+            `[OK] TECH TREE MAPPED`,
+            `>> TECH.SYS ONLINE`
+        ];
+    } else {
+        lines.techsys = [];
+    }
+
+    // BM.CONDUIT panel (if active)
+    if (hudBootState.panels.biomatter.active) {
+        lines.biomatter = [
+            `>> INIT BM.CONDUIT`,
+            `LINKING UPLOAD STREAM...`,
+            `[OK] BIO-MATTER BUFFER ALLOC`,
+            `[OK] CONDUIT ESTABLISHED`,
+            `>> UPLOAD CONDUIT READY`
+        ];
+    } else {
+        lines.biomatter = [];
     }
 
     // DIAGNOSTICS panel (if active)
