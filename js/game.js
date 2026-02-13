@@ -20622,14 +20622,7 @@ function buildWaveSummary(completedWave) {
         droneHarvests: waveStats.droneHarvests,
         bioMatterEarned: waveStats.bioMatterEarned,
         lostDeliveries: waveStats.lostDeliveries,
-        lostBioMatter: waveStats.lostBioMatter,
-        // UFO status snapshot
-        ufoHealth: ufo ? ufo.health : 0,
-        ufoMaxHealth: CONFIG.UFO_START_HEALTH,
-        ufoEnergy: ufo ? ufo.energy : 0,
-        ufoMaxEnergy: ufo ? (CONFIG.UFO_MAX_ENERGY * (1 + playerInventory.maxEnergyBonus)) : CONFIG.UFO_MAX_ENERGY,
-        ufoShieldCharges: activePowerups.shield.charges,
-        ufoEnergyCells: playerInventory.energyCells
+        lostBioMatter: waveStats.lostBioMatter
     };
 }
 
@@ -21470,87 +21463,11 @@ function renderWaveSummary() {
         ctx.save();
         ctx.globalAlpha = scoreAlpha;
 
-        // === UFO STATUS + CUMULATIVE SCORE side by side ===
-        const statusW = Math.floor((panelWidth - padding * 3) / 3);
-        const scoreColumnX = panelX + padding + statusW + padding;
-
-        // Left column: UFO STATUS
-        const statusX = panelX + padding;
-        const statusStartY = cursorY;
-
-        ctx.fillStyle = '#0af';
-        ctx.font = 'bold 14px monospace';
-        ctx.textAlign = 'left';
-        ctx.fillText('UFO STATUS', statusX, statusStartY);
-
-        // Hull bar
-        const barStartY = statusStartY + 18;
-        const barH = 10;
-        const barW = statusW - 4;
-        const healthPct = waveSummary.ufoMaxHealth > 0 ? waveSummary.ufoHealth / waveSummary.ufoMaxHealth : 0;
-        const healthColor = healthPct > 0.75 ? '#0f0' : (healthPct > 0.25 ? '#ff0' : '#f44');
-
-        ctx.fillStyle = '#666';
-        ctx.font = '10px monospace';
-        ctx.fillText('HULL', statusX, barStartY + 8);
-        // Bar background
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-        ctx.fillRect(statusX + 36, barStartY, barW - 36, barH);
-        // Bar fill
-        ctx.fillStyle = healthColor;
-        ctx.fillRect(statusX + 36, barStartY, (barW - 36) * healthPct, barH);
-        // Bar border
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(statusX + 36, barStartY, barW - 36, barH);
-        // Value
-        ctx.fillStyle = healthColor;
-        ctx.font = 'bold 10px monospace';
-        ctx.textAlign = 'right';
-        ctx.fillText(`${Math.ceil(waveSummary.ufoHealth)}/${waveSummary.ufoMaxHealth}`, statusX + barW, barStartY + 8);
-
-        // Energy bar
-        const energyBarY = barStartY + barH + 6;
-        const energyPct = waveSummary.ufoMaxEnergy > 0 ? Math.min(1, waveSummary.ufoEnergy / waveSummary.ufoMaxEnergy) : 0;
-        const energyColor = energyPct > 0.5 ? '#0ff' : (energyPct > 0.2 ? '#ff0' : '#f44');
-
-        ctx.fillStyle = '#666';
-        ctx.font = '10px monospace';
-        ctx.textAlign = 'left';
-        ctx.fillText('NRG', statusX, energyBarY + 8);
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-        ctx.fillRect(statusX + 36, energyBarY, barW - 36, barH);
-        ctx.fillStyle = energyColor;
-        ctx.fillRect(statusX + 36, energyBarY, (barW - 36) * energyPct, barH);
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-        ctx.strokeRect(statusX + 36, energyBarY, barW - 36, barH);
-        ctx.fillStyle = energyColor;
-        ctx.font = 'bold 10px monospace';
-        ctx.textAlign = 'right';
-        ctx.fillText(`${Math.ceil(waveSummary.ufoEnergy)}/${Math.ceil(waveSummary.ufoMaxEnergy)}`, statusX + barW, energyBarY + 8);
-
-        // Shield charges + Energy cells
-        const infoY = energyBarY + barH + 8;
-        ctx.fillStyle = '#666';
-        ctx.font = '10px monospace';
-        ctx.textAlign = 'left';
-        ctx.fillText('SHD', statusX, infoY + 8);
-        ctx.fillStyle = waveSummary.ufoShieldCharges > 0 ? '#0af' : '#555';
-        ctx.font = 'bold 10px monospace';
-        ctx.fillText(`${waveSummary.ufoShieldCharges}`, statusX + 36, infoY + 8);
-
-        ctx.fillStyle = '#666';
-        ctx.font = '10px monospace';
-        ctx.fillText('CEL', statusX + 60, infoY + 8);
-        ctx.fillStyle = waveSummary.ufoEnergyCells > 0 ? '#f0f' : '#555';
-        ctx.font = 'bold 10px monospace';
-        ctx.fillText(`${waveSummary.ufoEnergyCells}`, statusX + 96, infoY + 8);
-
-        // Right column: cumulative score
+        // === CUMULATIVE SCORE ===
         ctx.fillStyle = '#bbb';
         ctx.font = 'bold 16px monospace';
         ctx.textAlign = 'left';
-        ctx.fillText('CUMULATIVE SCORE', scoreColumnX, cursorY);
+        ctx.fillText('CUMULATIVE SCORE', panelX + padding, cursorY);
         ctx.textAlign = 'right';
         if (scoreAge < 0.4) {
             ctx.shadowColor = 'rgba(255, 255, 255, ' + (0.4 * (1 - scoreAge / 0.4)) + ')';
@@ -23446,15 +23363,85 @@ function renderShop() {
         ctx.fillText('Awaiting orders...', commDialogueX + 4, bottomY + bottomBarH / 2 + 4);
     }
 
-    // --- RIGHT BOTTOM: Wave analytics graph (left ~2/3) + LAUNCH button (right ~1/3) ---
+    // --- RIGHT BOTTOM: UFO STATUS (1/3) + Wave analytics (2/3) + LAUNCH button ---
     const bottomRightLeft = dividerX + rightInnerPad;
     const bottomRightRight = outerX + outerW - rightInnerPad;
     const bottomRightW = bottomRightRight - bottomRightLeft;
     const launchSectionW = Math.max(100, bottomRightW * 0.32);
-    const graphSectionW = bottomRightW - launchSectionW - 8;
+    const prelaunchW = bottomRightW - launchSectionW - 8;
+    const ufoStatusW = Math.floor(prelaunchW * 0.33);
+    const graphSectionW = prelaunchW - ufoStatusW - 6;
 
-    // Wave analytics graph
-    const graphX = bottomRightLeft;
+    // --- UFO STATUS (left 1/3 of pre-launch area) ---
+    const ufoStatX = bottomRightLeft;
+    const ufoStatY = bottomY + 3;
+    ctx.fillStyle = '#0af';
+    ctx.font = 'bold 8px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('UFO STATUS', ufoStatX, ufoStatY + 9);
+
+    if (ufo) {
+        const sBarStartY = ufoStatY + 13;
+        const sBarH = 7;
+        const sLabelW = 28;
+        const sBarW = ufoStatusW - sLabelW - 2;
+
+        // HULL bar
+        const hPct = Math.min(1, ufo.health / CONFIG.UFO_START_HEALTH);
+        const hCol = hPct > 0.75 ? '#0f0' : (hPct > 0.25 ? '#ff0' : '#f44');
+        ctx.fillStyle = '#666';
+        ctx.font = '7px monospace';
+        ctx.fillText('HULL', ufoStatX, sBarStartY + 6);
+        ctx.fillStyle = 'rgba(255,255,255,0.1)';
+        ctx.fillRect(ufoStatX + sLabelW, sBarStartY, sBarW, sBarH);
+        ctx.fillStyle = hCol;
+        ctx.fillRect(ufoStatX + sLabelW, sBarStartY, sBarW * hPct, sBarH);
+        ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(ufoStatX + sLabelW, sBarStartY, sBarW, sBarH);
+        ctx.fillStyle = hCol;
+        ctx.font = 'bold 7px monospace';
+        ctx.textAlign = 'right';
+        ctx.fillText(`${Math.ceil(ufo.health)}/${CONFIG.UFO_START_HEALTH}`, ufoStatX + ufoStatusW, sBarStartY + 6);
+
+        // NRG bar
+        const nrgY = sBarStartY + sBarH + 3;
+        const ePct = ufo.maxEnergy > 0 ? Math.min(1, ufo.energy / ufo.maxEnergy) : 0;
+        const eCol = ePct > 0.5 ? '#0ff' : (ePct > 0.2 ? '#ff0' : '#f44');
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#666';
+        ctx.font = '7px monospace';
+        ctx.fillText('NRG', ufoStatX, nrgY + 6);
+        ctx.fillStyle = 'rgba(255,255,255,0.1)';
+        ctx.fillRect(ufoStatX + sLabelW, nrgY, sBarW, sBarH);
+        ctx.fillStyle = eCol;
+        ctx.fillRect(ufoStatX + sLabelW, nrgY, sBarW * ePct, sBarH);
+        ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+        ctx.strokeRect(ufoStatX + sLabelW, nrgY, sBarW, sBarH);
+        ctx.fillStyle = eCol;
+        ctx.font = 'bold 7px monospace';
+        ctx.textAlign = 'right';
+        ctx.fillText(`${Math.ceil(ufo.energy)}/${Math.ceil(ufo.maxEnergy)}`, ufoStatX + ufoStatusW, nrgY + 6);
+
+        // SHD + CEL
+        const sInfoY = nrgY + sBarH + 3;
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#666';
+        ctx.font = '7px monospace';
+        ctx.fillText('SHD', ufoStatX, sInfoY + 6);
+        ctx.fillStyle = activePowerups.shield.charges > 0 ? '#0af' : '#555';
+        ctx.font = 'bold 7px monospace';
+        ctx.fillText(`${activePowerups.shield.charges}`, ufoStatX + 24, sInfoY + 6);
+        ctx.fillStyle = '#666';
+        ctx.font = '7px monospace';
+        ctx.fillText('CEL', ufoStatX + 42, sInfoY + 6);
+        ctx.fillStyle = playerInventory.energyCells > 0 ? '#f0f' : '#555';
+        ctx.font = 'bold 7px monospace';
+        ctx.fillText(`${playerInventory.energyCells}`, ufoStatX + 62, sInfoY + 6);
+    }
+
+    // Wave analytics graph (right 2/3 of pre-launch area)
+    const graphX = bottomRightLeft + ufoStatusW + 6;
     const graphW = graphSectionW;
     const graphY = bottomY + 4;
     const graphLabelH = 12;
