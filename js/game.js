@@ -9815,6 +9815,7 @@ class HarvesterDrone {
     takeDamage(amount) {
         if (techFlags.droneArmor) amount *= 0.6;
         this.energyTimer -= amount;
+        this.lastDamageFlashTime = Date.now();
         if (this.energyTimer <= 0) this.die();
     }
 }
@@ -10102,6 +10103,7 @@ class BattleDrone {
     takeDamage(amount) {
         if (techFlags.droneArmor) amount *= 0.6;
         this.energyTimer -= amount;
+        this.lastDamageFlashTime = Date.now();
         if (this.energyTimer <= 0) this.die();
     }
 }
@@ -10395,6 +10397,7 @@ class Coordinator {
         if (techFlags.droneArmor) amount *= 0.6;
 
         this.energyTimer -= amount;
+        this.lastDamageFlashTime = Date.now();
         if (this.energyTimer <= 0) {
             this.state = 'DYING';
             this.energyTimer = 0;
@@ -13056,6 +13059,16 @@ function startGame() {
         frameIntake: 0, frameOutput: 0,
         peakValue: 100, smoothPeak: 100
     };
+    nrgFlowDazzle = {
+        rechargeSparkline: new Float32Array(24),
+        sparkWriteIdx: 0,
+        sparkSampleTimer: 0,
+        movementIntensity: 0,
+        shootFlash: 0,
+        energyDeltaSmooth: 0,
+        lastEnergy: 0,
+        scanPhase: 0
+    };
     healthFreakoutState = {
         sparks: [], smokePuffs: [], flickerTimers: {},
         lastJoltTime: 0, distortionBands: [],
@@ -13921,6 +13934,17 @@ let energyTimeSeries = {
     smoothPeak: 100
 };
 
+let nrgFlowDazzle = {
+    rechargeSparkline: new Float32Array(24),
+    sparkWriteIdx: 0,
+    sparkSampleTimer: 0,
+    movementIntensity: 0,
+    shootFlash: 0,
+    energyDeltaSmooth: 0,
+    lastEnergy: 0,
+    scanPhase: 0
+};
+
 let diagnosticsState = {
     scrollOffset: 0,
     scrollDirection: 1,
@@ -14063,9 +14087,12 @@ function getHUDLayout() {
     const nrgFlowY = margin + topRowH + 8;
     const fleetY = nrgFlowY + nrgFlowH + 10;
 
-    // Ordnance panel: static height for max capacity (9 bombs + 18 missile groups)
+    // Ordnance panel: dynamic height based on actual missile groups owned
     const ordWeaponsY = margin + topRowH + 10;
-    const ordPanelH = 230; // header(28) + bombs(80) + missiles(114) + pad(8)
+    const actualMissileRows = missileGroupCount > 0 ? Math.ceil(missileGroupCount / 3) : 0;
+    const ordPanelH = actualMissileRows > 0
+        ? 100 + actualMissileRows * 17 + 18   // header(28) + bombs(80) + missileRows + pad
+        : 116;                                  // header(28) + bombs(80) + pad(8) — no missiles
 
     // OPS.LOG + DIAG.SYS: left side, below ordnance panel
     // OPS.LOG always right below ordnance; DIAG.SYS tucks under log when unlocked
@@ -15246,27 +15273,209 @@ function renderEnergyGraph(systemsZone) {
         ctx.restore();
     }
 
-    // Energy augmentation indicators (moved from shield panel)
-    const indicatorBaseY = gy + gh + 14;
-    ctx.textAlign = 'left';
-    let augCount = 0;
-    if (playerInventory.speedBonus > 0) {
-        const bonusPercent = Math.round(playerInventory.speedBonus * 100);
-        renderNGELabel(x + 6, indicatorBaseY + augCount * 12, `SPD.BOOST +${bonusPercent}%`, '#ff0');
-        renderNGEStatusDot(x + graphW - 8, indicatorBaseY + augCount * 12 - 3, 'nominal');
-        augCount++;
-    }
-    if (playerInventory.maxEnergyBonus > 0) {
-        renderNGELabel(x + 6, indicatorBaseY + augCount * 12, `NRG.AUG +${playerInventory.maxEnergyBonus}`, '#7ff');
-        renderNGEStatusDot(x + graphW - 8, indicatorBaseY + augCount * 12 - 3, 'nominal');
-        augCount++;
-    }
-    // Current energy readout
+    // === NRG.FLOW MICRO-DASHBOARD (sparklines, pixel grids, reactive indicators) ===
+    const dashY = gy + gh + 6;
+    const dashH = graphH - (gy - graphY) - gh - 4;
+    const dashW = graphW - 12;
+    const dashX = x + 6;
+
+    // Subtle separator line
+    ctx.strokeStyle = 'rgba(255, 136, 0, 0.15)';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(dashX, dashY);
+    ctx.lineTo(dashX + dashW, dashY);
+    ctx.stroke();
+
     if (ufo) {
         const ePct = ufo.energy / ufo.maxEnergy;
-        const eColor = ePct > 0.25 ? '#f80' : '#f44';
-        renderNGELabel(x + 6, indicatorBaseY + augCount * 12, `NRG ${Math.ceil(ufo.energy)}/${ufo.maxEnergy}`, eColor);
-        augCount++;
+        const now = Date.now();
+
+        // Update dazzle state
+        const currentDelta = energyTimeSeries.frameIntake - energyTimeSeries.frameOutput;
+        nrgFlowDazzle.energyDeltaSmooth = nrgFlowDazzle.energyDeltaSmooth * 0.85 + currentDelta * 0.15;
+        nrgFlowDazzle.movementIntensity = Math.min(1, nrgFlowDazzle.movementIntensity * 0.92 + Math.abs(ufo.vx || 0) / 600);
+        nrgFlowDazzle.shootFlash = Math.max(0, nrgFlowDazzle.shootFlash - 0.04);
+        if (ufo.beamActive) nrgFlowDazzle.shootFlash = Math.min(1, nrgFlowDazzle.shootFlash + 0.15);
+        nrgFlowDazzle.scanPhase += 0.03 + nrgFlowDazzle.movementIntensity * 0.08;
+
+        // --- RECHARGE SPARKLINE (left section, 36px wide × 12px tall) ---
+        const slX = dashX + 2;
+        const slY = dashY + 4;
+        const slW = 36;
+        const slH = 12;
+
+        // Background
+        ctx.fillStyle = 'rgba(0, 20, 40, 0.4)';
+        ctx.fillRect(slX, slY, slW, slH);
+        ctx.strokeStyle = 'rgba(255, 136, 0, 0.12)';
+        ctx.lineWidth = 0.5;
+        ctx.strokeRect(slX, slY, slW, slH);
+
+        // Draw sparkline from recharge data
+        const sparkBuf = nrgFlowDazzle.rechargeSparkline;
+        const sparkIdx = nrgFlowDazzle.sparkWriteIdx;
+        let sMin = Infinity, sMax = -Infinity;
+        for (let j = 0; j < 24; j++) {
+            const v = sparkBuf[j];
+            if (v < sMin) sMin = v;
+            if (v > sMax) sMax = v;
+        }
+        const sRange = Math.max(0.1, sMax - sMin);
+
+        ctx.beginPath();
+        ctx.strokeStyle = nrgFlowDazzle.energyDeltaSmooth >= 0 ? '#0f0' : '#f44';
+        ctx.lineWidth = 1;
+        for (let j = 0; j < 24; j++) {
+            const bj = (sparkIdx + j) % 24;
+            const px = slX + (j / 23) * slW;
+            const py = slY + slH - ((sparkBuf[bj] - sMin) / sRange) * slH;
+            if (j === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+
+        // Sparkline label
+        ctx.fillStyle = '#889';
+        ctx.font = '6px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText('RCH', slX, slY - 1);
+
+        // Recharge rate value
+        const netRate = nrgFlowDazzle.energyDeltaSmooth;
+        const rateColor = netRate > 0 ? '#0f0' : netRate < -5 ? '#f44' : '#f80';
+        ctx.fillStyle = rateColor;
+        ctx.font = 'bold 7px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(`${netRate >= 0 ? '+' : ''}${netRate.toFixed(1)}`, slX, slY + slH + 9);
+
+        // --- PIXEL ENERGY MATRIX (center, 6×3 grid of 3px squares) ---
+        const gridX = dashX + 48;
+        const gridY = dashY + 4;
+        const cellSize = 3;
+        const cellGap = 1;
+        const gridCols = 6;
+        const gridRows = 3;
+        const filledCells = Math.floor(ePct * gridCols * gridRows);
+        const deltaFlash = Math.abs(nrgFlowDazzle.energyDeltaSmooth) > 2;
+
+        for (let gr = 0; gr < gridRows; gr++) {
+            for (let gc = 0; gc < gridCols; gc++) {
+                const ci = gr * gridCols + gc;
+                const cx = gridX + gc * (cellSize + cellGap);
+                const cy = gridY + gr * (cellSize + cellGap);
+                const isFilled = ci < filledCells;
+
+                if (isFilled) {
+                    const cellPhase = Math.sin(now / 200 + ci * 0.7) * 0.15;
+                    const reactiveFlicker = deltaFlash && Math.random() > 0.7 ? 0.3 : 0;
+                    const alpha = 0.6 + cellPhase + reactiveFlicker;
+                    const cellColor = ePct > 0.5 ? '#f80' : ePct > 0.25 ? '#fc0' : '#f44';
+                    ctx.fillStyle = cellColor;
+                    ctx.globalAlpha = Math.min(1, alpha);
+                    ctx.fillRect(cx, cy, cellSize, cellSize);
+                    ctx.globalAlpha = 1;
+                } else {
+                    ctx.fillStyle = 'rgba(255, 136, 0, 0.06)';
+                    ctx.fillRect(cx, cy, cellSize, cellSize);
+                }
+            }
+        }
+
+        // Grid label
+        ctx.fillStyle = '#667';
+        ctx.font = '6px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText('NRG', gridX, gridY - 1);
+
+        // --- MOVEMENT-REACTIVE SCANNER LINE ---
+        const scanX = gridX;
+        const scanY = gridY + gridRows * (cellSize + cellGap) + 3;
+        const scanW = gridCols * (cellSize + cellGap);
+        const scannerPos = (Math.sin(nrgFlowDazzle.scanPhase) * 0.5 + 0.5) * scanW;
+        const moveAlpha = 0.15 + nrgFlowDazzle.movementIntensity * 0.6;
+
+        ctx.fillStyle = `rgba(0, 255, 255, ${moveAlpha})`;
+        ctx.fillRect(scanX + scannerPos - 1, scanY, 2, 2);
+
+        // Trailing dots
+        for (let td = 1; td <= 3; td++) {
+            const trailPos = scannerPos - td * 3 * (ufo.vx > 0 ? 1 : -1);
+            if (trailPos >= 0 && trailPos <= scanW) {
+                ctx.fillStyle = `rgba(0, 255, 255, ${moveAlpha * (1 - td * 0.25)})`;
+                ctx.fillRect(scanX + trailPos, scanY, 1, 1);
+            }
+        }
+
+        // --- BONUS INDICATORS (right section) ---
+        const bonusX = dashX + 82;
+        let bonusY = dashY + 4;
+
+        if (playerInventory.speedBonus > 0) {
+            const bonusPct = Math.round(playerInventory.speedBonus * 100);
+            ctx.fillStyle = '#ff0';
+            ctx.font = 'bold 6px monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText(`SPD +${bonusPct}%`, bonusX, bonusY + 5);
+
+            // Tiny speed bar (4 segments)
+            const barX = bonusX + 42;
+            const segments = Math.min(4, Math.ceil(playerInventory.speedBonus * 4));
+            for (let s = 0; s < 4; s++) {
+                ctx.fillStyle = s < segments ? '#ff0' : 'rgba(255,255,0,0.1)';
+                ctx.fillRect(barX + s * 4, bonusY + 1, 3, 4);
+            }
+            bonusY += 9;
+        }
+
+        if (playerInventory.maxEnergyBonus > 0) {
+            ctx.fillStyle = '#7ff';
+            ctx.font = 'bold 6px monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText(`AUG +${playerInventory.maxEnergyBonus}`, bonusX, bonusY + 5);
+            bonusY += 9;
+        }
+
+        // --- SHOOTING-REACTIVE FLASH ELEMENT ---
+        if (nrgFlowDazzle.shootFlash > 0.05) {
+            const flashAlpha = nrgFlowDazzle.shootFlash;
+            const flashX = dashX + dashW - 14;
+            const flashY = dashY + 3;
+
+            // Pulsing diamond
+            ctx.save();
+            ctx.fillStyle = `rgba(255, 68, 68, ${flashAlpha})`;
+            ctx.shadowColor = '#f44';
+            ctx.shadowBlur = flashAlpha * 6;
+            ctx.beginPath();
+            ctx.moveTo(flashX + 4, flashY);
+            ctx.lineTo(flashX + 8, flashY + 4);
+            ctx.lineTo(flashX + 4, flashY + 8);
+            ctx.lineTo(flashX, flashY + 4);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+
+            // "BEAM" micro-text
+            if (flashAlpha > 0.4) {
+                ctx.fillStyle = `rgba(255, 68, 68, ${flashAlpha * 0.7})`;
+                ctx.font = '5px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText('BEAM', flashX + 4, flashY + 14);
+            }
+        }
+
+        // --- REACTIVE MICRO-DOTS (bottom edge, respond to game state) ---
+        const dotsY = dashY + dashH - 4;
+        const dotSpacing = 6;
+        const dotCount = Math.floor(dashW / dotSpacing);
+        for (let di = 0; di < dotCount; di++) {
+            const dotX = dashX + di * dotSpacing + 3;
+            const dotPhase = Math.sin(now / 300 + di * 1.1 + nrgFlowDazzle.scanPhase) * 0.5 + 0.5;
+            const moveFactor = nrgFlowDazzle.movementIntensity;
+            const dotAlpha = 0.05 + dotPhase * (0.08 + moveFactor * 0.25);
+            ctx.fillStyle = `rgba(255, 136, 0, ${dotAlpha})`;
+            ctx.fillRect(dotX, dotsY, 1, 1);
+        }
     }
 }
 
@@ -15280,7 +15489,7 @@ function renderWeaponsZone(zone) {
     const bombSpacing = 6;
     const bombCols = 3;
 
-    // Missile dimensions for grouped layout (always 3-column grid for max capacity)
+    // Missile dimensions for grouped layout (row-major: fills left→right, then down)
     const missileW = 5;
     const missileH = 12;
     const missileSpacing = 2;
@@ -15288,13 +15497,10 @@ function renderWeaponsZone(zone) {
     const groupLabelW = 9;
     const missileColGap = 6;
 
-    // Static layout: always show all possible slots
     const maxBombs = CONFIG.BOMB_MAX_COUNT;              // 9
-    const maxMissileGroups = CONFIG.MISSILE_MAX_GROUPS;  // 18
     const maxMissileCols = 3;
-    const maxMissileRowsPerCol = Math.ceil(maxMissileGroups / maxMissileCols); // 6
 
-    // Static panel height
+    // Dynamic panel height
     const panelH = h;
 
     renderNGEPanel(x, y, w, panelH, { color: '#f44', cutCorners: ['bl'], label: 'ORD.SYS' });
@@ -15376,7 +15582,8 @@ function renderWeaponsZone(zone) {
     const bombRows = Math.ceil(maxBombs / bombCols);
     curY += bombRows * (bombSize + bombSpacing) + 14;
 
-    // === MISSILES SECTION (always show all 18 group slots) ===
+    // === MISSILES SECTION (dynamic: only show owned groups, row-major layout) ===
+    if (missileGroupCount > 0) {
     renderNGELabel(labelX, curY, 'MISSILES', '#f40');
     ctx.font = '9px monospace';
     ctx.fillStyle = '#666';
@@ -15387,10 +15594,10 @@ function renderWeaponsZone(zone) {
     const mGridStartX = gridStartX;
     const missileTopY = curY - 8;
 
-    for (let gi = 0; gi < maxMissileGroups; gi++) {
-        const group = gi < missileGroupCount ? missileGroups[gi] : null;
-        const col = Math.floor(gi / maxMissileRowsPerCol);
-        const row = gi % maxMissileRowsPerCol;
+    for (let gi = 0; gi < missileGroupCount; gi++) {
+        const group = missileGroups[gi];
+        const col = gi % maxMissileCols;                    // row-major: fill left→right
+        const row = Math.floor(gi / maxMissileCols);        // then down
         const colX = mGridStartX + col * (mColW + missileColGap);
         const rowY = missileTopY + row * groupRowH;
         const groupLabel = String.fromCharCode(65 + gi);
@@ -15498,29 +15705,84 @@ function renderWeaponsZone(zone) {
                 const barW = CONFIG.MISSILE_GROUP_SIZE * (missileW + missileSpacing) - missileSpacing;
                 renderNGEBar(missilesStartX2, barY, barW, 2, rechargeProgress, '#f40', { segments: 4 });
             }
-        } else {
-            // Unowned group slot — military N/A style
-            ctx.fillStyle = '#222';
-            ctx.font = 'bold 8px monospace';
-            ctx.textAlign = 'left';
-            ctx.fillText(groupLabel, colX, rowY + missileH / 2 + 3);
-
-            const missilesStartX = colX + groupLabelW;
-            for (let mi = 0; mi < CONFIG.MISSILE_GROUP_SIZE; mi++) {
-                const mx = missilesStartX + mi * (missileW + missileSpacing);
-                ctx.strokeStyle = '#1a1a1a';
-                ctx.lineWidth = 0.5;
-                ctx.strokeRect(mx, rowY + 2, missileW, missileH - 2);
-            }
         }
     }
+    } // end if (missileGroupCount > 0)
 
     return panelH;
+}
+
+// Fleet status symbol mapper — converts drone/coordinator state to visual indicator type
+function getFleetStatusType(state, energyPercent) {
+    switch (state) {
+        case 'ACTIVE': case 'SEEKING': case 'COLLECTING': case 'DELIVERING':
+        case 'ATTACKING': case 'PATROLLING':
+            return energyPercent < 0.25 ? 'low' : 'online';
+        case 'DEPLOYING': case 'FALLING': case 'LANDING': case 'UNFOLDING':
+            return 'booting';
+        case 'LOW_ENERGY':
+            return 'low';
+        case 'DYING':
+            return 'critical';
+        case 'POWER_OFF':
+            return 'offline';
+        default:
+            return energyPercent < 0.25 ? 'low' : 'online';
+    }
+}
+
+// Fleet status micro-indicator — tiny animated symbols (diamonds, dots, squares, triangles)
+function renderFleetStatusIndicator(fx, fy, statusType, now) {
+    const s = 5;
+    switch (statusType) {
+        case 'online': {
+            const a = 0.7 + Math.sin(now / 800) * 0.15;
+            ctx.save();
+            ctx.fillStyle = `rgba(0, 255, 0, ${a})`;
+            ctx.shadowColor = '#0f0'; ctx.shadowBlur = 3;
+            ctx.beginPath();
+            ctx.moveTo(fx + s/2, fy); ctx.lineTo(fx + s, fy + s/2);
+            ctx.lineTo(fx + s/2, fy + s); ctx.lineTo(fx, fy + s/2);
+            ctx.closePath(); ctx.fill();
+            ctx.restore();
+            break;
+        }
+        case 'booting': {
+            const cycle = now % 600;
+            for (let di = 0; di < 3; di++) {
+                const dotOn = cycle > di * 150 && cycle < di * 150 + 100;
+                ctx.fillStyle = dotOn ? '#48f' : 'rgba(68, 136, 255, 0.15)';
+                ctx.fillRect(fx + di * 3, fy + 1, 2, 2);
+            }
+            break;
+        }
+        case 'low': {
+            const pulse = Math.sin(now / 250) * 0.4 + 0.6;
+            ctx.fillStyle = `rgba(255, 200, 0, ${pulse})`;
+            ctx.fillRect(fx, fy, s - 1, s - 1);
+            break;
+        }
+        case 'critical': {
+            if (Math.floor(now / 100) % 2 === 0) {
+                ctx.fillStyle = '#f33';
+                ctx.beginPath();
+                ctx.moveTo(fx + s/2, fy); ctx.lineTo(fx + s, fy + s); ctx.lineTo(fx, fy + s);
+                ctx.closePath(); ctx.fill();
+            }
+            break;
+        }
+        default: {
+            ctx.fillStyle = 'rgba(100, 100, 100, 0.3)';
+            ctx.fillRect(fx, fy, s - 1, s - 1);
+            break;
+        }
+    }
 }
 
 function renderFleetZone(zone) {
     const { x, y, w } = zone;
     const pad = 6;
+    const now = Date.now();
 
     if (!harvesterUnlocked && !battleDroneUnlocked && activeCoordinators.length === 0) return;
     if (droneSlots <= 0 && activeCoordinators.length === 0) return;
@@ -15529,21 +15791,16 @@ function renderFleetZone(zone) {
     let totalRows = 0;
     const rowH = 18;
     const headerH = 22;
-    const coordHeaderH = 16;
 
-    // Count coordinator entries + their sub-drones
-    for (const coord of activeCoordinators) {
-        if (!coord.alive || coord.state === 'DYING') continue;
-        totalRows++; // coordinator itself
-        if (coord.subDrones) {
-            totalRows += coord.subDrones.filter(d => d.alive).length;
-        }
+    const aliveCoords = activeCoordinators.filter(c => c.alive && c.state !== 'DYING');
+    for (const coord of aliveCoords) {
+        totalRows++;
+        if (coord.subDrones) totalRows += coord.subDrones.filter(d => d.alive).length;
     }
 
-    // Count raw drones (not attached to coordinators)
     const rawDrones = activeDrones.length;
     if (rawDrones > 0) {
-        totalRows++; // "RAW DRONES" header
+        totalRows++;
         totalRows += rawDrones;
     }
 
@@ -15569,135 +15826,236 @@ function renderFleetZone(zone) {
     ctx.textAlign = 'left';
 
     let curY = y + headerH + pad + 4;
-    const barW = 40;
-    const barH = 5;
 
-    // Render coordinator trees
-    for (const coord of activeCoordinators) {
-        if (!coord.alive || coord.state === 'DYING') continue;
+    // Track coordinator type counts for numbered naming
+    let harvCoordNum = 0;
+    let atkCoordNum = 0;
 
-        const isLast = activeCoordinators.filter(c => c.alive && c.state !== 'DYING').indexOf(coord) ===
-                       activeCoordinators.filter(c => c.alive && c.state !== 'DYING').length - 1 && rawDrones === 0;
-        const treeChar = isLast ? '\u2514' : '\u251C'; // └ or ├
-
+    // === COORDINATOR SECTIONS (with horizontal borders, canvas lines, stretched bars) ===
+    for (let ci = 0; ci < aliveCoords.length; ci++) {
+        const coord = aliveCoords[ci];
         const isHarvester = coord.type === 'harvester';
-        const coordLabel = isHarvester ? 'COORD.H' : 'COORD.A';
+
+        // Number coordinators per type: COORD.H.1, COORD.H.2, COORD.A.1, etc.
+        if (isHarvester) harvCoordNum++; else atkCoordNum++;
+        const coordNum = isHarvester ? harvCoordNum : atkCoordNum;
+        const coordLabel = isHarvester ? `COORD.H.${coordNum}` : `COORD.A.${coordNum}`;
         const coordColor = isHarvester ? '#0dc' : '#fa0';
         const energyPercent = coord.energyTimer / coord.maxEnergy;
         const timeLeft = Math.ceil(coord.energyTimer);
 
-        // Tree connector
-        ctx.fillStyle = '#445';
-        ctx.font = '10px monospace';
-        ctx.fillText(treeChar + '\u2500', x + pad, curY + 4);
+        // Horizontal border between coordinator sections
+        if (ci > 0) {
+            ctx.strokeStyle = 'rgba(68, 136, 255, 0.2)';
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.moveTo(x + pad, curY - 5);
+            ctx.lineTo(x + w - pad, curY - 5);
+            ctx.stroke();
+        }
+
+        // Canvas-drawn connector line (replaces ASCII ├─)
+        ctx.strokeStyle = '#445';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x + pad + 4, curY - 2);
+        ctx.lineTo(x + pad + 4, curY + 4);
+        ctx.lineTo(x + pad + 12, curY + 4);
+        ctx.stroke();
 
         // Coordinator label
         ctx.fillStyle = coordColor;
-        ctx.font = 'bold 10px monospace';
-        ctx.fillText(coordLabel, x + pad + 20, curY + 4);
+        ctx.font = 'bold 9px monospace';
+        ctx.fillText(coordLabel, x + pad + 14, curY + 4);
 
-        // Energy bar
-        const coordBarX = x + pad + 66;
-        renderNGEBar(coordBarX, curY - 2, barW, barH, energyPercent, coordColor, {
-            segments: 6,
+        // Status indicator (tiny animated symbol)
+        const coordStatus = getFleetStatusType(coord.state, energyPercent);
+        renderFleetStatusIndicator(x + pad + 78, curY, coordStatus, now);
+
+        // Stretched energy bar (fills most of panel width)
+        const coordBarX = x + pad + 14;
+        const coordBarW = w - pad * 2 - 38;
+        renderNGEBar(coordBarX, curY + 8, coordBarW, 5, energyPercent, coordColor, {
+            segments: Math.max(6, Math.floor(coordBarW / 8)),
             pulse: energyPercent < 0.25
         });
 
-        // Time
-        ctx.fillStyle = energyPercent < 0.25 ? '#f44' : '#889';
-        ctx.font = '10px monospace';
-        ctx.fillText(`${timeLeft}s`, coordBarX + barW + 4, curY + 4);
+        // Damage flash overlay on coordinator bar (biomatter-conduit inspired strobe)
+        if (coord.lastDamageFlashTime && now - coord.lastDamageFlashTime < 300) {
+            const flashAge = now - coord.lastDamageFlashTime;
+            const flashPhase = Math.floor(flashAge / 25) % 4;
+            let fc;
+            switch (flashPhase) {
+                case 0: fc = coordColor; break;
+                case 1: fc = '#000'; break;
+                case 2: fc = '#0ff'; break;
+                default: fc = '#000'; break;
+            }
+            ctx.fillStyle = fc;
+            ctx.globalAlpha = 0.7;
+            ctx.fillRect(coordBarX, curY + 8, coordBarW, 5);
+            ctx.globalAlpha = 1;
+        }
 
-        // Status dot
-        const status = energyPercent > 0.5 ? 'nominal' : energyPercent > 0.25 ? 'caution' : 'critical';
-        renderNGEStatusDot(x + w - pad - 4, curY, status, 3);
+        // Time (right-aligned)
+        ctx.fillStyle = energyPercent < 0.25 ? '#f44' : '#889';
+        ctx.font = '9px monospace';
+        ctx.textAlign = 'right';
+        ctx.fillText(`${timeLeft}s`, x + w - pad, curY + 4);
+        ctx.textAlign = 'left';
 
         curY += rowH;
 
-        // Sub-drones
+        // === SUB-DRONES (canvas lines, d.01 naming, stretched bars, status indicators) ===
         const aliveSubDrones = coord.subDrones ? coord.subDrones.filter(d => d.alive) : [];
         for (let si = 0; si < aliveSubDrones.length; si++) {
             const sub = aliveSubDrones[si];
             const isLastSub = si === aliveSubDrones.length - 1;
-            const subTreeChar = isLastSub ? '\u2514' : '\u251C';
 
-            // Vertical connector
-            if (!isLast || !isLastSub) {
-                ctx.fillStyle = '#334';
-                ctx.fillRect(x + pad + 4, curY - rowH + 6, 1, rowH);
-            }
+            // Canvas-drawn vertical connector from coordinator
+            ctx.strokeStyle = '#334';
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.moveTo(x + pad + 10, curY - rowH + 8);
+            ctx.lineTo(x + pad + 10, isLastSub ? curY + 3 : curY + rowH);
+            ctx.stroke();
 
-            // Sub tree connector
-            ctx.fillStyle = '#334';
-            ctx.font = '10px monospace';
-            ctx.fillText('\u2502  ' + subTreeChar + '\u2500', x + pad, curY + 3);
+            // Horizontal branch to drone
+            ctx.beginPath();
+            ctx.moveTo(x + pad + 10, curY + 3);
+            ctx.lineTo(x + pad + 18, curY + 3);
+            ctx.stroke();
 
-            // Drone label
-            const subIsHarvester = sub.type === 'harvester';
-            const subLabel = subIsHarvester ? `H-${String(si + 1).padStart(2, '0')}` : `A-${String(si + 1).padStart(2, '0')}`;
-            ctx.fillStyle = subIsHarvester ? '#0a0' : '#a44';
+            // Drone label: d.01, d.02 (no type prefix)
+            const subLabel = `d.${String(si + 1).padStart(2, '0')}`;
+            const subColor = sub.type === 'harvester' ? '#0a0' : '#a44';
+            ctx.fillStyle = subColor;
             ctx.font = '9px monospace';
-            ctx.fillText(subLabel, x + pad + 28, curY + 3);
+            ctx.fillText(subLabel, x + pad + 20, curY + 3);
 
-            // Sub energy bar
+            // Status indicator
+            const droneStatus = getFleetStatusType(sub.state, sub.energyTimer / sub.maxEnergy);
+            renderFleetStatusIndicator(x + pad + 50, curY - 1, droneStatus, now);
+
+            // Stretched drone energy bar
+            const subBarX = x + pad + 20;
+            const subBarW = w - pad * 2 - 44;
             const subEnergyPercent = sub.energyTimer / sub.maxEnergy;
-            renderNGEBar(coordBarX, curY - 3, barW * 0.7, 4, subEnergyPercent, subIsHarvester ? '#0a0' : '#a44', {
-                segments: 4
+            renderNGEBar(subBarX, curY + 7, subBarW, 4, subEnergyPercent, subColor, {
+                segments: Math.max(4, Math.floor(subBarW / 8))
             });
 
-            // Sub time
+            // Damage flash on drone energy blocks (biomatter-conduit inspired)
+            if (sub.lastDamageFlashTime && now - sub.lastDamageFlashTime < 300) {
+                const flashAge = now - sub.lastDamageFlashTime;
+                const flashPhase = Math.floor(flashAge / 25) % 4;
+                let fc;
+                switch (flashPhase) {
+                    case 0: fc = subColor; break;
+                    case 1: fc = '#000'; break;
+                    case 2: fc = '#0ff'; break;
+                    default: fc = '#000'; break;
+                }
+                ctx.fillStyle = fc;
+                ctx.globalAlpha = 0.7;
+                ctx.fillRect(subBarX, curY + 7, subBarW, 4);
+                ctx.globalAlpha = 1;
+            }
+
+            // Time (right-aligned)
             ctx.fillStyle = '#667';
-            ctx.font = '9px monospace';
-            ctx.fillText(`${Math.ceil(sub.energyTimer)}s`, coordBarX + barW * 0.7 + 3, curY + 3);
+            ctx.font = '8px monospace';
+            ctx.textAlign = 'right';
+            ctx.fillText(`${Math.ceil(sub.energyTimer)}s`, x + w - pad, curY + 3);
+            ctx.textAlign = 'left';
 
             curY += rowH;
         }
     }
 
-    // Raw drones (not attached to coordinators)
+    // === RAW DRONES (not attached to coordinators) ===
     if (rawDrones > 0) {
-        const isLast = true;
-        const treeChar = '\u2514';
+        // Section border
+        if (aliveCoords.length > 0) {
+            ctx.strokeStyle = 'rgba(68, 136, 255, 0.2)';
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.moveTo(x + pad, curY - 5);
+            ctx.lineTo(x + w - pad, curY - 5);
+            ctx.stroke();
+        }
 
-        ctx.fillStyle = '#445';
-        ctx.font = '10px monospace';
-        ctx.fillText(treeChar + '\u2500', x + pad, curY + 4);
+        // Canvas connector
+        ctx.strokeStyle = '#445';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x + pad + 4, curY - 2);
+        ctx.lineTo(x + pad + 4, curY + 4);
+        ctx.lineTo(x + pad + 12, curY + 4);
+        ctx.stroke();
 
         ctx.fillStyle = '#889';
         ctx.font = 'bold 9px monospace';
-        ctx.fillText(`DRONES: ${rawDrones}`, x + pad + 20, curY + 4);
-
+        ctx.fillText(`DRONES: ${rawDrones}`, x + pad + 14, curY + 4);
         curY += rowH;
 
         for (let i = 0; i < activeDrones.length; i++) {
             const drone = activeDrones[i];
             const isLastDrone = i === activeDrones.length - 1;
-            const droneTreeChar = isLastDrone ? '\u2514' : '\u251C';
 
-            ctx.fillStyle = '#334';
-            ctx.font = '10px monospace';
-            ctx.fillText('   ' + droneTreeChar + '\u2500', x + pad, curY + 3);
+            // Canvas connector lines
+            ctx.strokeStyle = '#334';
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.moveTo(x + pad + 10, curY - rowH + 8);
+            ctx.lineTo(x + pad + 10, isLastDrone ? curY + 3 : curY + rowH);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(x + pad + 10, curY + 3);
+            ctx.lineTo(x + pad + 18, curY + 3);
+            ctx.stroke();
 
-            const isHarvester = drone.type === 'harvester';
-            const droneLabel = isHarvester ? `H-${String(i + 1).padStart(2, '0')}` : `B-${String(i + 1).padStart(2, '0')}`;
-            ctx.fillStyle = isHarvester ? '#0a0' : '#a44';
+            const droneLabel = `d.${String(i + 1).padStart(2, '0')}`;
+            const droneColor = drone.type === 'harvester' ? '#0a0' : '#a44';
+            ctx.fillStyle = droneColor;
             ctx.font = '9px monospace';
-            ctx.fillText(droneLabel, x + pad + 28, curY + 3);
+            ctx.fillText(droneLabel, x + pad + 20, curY + 3);
 
-            const droneEnergyPercent = drone.energyTimer / drone.maxEnergy;
-            const droneBarX = x + pad + 66;
-            renderNGEBar(droneBarX, curY - 3, barW * 0.7, 4, droneEnergyPercent, isHarvester ? '#0a0' : '#a44', {
-                segments: 4
+            // Status indicator
+            const dStatus = getFleetStatusType(drone.state, drone.energyTimer / drone.maxEnergy);
+            renderFleetStatusIndicator(x + pad + 50, curY - 1, dStatus, now);
+
+            // Stretched energy bar
+            const droneBarX = x + pad + 20;
+            const droneBarW = w - pad * 2 - 44;
+            const droneEnergyPct = drone.energyTimer / drone.maxEnergy;
+            renderNGEBar(droneBarX, curY + 7, droneBarW, 4, droneEnergyPct, droneColor, {
+                segments: Math.max(4, Math.floor(droneBarW / 8))
             });
 
-            ctx.fillStyle = '#667';
-            ctx.font = '9px monospace';
-            ctx.fillText(`${Math.ceil(drone.energyTimer)}s`, droneBarX + barW * 0.7 + 3, curY + 3);
-
-            // Warning flash for low energy
-            if (drone.energyTimer < 5 && Math.floor(Date.now() / 300) % 2 === 0) {
-                renderNGEStatusDot(x + w - pad - 4, curY, 'critical', 2);
+            // Damage flash
+            if (drone.lastDamageFlashTime && now - drone.lastDamageFlashTime < 300) {
+                const flashAge = now - drone.lastDamageFlashTime;
+                const flashPhase = Math.floor(flashAge / 25) % 4;
+                let fc;
+                switch (flashPhase) {
+                    case 0: fc = droneColor; break;
+                    case 1: fc = '#000'; break;
+                    case 2: fc = '#0ff'; break;
+                    default: fc = '#000'; break;
+                }
+                ctx.fillStyle = fc;
+                ctx.globalAlpha = 0.7;
+                ctx.fillRect(droneBarX, curY + 7, droneBarW, 4);
+                ctx.globalAlpha = 1;
             }
+
+            // Time
+            ctx.fillStyle = '#667';
+            ctx.font = '8px monospace';
+            ctx.textAlign = 'right';
+            ctx.fillText(`${Math.ceil(drone.energyTimer)}s`, x + w - pad, curY + 3);
+            ctx.textAlign = 'left';
 
             curY += rowH;
         }
@@ -16599,6 +16957,17 @@ function updateHUDAnimations(dt) {
     // Health freakout updates
     if (gameState === 'PLAYING') {
         updateHealthFreakout(dt);
+    }
+
+    // NRG.FLOW dazzle sparkline sampling (every 300ms)
+    if (gameState === 'PLAYING') {
+        nrgFlowDazzle.sparkSampleTimer += dt;
+        if (nrgFlowDazzle.sparkSampleTimer >= 0.3) {
+            nrgFlowDazzle.sparkSampleTimer -= 0.3;
+            const netRate = energyTimeSeries.frameIntake - energyTimeSeries.frameOutput;
+            nrgFlowDazzle.rechargeSparkline[nrgFlowDazzle.sparkWriteIdx] = netRate;
+            nrgFlowDazzle.sparkWriteIdx = (nrgFlowDazzle.sparkWriteIdx + 1) % 24;
+        }
     }
 
     // DIAG.SYS sparkline data (sample every 500ms)
