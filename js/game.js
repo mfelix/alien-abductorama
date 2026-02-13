@@ -630,7 +630,7 @@ const SFX = {
         osc.type = 'sine';
         osc.frequency.setValueAtTime(200, audioCtx.currentTime);
         osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.2);
-        gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
         osc.start();
         osc.stop(audioCtx.currentTime + 0.2);
@@ -655,7 +655,7 @@ const SFX = {
         SFX.beamLoop.type = 'sawtooth';
         SFX.beamLoop.frequency.setValueAtTime(150, audioCtx.currentTime);
         SFX.beamLoop.connect(SFX.beamLoopGain);
-        SFX.beamLoopGain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        SFX.beamLoopGain.gain.setValueAtTime(0.04, audioCtx.currentTime);
         SFX.beamLoopGain.connect(audioCtx.destination);
 
         SFX.beamLoop.start();
