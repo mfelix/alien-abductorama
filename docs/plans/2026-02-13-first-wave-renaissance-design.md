@@ -1,416 +1,359 @@
-# First Wave Renaissance - Unified Design Document
+# First Wave Renaissance — Unified Design Document
 
 **Date**: 2026-02-13
-**Authors**: The Architect + NEXUS Visual Designer
-**Target File**: `/Users/mfelix/code/alien-abductorama/js/game.js` (24,131 lines)
-**Reference Resolution**: 1280x720 canvas
+**Team**: Gaia (Lead) + The Architect + Visual Designer
+**Target File**: `js/game.js` (monolithic, ~24,000 lines)
 
 ---
 
-## OVERVIEW
+## VISION
 
-The First Wave Renaissance transforms the player's first 60 seconds from a functional tutorial into a cinematic command-bridge activation sequence. Four interconnected streams work together to create the feeling of powering up an alien spacecraft for the first time.
-
-### The Four Transformation Streams
-
-1. **STREAM A: Boot Sequence Polish** -- Enhance the existing Quantum OS boot to feel more cinematic on Wave 1
-2. **STREAM B: Tutorial Flow Refinement** -- Tighten the tutorial timing and integrate it with the boot sequence
-3. **STREAM C: HUD Progressive Reveal** -- Panels appear as the player needs them, not all at once
-4. **STREAM D: First Wave Atmosphere** -- Sound, visual effects, and pacing that make Wave 1 feel special
+Transform the first wave experience to match the Neon Genesis Evangelion / Star Trek TNG aesthetic that already defines the HUD system. Four streams of change, unified by one spirit: every element the player encounters from boot to gameplay should feel like part of a living alien command interface.
 
 ---
 
-## CURRENT STATE ANALYSIS
+## STREAM 1: UFO PHASE-IN MATERIALIZATION
 
-### What Already Works (Do Not Change)
+### Concept
 
-The codebase already has a rich, well-implemented system. These elements are ALREADY IMPLEMENTED and should NOT be modified:
+After Quantum OS boot completes, the UFO doesn't descend from above — it **phase-shifts into reality** through quantum materialization. This aligns with the "Quantum OS" theme and feels alien rather than physical.
 
-| System | Status | Key Lines |
-|--------|--------|-----------|
-| Tutorial state machine (4 phases) | Working | 4461-4900 |
-| Boot sequence (CRT -> Logo -> Trace -> Panels) | Working | 16444-16944 |
-| NGE panel rendering primitives | Working | 12892-13412 |
-| renderNGEIndicator (5 shapes, 5 modes) | Working | 13305-13393 |
-| Panel slide animations (weapons, fleet, diag, opslog, commander) | Working | 14031-14214 |
-| Tutorial hints (move, beam, warp juke, bomb) | Working | 4983-5181 |
-| Tank warning sequence | Working | 5183-5232 |
-| "ALL SYSTEMS GO!" celebration | Working | 5309-5358 |
-| Mission zone deferred on Wave 1 | Working | 14000 |
-| Boot waits before tutorial starts | Working | 4597-4604 |
-| Commander portrait + dialogue with typewriter | Working | 15482-15535 |
-| BIOS pre-boot sequence for wave transitions | Working | 21797-21852 |
-| OPS.LOG event ticker | Working | pushOpsLogEvent() |
-| Diagnostics panel (DIAG.SYS) | Working | 15537-15660 |
-| Energy graph (NRG.FLOW) | Working | renderEnergyGraph() |
-| Bio-matter upload panel | Working | renderBioMatterPanel() |
-| Tech tree visualization | Working | renderTechTree() |
-| Full-column scanlines with health-based glitch | Working | 13880-13967 |
-| Energy pulse sweep animation | Working | 13809-13878 |
+### Duration: ~1.5 seconds
 
-### What Needs Enhancement
+The phase-in happens within the existing `TUTORIAL_CONFIG.BOOT_WAIT` window (5.0s after wave start), so there's plenty of time.
 
-These are the specific areas where the first wave experience can be elevated:
+### Sequence
 
-1. **"ALL SYSTEMS GO!" moment lacks gravitas** -- Currently uses `SFX.powerupCollect()` and a simple white text panel with cycling border. Should be a proper NGE-style "ALL SYSTEMS NOMINAL" moment.
-2. **Boot-to-tutorial transition feels abrupt** -- The boot sequence ends and tutorial hints just appear. Needs breathing room and a Commander welcome.
-3. **No dedicated first-wave sound design** -- The boot uses generic panel sounds. Wave 1 deserves a distinct sonic identity.
-4. **Tutorial completion doesn't connect to HUD** -- "ALL SYSTEMS GO!" is a floating overlay that doesn't acknowledge the HUD panels below it.
+#### Phase 1: Quantum Noise (0.0s - 0.4s)
+- At the UFO's target position (`canvas.height * CONFIG.UFO_Y_POSITION`, centered horizontally), a cloud of glitching pixel noise appears
+- Random colored rectangles (2-6px) flicker rapidly within a region roughly matching the UFO's bounding box (180x90)
+- Colors: mix of cyan (`#0ff`), magenta (`#f0f`), white (`#fff`), dark blue (`#006`) — digital noise palette
+- A low digital hum sound builds (oscillator sweep from 60Hz to 200Hz, square wave, volume 0.15)
+- The noise region pulses in opacity (0.3 - 0.7 alpha)
 
----
+#### Phase 2: Silhouette Resolve (0.4s - 0.8s)
+- The noise coalesces into the UFO's silhouette — rendered as a wireframe outline
+- The outline flickers between visible (0.8 alpha) and invisible (0.1 alpha) at ~10Hz
+- NGE-style horizontal scan lines sweep across the silhouette (top to bottom, 2px lines)
+- The noise outside the silhouette fades away
+- A phase-lock tone begins (rising sine wave 400Hz → 800Hz, volume 0.1)
 
-## STREAM A: BOOT SEQUENCE POLISH (Wave 1 Only)
+#### Phase 3: Phase Lock (0.8s - 1.2s)
+- The silhouette solidifies — opacity locks to 1.0
+- A bright flash pulse radiates outward from the UFO's center (expanding ring, 2px white stroke, fading as it grows)
+- The UFO's full render (`renderUFO()`) snaps into place, replacing the wireframe
+- Engine glow intensifies for 0.2s (brighter than normal, then settles)
+- "Quantum lock" sound: crystalline snap (high-frequency click + harmonic decay at 1200Hz, 0.15s)
 
-### A1: Extended Quantum OS Logo on Wave 1
+#### Phase 4: Stabilization (1.2s - 1.5s)
+- Brief exaggerated hover oscillation (hover offset amplitude 2x normal, decaying to 1x over 0.3s)
+- The UFO settles into its normal hovering rhythm
+- Faint residual particle traces (2-3 small cyan sparks) drift away from the UFO's edges
 
-**Current**: Logo shows for 0.5s (logo phase 0.3-0.8s in preBootState)
-**Proposed**: On Wave 1 ONLY, extend logo display to 1.0s for dramatic effect
+### Implementation
 
-```
-Wave 1 boot timing:
-  CRT phase:     0.0 - 0.3s  (unchanged)
-  Logo phase:    0.3 - 1.3s  (extended from 0.5s to 1.0s on wave 1)
-  Dissolve:      1.3 - 1.5s  (unchanged duration)
-  Trace:         1.5 - 2.25s (unchanged duration)
-  Panel boot:    2.25 - 5.5s (unchanged)
-
-Non-wave-1 timing: unchanged (current behavior)
-```
-
-**Implementation**: In `updateHUDBoot()` at line 16536, change the logo duration check:
+Add state object:
 ```js
-const logoDuration = wave === 1 ? 1.0 : 0.5;
-if (preBoot.timer >= logoDuration) { ... }
+let ufoPhaseInState = null; // { active: true, timer: 0, phase: 'noise'|'silhouette'|'phaseLock'|'stabilize'|'complete' }
 ```
 
-### A2: Wave 1 Boot Text Personalization
+- Initialize in `startGame()` after `ufo = new UFO()`: set `ufoPhaseInState = { active: true, timer: 0, phase: 'noise' }`
+- Add `updateUFOPhaseIn(dt)` — advances timer, transitions phases
+- In UFO render path (around `renderUFO()`), check phase-in state:
+  - During `noise`: render quantum noise cloud, suppress normal UFO render
+  - During `silhouette`: render wireframe outline, suppress normal UFO render
+  - During `phaseLock`: flash + transition to full render
+  - During `stabilize`: exaggerated hover, then set `phase = 'complete'`
+  - During `complete` or `null`: normal UFO rendering
+- UFO is non-interactive (no beam, no movement input) until phase-in completes
+- Add `renderUFOPhaseIn()` function for the visual effects
+- After phase-in completes, set `ufoPhaseInState = null` to clean up
 
-**Current**: `generateBootLines()` produces generic diagnostic text
-**Proposed**: Wave 1 gets unique "first activation" boot lines
-
-```
-STATUS panel (Wave 1):
-  >> FIRST ACTIVATION DETECTED
-  SCORE MODULE        [########] OK
-  INITIALIZING HARVEST PROTOCOLS
-  [OK] SENSORS CALIBRATED
-  >> MOTHERSHIP UPLINK ESTABLISHED
-
-MISSION panel (Wave 1):
-  >> LOADING MISSION PARAMETERS
-  QUOTA.DB: FIRST DEPLOYMENT
-  TARGET: {quotaTarget} SPECIMENS
-  [OK] HARVEST ZONE MAPPED
-  >> AWAITING COMMANDER ORDERS
-
-SYSTEMS panel (Wave 1):
-  >> POWER-ON SELF TEST
-  HULL: {maxHealth} HP -- PRISTINE
-  BEAM ARRAY: FULLY CHARGED
-  ENERGY CORE: 100%
-  [OK] ALL SYSTEMS GREEN
-  >> SHIP READY FOR DEPLOYMENT
-```
-
-**Implementation**: Add a `wave === 1` branch in `generateBootLines()` (around line 16700+).
-
-### A3: "ALL SYSTEMS NOMINAL" Enhancement
-
-**Current**: After all panels boot, a text flash appears (handled in `renderHUDBootGlobalEffects()`)
-**Proposed**: On Wave 1, replace with a more dramatic "MOTHERSHIP UPLINK ESTABLISHED" moment
-
-```
-Wave 1 completion:
-  t=boot_end:     All panels online
-  t+0.0s:         Screen edges pulse cyan briefly (100ms)
-  t+0.1s:         "MOTHERSHIP UPLINK ESTABLISHED" in 14px monospace, #0ff, centered top
-  t+0.5s:         Text fades over 0.3s
-  t+0.8s:         Tutorial boot wait ends, Commander welcome triggers
-
-Non-wave-1: unchanged "ALL SYSTEMS NOMINAL" behavior
-```
+### Sounds
+- **Quantum hum**: Square wave sweep 60-200Hz, 0.4s, volume 0.15
+- **Phase-lock tone**: Sine sweep 400-800Hz, 0.4s, volume 0.1
+- **Crystalline snap**: Triangle wave at 1200Hz + click, 0.15s, volume 0.2
 
 ---
 
-## STREAM B: TUTORIAL FLOW REFINEMENT
+## STREAM 2: TUTORIAL POPUP NGE TREATMENT + SOUND REDESIGN
 
-### B1: Commander Welcome Integration
+### 2A: Upgrade renderHintPanel() to NGE Style
 
-**Current**: `triggerTutorialCommander('welcome')` fires after `TUTORIAL_CONFIG.BOOT_WAIT` (line 4602)
-**Proposed**: Tighten the timing so the Commander's welcome feels like part of the boot sequence completing
-
-```
-Current flow:
-  Boot ends -> BOOT_WAIT delay -> Commander welcome -> 0.5s -> Move hint
-
-Refined flow:
-  Boot ends -> 0.3s breathing room -> Commander welcome slides in
-  Commander says welcome line -> 0.8s -> Move hint slides in
-  (Commander remains visible alongside move hint)
-```
-
-**Implementation**: Reduce `TUTORIAL_CONFIG.BOOT_WAIT` if it's currently too long, or verify it already provides the right pacing. The commander welcome at line 4602 already exists -- just tune the timing constant.
-
-### B2: Tutorial Hint NGE Styling
-
-**Current**: Tutorial hints use `rgba(0,0,0,0.5)` roundRect panels (line 5038-5043)
-**Proposed**: Upgrade hint panels to use `renderNGEPanel()` styling to match the rest of the HUD
-
-```
-Current hint panel:
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-  ctx.roundRect(cx - w/2, cy - h/2, w, h, 10);
-
-Proposed hint panel:
-  renderNGEPanel(cx - w/2, cy - h/2, w, h, {
-    color: phaseColor,  // #0ff, #ff0, #0f0, #f80 per phase
-    cutCorners: ['tr'],
-    alpha: 0.6
-  });
-```
-
-This makes the tutorial hints feel like they belong to the same alien command interface as the HUD panels, rather than floating HTML-like overlays.
-
-**Colors per phase** (already defined in `TUTORIAL_CONFIG.COLORS`):
-- Movement: `#0ff` (cyan)
-- Beam: `#ff0` (yellow)
-- Warp Juke: `#0f0` (green)
-- Bomb: `#f80` (orange)
-
-### B3: "ALL SYSTEMS GO!" NGE Transformation
-
-**Current**: "ALL SYSTEMS GO!" renders as white text in a roundRect with cycling border (line 5309-5358)
-**Proposed**: Transform into a proper NGE-style full-width notification bar
-
-```
-Current:
-  380x70 roundRect panel, "ALL SYSTEMS GO!" in 32px white
-
-Proposed:
-  Full-width NGE notification bar (like an EVA "ALERT" banner):
-    Width: min(600, canvas.width * 0.5)
-    Height: 50px
-    Position: centered, canvas.height * 0.40
-    Panel: renderNGEPanel with color cycling through tutorial colors
-    Cut corners: ['tl', 'br'] (diagonal slash feel)
-
-  Text: "ALL SYSTEMS GO" in bold 28px monospace
-    Color: #fff
-    Glow: shadowBlur=12, shadowColor cycles through #0ff -> #ff0 -> #0f0 -> #f80
-
-  Flanking indicators:
-    Left side: 3 cascade squares in current cycle color
-    Right side: 3 cascade squares in current cycle color
-    Creates "data flowing outward from center" feel
-
-  Sound: New SFX.allSystemsGo() -- ascending three-tone chord
-    Tone 1: 400Hz square, 0.05s
-    Tone 2: 600Hz square, 0.05s (30ms after tone 1)
-    Tone 3: 800Hz square, 0.08s (30ms after tone 2)
-    Total: ~0.14s, triumphant ascending feel
-```
-
-### B4: Beam-Up Instruction Enhancement
-
-**Current**: Beam hint has animated chevrons pointing down (line 5096-5107)
-**Proposed**: Add a pulsing beam-line visual connecting the hint to the ground
-
-```
-Below the chevrons, add a thin vertical dashed line:
-  From: hint bottom (cy + 20)
-  To: canvas.height * 0.85 (near ground level)
-  Color: rgba(255, 255, 0, alpha) where alpha pulses 0.1-0.3
-  Style: dashed (4px dash, 8px gap)
-  Animation: dash offset scrolls downward (same as renderEnergyFlowLine)
-
-This creates a visual "aim here" guide without being intrusive.
-Only shows during beam hint phase.
-```
-
----
-
-## STREAM C: HUD PROGRESSIVE REVEAL
-
-### C1: Wave 1 Panel Visibility (Already Implemented)
-
-The current code already implements progressive reveal correctly:
-
-```
-Wave 1 visible:
-  - Status zone: Always (line 13992)
-  - Systems zone: Always (line 14019)
-  - Mission zone: Deferred until beam hint shown (line 14000)
-
-Wave 1 hidden:
-  - Weapons zone: Hidden until bombs purchased (line 14032-14033)
-  - Fleet zone: Hidden until drones unlocked (line 14147-14148)
-  - Diagnostics: Hidden until PG1 researched (line 14168)
-  - OPS.LOG: Hidden until wave >= 2 (line 14188)
-  - Commander: Visible when tutorialState active (line 14209)
-  - Tech chips: Hidden during boot (line 14009)
-  - Bio-matter panel: Hidden during boot (line 14014)
-```
-
-**No changes needed.** The progressive reveal is already working as designed.
-
-### C2: Mission Zone Reveal Animation
-
-**Current**: Mission zone appears instantly when `tutorialState.beamHintShown` becomes true
-**Proposed**: Add a mini-boot animation when the mission zone first appears during Wave 1
-
-```
-When beam hint triggers and mission zone becomes visible:
-  1. Mission panel border traces (same as boot trace, 150ms)
-  2. Boot overlay shows 2-3 diagnostic lines (200ms)
-  3. Panel reveals with "MISSION.CTL ONLINE" flash
-  4. Sound: SFX.bootPanelOnline()
-
-This makes the mission zone feel like it "came online" in response to the player
-learning the beam mechanic, reinforcing cause-and-effect.
-```
-
-**Implementation**: Set `hudBootState.panels.mission` to boot state when beam hint triggers, rather than having it simply appear. Add a check in `updateTutorial()` at the beam hint shown point.
-
----
-
-## STREAM D: FIRST WAVE ATMOSPHERE
-
-### D1: New Sound: SFX.allSystemsGo()
+**Current**: `renderHintPanel()` uses plain `rgba(0,0,0,0.5)` roundRect (line 5038-5043)
+**Proposed**: Replace with `renderNGEPanel()` calls with phase-colored borders
 
 ```js
-allSystemsGo: () => {
-    if (!audioCtx) return;
-    const t = audioCtx.currentTime;
-    const freqs = [400, 600, 800];
-    for (let i = 0; i < 3; i++) {
-        const osc = audioCtx.createOscillator();
-        const g = audioCtx.createGain();
-        osc.type = 'square';
-        osc.frequency.value = freqs[i];
-        const start = t + i * 0.03;
-        g.gain.setValueAtTime(0.001, start);
-        g.gain.linearRampToValueAtTime(0.08, start + 0.005);
-        g.gain.setValueAtTime(0.08, start + 0.04);
-        g.gain.exponentialRampToValueAtTime(0.001, start + 0.08);
-        osc.connect(g); g.connect(audioCtx.destination);
-        osc.start(start); osc.stop(start + 0.08);
-    }
-},
+// Current:
+function renderHintPanel(cx, cy, width, height) {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.beginPath();
+    ctx.roundRect(cx - width / 2, cy - height / 2, width, height, 10);
+    ctx.fill();
+}
+
+// New:
+function renderHintPanel(cx, cy, width, height, color) {
+    color = color || '#0ff';
+    renderNGEPanel(cx - width / 2, cy - height / 2, width, height, {
+        color: color,
+        cutCorners: ['tr'],
+        alpha: 0.6
+    });
+}
 ```
 
-### D2: New Sound: SFX.tutorialHintAppear()
+Each hint renderer passes its phase color:
+- `renderMoveHint`: `TUTORIAL_CONFIG.COLORS.movement` (cyan)
+- `renderBeamHint`: `TUTORIAL_CONFIG.COLORS.beam` (yellow)
+- `renderWarpJukeHint`: `TUTORIAL_CONFIG.COLORS.warp_juke` (green)
+- `renderBombHint`: `TUTORIAL_CONFIG.COLORS.bomb` (orange)
 
+### 2B: Beam Hint Arrow Redesign
+
+**Current**: Text chevrons (`V V V`) at line 5095-5107 — simple stroke-drawn `<` shapes
+**Proposed**: NGE targeting reticle arrows — angular mechanical brackets
+
+Replace the chevron code with:
+- 3 pairs of angular brackets positioned below the hint text, cascading downward
+- Each pair: two angled lines forming targeting brackets `>  <` rotated 90° to point down
+- Brackets are 12px wide, 8px tall, drawn with 2px strokes in yellow
+- Spacing: 16px vertical gap between each pair
+- Animation: brackets contract (close) and expand (open) rhythmically at 3Hz
+- Topmost pair is brightest (alpha 0.9), bottom pair dimmest (alpha 0.4) — emphasizing downward flow
+
+Plus add a pulsing dashed beam guide line below the brackets:
+- From hint bottom to `canvas.height * 0.85` (near ground)
+- Color: `rgba(255, 255, 0, alpha)` where alpha pulses 0.1-0.3
+- Style: dashed (4px dash, 8px gap), dash offset scrolls downward
+
+### 2C: "ALL SYSTEMS GO!" NGE Transformation
+
+**Current**: 380x70 roundRect with cycling border, white 32px text, `SFX.waveComplete()` sound
+**Proposed**: Full NGE notification bar with cascade indicators and NERV-style sound
+
+Visual:
+```
+Width: min(600, canvas.width * 0.5)
+Height: 50px
+Panel: renderNGEPanel with cutCorners: ['tl', 'br']
+Color: cycles through cyan → yellow → green → orange
+Text: "ALL SYSTEMS GO" in bold 28px monospace, white, with color-cycling shadowBlur=12
+Flanking: 3 cascade square indicators on each side (renderNGEIndicator)
+```
+
+### 2D: Sound Redesign
+
+#### SFX.allSystemsGo() — NERV-Style Klaxon Resolve
+Replaces `SFX.waveComplete()` at the tutorial celebration:
+
+1. **Klaxon phase** (0.0 - 0.3s): Low warning oscillator — square wave 200Hz, volume 0.2, ±10Hz wobble at 4Hz LFO
+2. **Sweep phase** (0.3 - 0.5s): Square→sine transition, pitch sweep 200Hz → 600Hz
+3. **Resolution phase** (0.5 - 0.8s): Dual-tone chime — 880Hz (A5) + 1320Hz (E6) sines, volume 0.2, decay over 0.3s. Triangle wave at 440Hz (A4) for warmth, volume 0.08
+4. **Harmonic tail** (0.8 - 1.2s): 880Hz lingers, exponential decay to silence
+
+Alternatively (simpler implementation): Ascending three-tone chord — 400Hz, 600Hz, 800Hz square waves, 30ms apart, 80ms each. Quick and triumphant.
+
+#### SFX.tutorialHintAppear() — System Chirp
+Soft rising sine tone 600→900Hz, 0.15s, volume 0.05. Plays when each hint slides in.
+
+### 2E: Boot Sequence Polish (Wave 1 Only)
+
+#### Extended Quantum OS Logo
+On Wave 1, extend logo display from 0.5s to 1.0s for dramatic effect.
+
+#### Wave 1 Personalized Boot Text
+`generateBootLines()` gets a `wave === 1` branch:
+```
+STATUS: ">> FIRST ACTIVATION DETECTED", "SCORE MODULE [########] OK", etc.
+MISSION: ">> LOADING MISSION PARAMETERS", "QUOTA.DB: FIRST DEPLOYMENT", etc.
+SYSTEMS: ">> POWER-ON SELF TEST", "HULL: {maxHealth} HP -- PRISTINE", etc.
+```
+
+#### "MOTHERSHIP UPLINK ESTABLISHED" Flash
+After all panels finish booting on Wave 1:
+- Brief cyan edge pulse (100ms)
+- "MOTHERSHIP UPLINK ESTABLISHED" in 14px monospace, cyan, centered at top
+- Text fades over 300ms
+- Bridges boot completion to tutorial start
+
+---
+
+## STREAM 3: HUD PANEL RELOCATION
+
+### Problem
+Three panels stack in the bottom-left: Diagnostics (y: canvas.height-390), OPS.LOG (y: canvas.height-220), Commander (y: canvas.height-110). This crowds the bottom-left corner and enemies get hidden behind the panels.
+
+### Solution
+Move Diagnostics and OPS.LOG to the bottom-right. Commander stays bottom-left.
+
+### Layout Changes in `getHUDLayout()` (line 13774)
+
+**Before:**
 ```js
-tutorialHintAppear: () => {
-    if (!audioCtx) return;
-    const t = audioCtx.currentTime;
-    const osc = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(600, t);
-    osc.frequency.exponentialRampToValueAtTime(900, t + 0.12);
-    g.gain.setValueAtTime(0.001, t);
-    g.gain.linearRampToValueAtTime(0.05, t + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
-    osc.connect(g); g.connect(audioCtx.destination);
-    osc.start(t); osc.stop(t + 0.15);
-},
+diagnosticsZone: { x: margin, y: canvas.height - 390, w: leftW, h: 160 }
+opsLogZone:      { x: margin, y: canvas.height - 220, w: Math.min(240, canvas.width * 0.20), h: 100 }
+commanderZone:   { x: margin, y: canvas.height - 110, w: Math.min(260, canvas.width * 0.22), h: 100 }
 ```
 
-### D3: Tutorial Hint Appear Sound Integration
+**After:**
+```js
+diagnosticsZone: { x: canvas.width - rightW - margin, y: canvas.height - 290, w: rightW, h: 160 }
+opsLogZone:      { x: canvas.width - rightW - margin, y: canvas.height - 120, w: rightW, h: 100 }
+commanderZone:   { x: margin, y: canvas.height - 110, w: Math.min(260, canvas.width * 0.22), h: 100 }  // UNCHANGED
+```
 
-When each tutorial hint slides in, play `SFX.tutorialHintAppear()`:
-- At the point where `tutorialState.hintVisible = true` in `updateTutorial()`
-- Approximately lines 4660, 4666, 4670, 4674 (where hints become visible)
+### Animation Direction Changes
 
-### D4: "ALL SYSTEMS GO!" Sound Integration
+Diagnostics and OPS.LOG currently slide from the left (negative offset). They need to slide from the right:
 
-Replace `SFX.powerupCollect()` in tutorial completion with `SFX.allSystemsGo()`:
-- In `renderTutorialCompletion()` or `updateTutorial()` at the CELEBRATION phase start
-- Approximately line 4900 area where completion activates
+**Diagnostics slide** (line 14176):
+```js
+// Before: slides from left
+const diagSlideOffset = (1 - easeOutCubic(hudAnimState.diagPanelSlide)) * -layout.diagnosticsZone.w;
+// After: slides from right
+const diagSlideOffset = (1 - easeOutCubic(hudAnimState.diagPanelSlide)) * layout.diagnosticsZone.w;
+```
+
+**OPS.LOG slide** (line 14196):
+```js
+// Before: slides from left
+const opsSlideOffset = (1 - easeOutCubic(hudAnimState.opsLogPanelSlide)) * -layout.opsLogZone.w;
+// After: slides from right
+const opsSlideOffset = (1 - easeOutCubic(hudAnimState.opsLogPanelSlide)) * layout.opsLogZone.w;
+```
+
+### Right Column Stack (Top to Bottom)
+1. Systems Zone (top-right, y: margin) — existing position
+2. Fleet Zone (right side, y: ~108+) — existing position
+3. Diagnostics Zone (right side, y: canvas.height-290) — NEW position
+4. OPS.LOG Zone (right side, y: canvas.height-120) — NEW position
+
+### Overlap Prevention
+- Fleet zone: `y: fleetY` (~108) with `h: 300` → ends at ~408px from top
+- Diagnostics: `y: canvas.height - 290` → starts at ~430px from top (720p screen)
+- Gap of ~22px between fleet bottom and diagnostics top — sufficient
+- On smaller screens, the `canvas.height >= 500` guards already hide these panels
+
+### Energy Flow / Pulse Updates
+- `renderEnergyFlows()` references diagnostics zone position — endpoints will automatically update since they read from `layout.diagnosticsZone`
+- `renderHUDEnergyPulse()` references diagnostics zone — same auto-update
+- The energy flow lines from diagnostics will now connect to the right side instead of left — this actually looks better as it creates cross-screen data flow
+
+---
+
+## STREAM 4: COMMANDER HUD REFINEMENT
+
+### Concept
+Subtle visual refinements to the Commander panel to harmonize with the evolved HUD. Not a redesign — an enhancement of `renderCommanderZone()` (line 15482).
+
+### 4A: Speaking Glow Effect
+When the commander is speaking (typewriter text advancing), add a breathing glow to the panel border:
+- Pulse the `renderNGEPanel` alpha: `alpha = 0.75 + Math.sin(t * 6) * 0.15` when speaking
+- When not speaking, use normal alpha (0.75)
+- Creates a "transmission active" feel
+
+Implementation: In `renderCommanderZone()`, detect if typewriter is advancing:
+```js
+const isSpeaking = missionCommanderState.dialogue &&
+    missionCommanderState.typewriterIndex < missionCommanderState.dialogue.length;
+const panelAlpha = isSpeaking ? 0.75 + Math.sin(Date.now() / 1000 * 6) * 0.15 : 0.75;
+renderNGEPanel(x, y, w, h, { color: '#0f0', cutCorners: ['tl', 'br'], alpha: panelAlpha });
+```
+
+### 4B: Transmission Accent Line
+Add a thin vertical accent line on the left edge of the commander panel:
+- 2px wide, green (`#0f0`), positioned at `x - 4`
+- Height matches panel height
+- Pulses alpha at 3Hz: `0.3 + Math.sin(t * 3) * 0.2`
+- Creates visual depth and "signal strength" feel
+
+### 4C: Status Indicator Dots
+Below the "INCOMING TRANSMISSION" header, add 3 small colored dots:
+- **COMMS** (green): always on when panel visible — `renderNGEIndicator(x+8, y+18, 'circle', '#0f0', 'steady', {})`
+- **SYNC** (cyan): blinks at 500ms when typewriter is active — `renderNGEIndicator(x+18, y+18, 'circle', '#0ff', 'blink', { rate: 500 })`
+- **LOCK** (yellow): solid when dialogue fully displayed — `renderNGEIndicator(x+28, y+18, 'circle', '#ff0', isSpeaking ? 'blink' : 'steady', { rate: 300 })`
+
+Each dot: 3px radius, uses existing `renderNGEIndicator` function.
+
+### 4D: Corner Accent Marks
+At the two non-cut corners (top-right and bottom-left), add small triangular accent marks:
+- 4px right-angle triangle, green, alpha 0.3
+- These create visual anchoring without changing the panel silhouette
+- Drawn after the main panel render
+
+---
+
+## CROSS-STREAM DEPENDENCIES
+
+1. **Stream 1 (Phase-In)**: Independent. Can be implemented first or in parallel.
+2. **Stream 2 (Tutorial/Sound)**: Independent of Streams 1, 3, 4. Touches tutorial render functions (5038-5358) and SFX object (622-2454).
+3. **Stream 3 (Panel Relocation)**: Independent. Touches `getHUDLayout()` (13774-13807) and slide animation code (14167-14205).
+4. **Stream 4 (Commander Refinement)**: Independent. Touches `renderCommanderZone()` (15482-15535) only.
+
+All streams modify `game.js` but touch **different line ranges** — they can be implemented in parallel by careful surgical agents, or sequentially without conflict.
 
 ---
 
 ## IMPLEMENTATION PRIORITY
 
-### Phase 1: Quick Wins (Independent, can be done in parallel)
-1. **B3**: "ALL SYSTEMS GO!" NGE transformation (renderTutorialCompletion changes)
-2. **D1+D2**: New SFX functions (add to SFX object)
-3. **D3+D4**: Sound integration (1-2 lines each)
+### Phase 1: Quick Wins (Tasks 1-4) — Sound + Wiring
+- Add `SFX.allSystemsGo()` and `SFX.tutorialHintAppear()`
+- Wire sounds into tutorial flow
+- Zero visual change, purely additive
 
-### Phase 2: Styling Upgrades
-4. **B2**: Tutorial hint NGE panel styling (renderHintPanel changes)
-5. **B4**: Beam-up instruction beam-line visual
+### Phase 2: Visual Upgrades (Tasks 5-7) — Tutorial Panel Styling
+- Upgrade `renderHintPanel()` to NGE style
+- Transform "ALL SYSTEMS GO!" into NGE notification bar
+- Redesign beam hint arrows + add guide line
 
-### Phase 3: Boot Sequence Tuning
-6. **A1**: Extended Wave 1 logo timing
-7. **A2**: Wave 1 boot text personalization
-8. **A3**: "MOTHERSHIP UPLINK ESTABLISHED" moment
+### Phase 3: UFO Phase-In (Task 8) — Stream 1
+- Add `ufoPhaseInState` object and rendering
+- Add phase-in sounds
+- New visual effect, self-contained
 
-### Phase 4: Flow Refinement
-9. **B1**: Commander welcome timing adjustment
-10. **C2**: Mission zone reveal animation
+### Phase 4: HUD Relocation (Task 9) — Stream 3
+- Move diagnostics and OPS.LOG to right side
+- Update slide animation directions
+- Layout change, well-isolated
 
----
+### Phase 5: Commander Refinement (Task 10) — Stream 4
+- Speaking glow, accent line, status dots, corner marks
+- Purely additive visual enhancements
 
-## RISKS AND CONSIDERATIONS
-
-### Low Risk
-- **SFX additions (D1, D2)**: Adding new methods to the SFX object is zero-risk. All SFX functions follow the same pattern and are called defensively with `&&` guards.
-- **Styling changes (B2, B3)**: Replacing `roundRect` with `renderNGEPanel` is cosmetic. The render functions are well-tested.
-- **Boot text changes (A2)**: Adding a `wave === 1` branch to `generateBootLines()` is isolated.
-
-### Medium Risk
-- **Logo timing (A1)**: Changing `updateHUDBoot()` timing could affect the boot sequence's interaction with the tutorial `bootWaiting` timer. Need to verify that `TUTORIAL_CONFIG.BOOT_WAIT` accounts for the extended logo.
-- **Mission zone reveal (C2)**: Triggering a mini-boot for the mission zone mid-game requires careful state management. The `hudBootState.panels.mission` object must be properly reset and the boot overlay must render correctly inside the already-running `renderHUDFrame()` pipeline.
-
-### Already Working (No Risk)
-- Progressive panel reveal (C1) -- already implemented correctly
-- Tutorial state machine -- battle-tested across all 4 phases
-- Commander welcome -- already triggers at the right time
-- Tank entrance sequence -- already dramatic and well-timed
+### Phase 6: Boot Sequence Polish (Tasks 11-13) — Stream 2E
+- Extended Wave 1 logo
+- Personalized boot text
+- "MOTHERSHIP UPLINK ESTABLISHED" flash
 
 ---
 
-## VERIFICATION CHECKLIST
+## KEY CODE LOCATIONS
 
-After implementation, verify:
-
-- [ ] Wave 1 starts with extended Quantum OS logo (1.0s vs 0.5s)
-- [ ] Wave 1 boot text shows "FIRST ACTIVATION DETECTED" instead of generic text
-- [ ] Tutorial hints use NGE panel styling (angular corners, hex texture)
-- [ ] Beam hint has pulsing dashed guide line to ground
-- [ ] "ALL SYSTEMS GO!" renders as NGE notification bar with cascade indicators
-- [ ] `SFX.allSystemsGo()` plays during completion celebration
-- [ ] `SFX.tutorialHintAppear()` plays when each hint slides in
-- [ ] Mission zone reveals with mini-boot animation when beam hint triggers
-- [ ] Commander welcome timing feels natural after boot completion
-- [ ] Non-wave-1 behavior is completely unchanged
-- [ ] No performance regression (maintain 60fps)
-- [ ] All existing tutorial functionality still works (move, beam, warp juke, bomb)
-
----
-
-## APPENDIX: KEY CODE LOCATIONS
-
-| Item | Line | File |
+| Item | Line | Area |
 |------|------|------|
-| `startGame()` | 12663 | game.js |
-| `initHUDBoot()` | 16444 | game.js |
-| `initTutorial()` | 4509 | game.js |
-| `updateTutorial()` | 4593 | game.js |
-| `renderTutorialHints()` | 4983 | game.js |
-| `renderTutorialCompletion()` | 5309 | game.js |
-| `renderHintPanel()` | 5038 | game.js |
-| `renderHUDFrame()` | 13969 | game.js |
-| `renderHUDBootGlobalEffects()` | 16944 | game.js |
-| `updateHUDBoot()` | 16516 | game.js |
-| `generateBootLines()` | ~16700 | game.js |
-| `getHUDLayout()` | 13774 | game.js |
-| `renderNGEPanel()` | 12892 | game.js |
-| `renderNGEIndicator()` | 13305 | game.js |
-| `renderCommanderZone()` | 15482 | game.js |
-| `TUTORIAL_CONFIG` | ~4440 | game.js |
-| SFX object | 622-2454 | game.js |
-| render() pipeline | 24070-24124 | game.js |
-| Main game loop | 23761-23806 | game.js |
+| SFX object | 622-2454 | Sound effects |
+| TUTORIAL_CONFIG | 415-445 | Tutorial constants |
+| initTutorial() | 4509 | Tutorial init |
+| updateTutorial() | 4593 | Tutorial state machine |
+| renderHintPanel() | 5038 | Tutorial hint panel |
+| renderMoveHint() | 5045 | Move hint |
+| renderBeamHint() | 5072 | Beam hint + chevrons |
+| renderWarpJukeHint() | 5110 | Warp juke hint |
+| renderBombHint() | 5139 | Bomb hint |
+| renderTutorialCompletion() | 5309 | "ALL SYSTEMS GO!" |
+| class UFO | 5448 | UFO constructor |
+| renderUFO() | ~5600+ | UFO rendering |
+| startGame() | 12663 | Game initialization |
+| renderNGEPanel() | 12892 | NGE panel primitive |
+| renderNGEIndicator() | 13305 | NGE indicator primitive |
+| getHUDLayout() | 13774 | HUD positioning |
+| renderHUDFrame() | 13969 | Main HUD render |
+| Diagnostics slide | 14167-14185 | Diag panel animation |
+| OPS.LOG slide | 14187-14205 | OpsLog panel animation |
+| Commander zone render | 14207-14237 | Commander panel animation |
+| renderCommanderZone() | 15482 | Commander panel content |
+| renderDiagnosticsZone() | 15537 | Diagnostics panel content |
+| updateHUDBoot() | 16516 | Boot sequence logic |
+| generateBootLines() | ~16643 | Boot diagnostic text |
+| renderHUDBootGlobalEffects() | 16944 | Boot visual effects |
