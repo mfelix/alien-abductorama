@@ -3204,6 +3204,7 @@ let playerInventory = {
 
 // === EXPANSION: Bio-Matter & Quota ===
 let bioMatter = 0;
+let totalBioMatterEarned = 0;
 let quotaTarget = 0;
 let quotaProgress = 0;
 let consecutiveQuotaMisses = 0;
@@ -4274,6 +4275,7 @@ class Target {
                 if (bmEarned > 0) {
                     bioMatter += bmEarned;
                     waveStats.bioMatterEarned += bmEarned;
+                    totalBioMatterEarned += bmEarned;
                     createFloatingText(this.x + 30, this.y - 15, `+${bmEarned} BM`, '#4f4', { fontSize: 18 });
                     bioUploadState.flashAlpha = 1.0;
                     bioUploadState.bitRate += 10;
@@ -9557,6 +9559,7 @@ class HarvesterDrone {
                     bioMatter += bmEarned;
                     waveStats.droneHarvests++;
                     waveStats.bioMatterEarned += bmEarned;
+                    totalBioMatterEarned += bmEarned;
                     createFloatingText(this.x, this.y - 30, `+${totalPoints}`, '#0f0');
                     createFloatingText(this.x + 20, this.y - 50, `+${bmEarned} BM`, '#4f4', { fontSize: 18 });
                     bioUploadState.flashAlpha = 1.0;
@@ -10879,6 +10882,7 @@ class HarvesterCoordinator extends Coordinator {
                 this.bioMatterBuffer = 0;
                 bioMatter += bmToSend;
                 waveStats.bioMatterEarned += bmToSend;
+                totalBioMatterEarned += bmToSend;
                 waveStats.droneHarvests++;
                 createFloatingText(this.x, this.y - 40, `+${bmToSend} BM`, '#4f4', { fontSize: 18 });
                 // Spawn upload rows for bio-matter panel
@@ -12994,6 +12998,7 @@ function startGame() {
 
     // === EXPANSION: Reset new state ===
     bioMatter = 0;
+    totalBioMatterEarned = 0;
     quotaTarget = getQuotaTarget(1);
     quotaProgress = 0;
     consecutiveQuotaMisses = 0;
@@ -14664,30 +14669,22 @@ function renderBioMatterPanel(zone) {
         color: '#0f0',
         cutCorners: [],
         alpha: 0.55,
-        label: compact ? 'BIO' : 'BIO-MATTER'
+        label: compact ? 'BM' : 'BM.CONDUIT'
     });
 
-    // Header area — value display
-    const labelW = compact ? 30 : 80;
-    const valX = x + 6 + labelW;
-    if (bioMatter > 0) {
-        ctx.fillStyle = '#0ff';
-        ctx.font = 'bold 14px monospace';
-        ctx.textAlign = 'left';
-        ctx.shadowColor = '#0ff';
-        ctx.shadowBlur = 4;
-        ctx.fillText(bioMatter.toString(), valX, y + 12);
-        ctx.shadowBlur = 0;
-    } else {
-        ctx.fillStyle = 'rgba(0, 255, 0, 0.4)';
-        ctx.font = 'bold 14px monospace';
-        ctx.textAlign = 'left';
-        ctx.fillText('0', valX, y + 12);
-    }
+    // Header metrics — same baseline as panel label, right-aligned
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'right';
+    // Wave BM earned (left metric)
+    const waveBM = waveStats.bioMatterEarned;
+    ctx.fillStyle = waveBM > 0 ? '#0f0' : 'rgba(0, 170, 68, 0.5)';
+    ctx.fillText(`W:${waveBM}`, x + w - 36, y + 13);
+    // Total BM balance (right metric)
+    ctx.fillStyle = bioMatter > 0 ? '#0f0' : 'rgba(0, 170, 68, 0.5)';
+    ctx.fillText(`${bioMatter}`, x + w - 4, y + 13);
 
     // Blink lights in header
-    renderNGEBlinkLight(x + w - 18, y + 6, '#0f0', 500);
-    renderNGEBlinkLight(x + w - 10, y + 6, '#0f0', 500);
+    renderNGEBlinkLight(x + w - 30, y + 6, '#0f0', 500);
 
     // Stream area — FULL WIDTH rows
     const streamX = x + 4;
@@ -16104,7 +16101,7 @@ function renderTechTree(layout) {
     const panelX = gapStartX;
     const panelY = layout.statusZone.y;
     const panelW = gapW;
-    const panelH = layout.statusZone.h; // Match status zone height
+    const panelH = layout.missionZone.h; // Match mission zone height for top-row alignment
 
     renderNGEPanel(panelX, panelY, panelW, panelH, {
         color: '#0a4',
