@@ -15749,7 +15749,17 @@ function renderFleetZone(zone) {
 function renderCommanderZone(zone) {
     const { x, y, w, h } = zone;
 
-    renderNGEPanel(x, y, w, h, { color: '#0f0', cutCorners: ['tl', 'br'], alpha: 0.75 });
+    // Speaking glow: pulse panel alpha when typewriter is advancing
+    const isSpeaking = missionCommanderState.dialogue &&
+        missionCommanderState.typewriterIndex < missionCommanderState.dialogue.length;
+    const panelAlpha = isSpeaking ? 0.75 + Math.sin(Date.now() / 1000 * 6) * 0.15 : 0.75;
+
+    renderNGEPanel(x, y, w, h, { color: '#0f0', cutCorners: ['tl', 'br'], alpha: panelAlpha });
+
+    // Transmission accent line (left edge, pulses at 3Hz)
+    const accentAlpha = 0.3 + Math.sin(Date.now() / 1000 * 3) * 0.2;
+    ctx.fillStyle = `rgba(0, 255, 0, ${accentAlpha})`;
+    ctx.fillRect(x - 4, y + 2, 2, h - 4);
 
     // "INCOMING TRANSMISSION" header with blinking light
     renderNGEBlinkLight(x + 8, y + 6, '#0f0', 250);
@@ -15759,6 +15769,30 @@ function renderCommanderZone(zone) {
     ctx.font = 'bold 10px monospace';
     ctx.textAlign = 'left';
     ctx.fillText('INCOMING TRANSMISSION', x + 16, y + 12);
+
+    // Status indicator dots below header
+    renderNGEIndicator(x + 8, y + 18, 'circle', '#0f0', 'steady', { rate: 99999 }); // COMMS: always on
+    renderNGEIndicator(x + 18, y + 18, 'circle', '#0ff', isSpeaking ? 'blink' : 'steady', { rate: 500 }); // SYNC
+    const dialogueComplete = missionCommanderState.dialogue &&
+        missionCommanderState.typewriterIndex >= missionCommanderState.dialogue.length;
+    renderNGEIndicator(x + 28, y + 18, 'circle', '#ff0', dialogueComplete ? 'steady' : 'blink', { rate: 300 }); // LOCK
+
+    // Corner accent marks at non-cut corners (top-right, bottom-left)
+    ctx.fillStyle = 'rgba(0, 255, 0, 0.3)';
+    // Top-right triangle
+    ctx.beginPath();
+    ctx.moveTo(x + w, y);
+    ctx.lineTo(x + w - 4, y);
+    ctx.lineTo(x + w, y + 4);
+    ctx.closePath();
+    ctx.fill();
+    // Bottom-left triangle
+    ctx.beginPath();
+    ctx.moveTo(x, y + h);
+    ctx.lineTo(x + 4, y + h);
+    ctx.lineTo(x, y + h - 4);
+    ctx.closePath();
+    ctx.fill();
 
     // Scanline effect over entire panel
     renderNGEScanlines(x, y, w, h, 0.025);
