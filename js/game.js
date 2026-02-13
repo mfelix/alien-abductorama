@@ -3322,6 +3322,12 @@ const COMMANDER_DIALOGUES = {
             "Quota met by a HAIR. If you'd invest in some upgrades you wouldn't be sweating every wave!",
             "Cutting it close out there. Better equipment means better numbers. UPGRADE!"
         ],
+        lowHealth: [
+            "Your hull's taken HITS! Buy a REPAIR KIT before you fly into another wave!",
+            "SHIELD INTEGRITY LOW. I strongly suggest repairs, commander.",
+            "You're going out there DAMAGED?! Get a REPAIR KIT from maintenance! NOW!",
+            "Hull damage detected! The maintenance tab has REPAIR KITS. Use them!"
+        ],
         noUpgradesAtAll: [
             "You haven't bought a SINGLE upgrade?! What are you SAVING for, retirement?!",
             "ZERO upgrades purchased! The Board is questioning your SANITY!",
@@ -12929,11 +12935,10 @@ function createCelebrationEffect() {
 function startGame() {
     cleanupTutorial();
     animationPausedAt = null;
-    gameState = 'PLAYING';
     gameStartTime = Date.now();
     activityPingSent = false;
     ufo = new UFO();
-    ufoPhaseInState = wave === 1 ? { active: true, timer: 0, phase: 'noise' } : null;
+    ufoPhaseInState = null; // Set during WAVE_TRANSITION→PLAYING for wave 1
     targets = [];
     tanks = [];
     heavyTanks = [];
@@ -13142,13 +13147,11 @@ function startGame() {
     bombDamageTier = 0;
     shopNewItems = new Set();
 
-    // Spawn initial tanks (skip on wave 1 — tutorial handles tank entrance)
-    if (wave !== 1) {
-        spawnTanks();
-    }
-
-    initHUDBoot();
     initTutorial();
+
+    // Always go through BIOS boot sequence (including wave 1)
+    waveTransitionTimer = CONFIG.WAVE_TRANSITION_DURATION;
+    gameState = 'WAVE_TRANSITION';
 }
 
 // ============================================
@@ -14317,98 +14320,7 @@ function renderHUDFrame() {
         ctx.restore();
     }
 
-    // Research progress bar + queue: only render below weapons when tech tree gap is too small
-    const techTreeGapW = layout.missionZone.x - 6 - (layout.statusZone.x + layout.statusZone.w + 6);
-    if (techTree.activeResearch && !booting && techTreeGapW < 180) {
-        const node = getTechNode(techTree.activeResearch.nodeId);
-        if (node) {
-            const rX = layout.weaponsZone.x;
-            const rW = layout.weaponsZone.w;
-            const rY = layout.weaponsZone.y + weaponsPanelH + 6;
-            const rH = 28;
-            const progress = 1 - (techTree.activeResearch.timeRemaining / techTree.activeResearch.totalTime);
-            const timeLeft = Math.ceil(techTree.activeResearch.timeRemaining);
-
-            // Get short name from TECH_CHIP_DEFS
-            const chipDef = TECH_CHIP_DEFS.find(c => c.id === techTree.activeResearch.nodeId);
-            const shortName = chipDef ? chipDef.text : node.name;
-
-            if (hudAnimState.weaponsPanelVisible) {
-                ctx.save();
-                const slideOffset = (1 - easeOutCubic(hudAnimState.weaponsPanelSlide)) * -layout.weaponsZone.w;
-                ctx.translate(slideOffset, 0);
-            }
-
-            // Active research panel (#1)
-            renderNGEPanel(rX, rY, rW, rH, { color: '#0a4', cutCorners: [], alpha: 0.6 });
-            renderNGEBar(rX + 4, rY + 4, rW - 8, rH - 8, progress, '#0a4', { segments: 15 });
-
-            // Priority number
-            ctx.fillStyle = '#0f0';
-            ctx.font = 'bold 12px monospace';
-            ctx.textAlign = 'left';
-            ctx.fillText('1', rX + 6, rY + rH / 2 + 4);
-
-            // Short research name
-            ctx.fillStyle = '#fff';
-            ctx.font = 'bold 10px monospace';
-            ctx.textAlign = 'left';
-            ctx.fillText(shortName, rX + 20, rY + rH / 2 + 4);
-
-            // Countdown timer
-            ctx.textAlign = 'right';
-            ctx.fillText(`${timeLeft}s`, rX + rW - 16, rY + rH / 2 + 4);
-
-            renderNGEBlinkLight(rX + rW - 10, rY + 6, '#0f0', 300);
-
-            // Queued research items (#2, #3)
-            const queueItems = techTree.queue.slice(0, 2);
-            if (queueItems.length > 0) {
-                const qLineH = 16;
-                const qPad = 3;
-                const qY = rY + rH + 2;
-                const qH = queueItems.length * qLineH + qPad * 2;
-
-                // Subtle queue background
-                ctx.fillStyle = 'rgba(0, 15, 0, 0.45)';
-                ctx.fillRect(rX + 1, qY, rW - 2, qH);
-                ctx.strokeStyle = 'rgba(0, 170, 68, 0.25)';
-                ctx.lineWidth = 1;
-                ctx.strokeRect(rX + 1, qY, rW - 2, qH);
-
-                for (let i = 0; i < queueItems.length; i++) {
-                    const qNode = getTechNode(queueItems[i]);
-                    const qChip = TECH_CHIP_DEFS.find(c => c.id === queueItems[i]);
-                    const qName = qChip ? qChip.text : (qNode ? qNode.name : '???');
-                    const qNum = i + 2;
-                    const ly = qY + qPad + i * qLineH;
-
-                    // Priority number
-                    ctx.fillStyle = 'rgba(0, 200, 80, 0.5)';
-                    ctx.font = 'bold 10px monospace';
-                    ctx.textAlign = 'left';
-                    ctx.fillText(`${qNum}`, rX + 6, ly + 12);
-
-                    // Name
-                    ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
-                    ctx.font = '9px monospace';
-                    ctx.textAlign = 'left';
-                    ctx.fillText(qName, rX + 20, ly + 12);
-
-                    // Research time
-                    if (qNode) {
-                        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-                        ctx.textAlign = 'right';
-                        ctx.fillText(`${qNode.researchTime}s`, rX + rW - 8, ly + 12);
-                    }
-                }
-            }
-
-            if (hudAnimState.weaponsPanelVisible) {
-                ctx.restore();
-            }
-        }
-    }
+    // Research progress is now integrated into the TECH.SYS panel (renderTechTree)
 
     // Fleet zone: slide in when drones/coordinators unlocked
     const hasFleet = harvesterUnlocked || battleDroneUnlocked || activeCoordinators.length > 0;
@@ -14798,11 +14710,10 @@ function renderBioMatterPanel(zone) {
     ctx.rect(streamX, streamY, streamW, streamH);
     ctx.clip();
 
-    // Render upload rows or idle state
+    // Render upload cells or idle state (horizontal flow layout)
     const activeRows = bioUploadRows.filter(r => r.phase !== 'done');
     if (activeRows.length === 0) {
         // IDLE STATE
-        // Background binary noise
         const now = Date.now();
         ctx.font = '6px monospace';
         ctx.textAlign = 'left';
@@ -14813,8 +14724,6 @@ function renderBioMatterPanel(zone) {
             ctx.fillStyle = 'rgba(0, 255, 0, 0.06)';
             ctx.fillText(seed % 2 === 0 ? '0' : '1', bx, by);
         }
-
-        // "AWAITING UPLOAD" text
         const blinkOn = Math.floor(now / 2000) % 2 === 0;
         if (blinkOn) {
             ctx.fillStyle = 'rgba(0, 170, 68, 0.3)';
@@ -14823,31 +14732,34 @@ function renderBioMatterPanel(zone) {
             ctx.fillText('AWAITING UPLOAD', streamX + streamW / 2, streamY + streamH / 2 + 3);
         }
     } else {
-        // ACTIVE STATE - render rows
-        const rowH = 14;
-        const rowGap = 2;
-        const maxVisible = Math.floor(streamH / (rowH + rowGap));
-        const visibleRows = activeRows.slice(0, compact ? 2 : maxVisible);
+        // ACTIVE STATE — horizontal flow: one cell per upload
+        const cellW = compact ? 50 : 65;
+        const cellH = 14;
+        const cellGap = 3;
+        const rowH = cellH + 2;
+        const maxCols = Math.floor((streamW + cellGap) / (cellW + cellGap));
+        const maxRows = Math.floor(streamH / rowH);
+        const maxVisible = maxCols * maxRows;
+        const visibleRows = activeRows.slice(0, maxVisible);
+        const queuedCount = Math.max(0, activeRows.length - maxVisible);
 
         for (let i = 0; i < visibleRows.length; i++) {
             const row = visibleRows[i];
-            const rowY = streamY + i * (rowH + rowGap);
-            const rowW = streamW;
-            const rowX = streamX;
+            const col = i % maxCols;
+            const rowIdx = Math.floor(i / maxCols);
+            const cellX = streamX + col * (cellW + cellGap);
+            const cellY = streamY + rowIdx * rowH;
             const age = (Date.now() - row.spawnTime) / 1000;
 
             if (row.phase === 'flash') {
-                // COMPLETION FLASH
                 const flashAge = Date.now() - row.flashStartTime;
                 if (flashAge > 300) {
-                    // Collapse phase
                     const collapseProgress = Math.min(1, (flashAge - 200) / 100);
-                    const currentH = rowH * (1 - collapseProgress * collapseProgress * collapseProgress);
-                    if (currentH < 1) { row.phase = 'done'; continue; }
-                    ctx.fillStyle = 'rgba(0, 255, 0, 0.2)';
-                    ctx.fillRect(rowX, rowY, rowW, currentH);
+                    const currentW = cellW * (1 - collapseProgress * collapseProgress * collapseProgress);
+                    if (currentW < 1) { row.phase = 'done'; continue; }
+                    ctx.fillStyle = 'rgba(0, 255, 0, 0.3)';
+                    ctx.fillRect(cellX, cellY, currentW, cellH);
                 } else {
-                    // Strobe
                     const flashPhase = Math.floor(flashAge / 25) % 4;
                     let bg, fg;
                     switch (flashPhase) {
@@ -14857,17 +14769,17 @@ function renderBioMatterPanel(zone) {
                         default: bg = '#000'; fg = '#fff'; break;
                     }
                     ctx.fillStyle = bg;
-                    ctx.fillRect(rowX, rowY, rowW, rowH);
+                    ctx.fillRect(cellX, cellY, cellW, cellH);
                     ctx.fillStyle = fg;
-                    ctx.font = 'bold 7px monospace';
-                    ctx.textAlign = 'left';
-                    ctx.fillText('UPLOAD COMPLETE', rowX + 4, rowY + 10);
+                    ctx.font = 'bold 6px monospace';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('OK', cellX + cellW / 2, cellY + 10);
                 }
                 continue;
             }
 
             // Calculate progress
-            const uploadDuration = 1.5; // seconds
+            const uploadDuration = 1.5;
             const t = Math.min(1, age / uploadDuration);
             let progress;
             if (t < 0.3) progress = easeOutCubic(t / 0.3) * 0.3;
@@ -14875,7 +14787,6 @@ function renderBioMatterPanel(zone) {
             else progress = 0.9 + easeOutCubic((t - 0.9) / 0.1) * 0.1;
             row.progress = progress;
 
-            // Check for completion
             if (progress >= 1 && row.phase === 'uploading') {
                 row.phase = 'flash';
                 row.flashStartTime = Date.now();
@@ -14883,37 +14794,41 @@ function renderBioMatterPanel(zone) {
                 continue;
             }
 
-            // Chevron
-            ctx.fillStyle = 'rgba(0, 255, 0, 0.7)';
+            // Cell background
+            ctx.fillStyle = 'rgba(0, 40, 0, 0.4)';
+            ctx.fillRect(cellX, cellY, cellW, cellH);
+
+            // Progress bar fill
+            const barColor = progress > 0.9 ? '#0ff' : '#0f0';
+            ctx.fillStyle = barColor;
+            ctx.globalAlpha = 0.3;
+            ctx.fillRect(cellX, cellY, cellW * progress, cellH);
+            ctx.globalAlpha = 1;
+
+            // Cell border
+            ctx.strokeStyle = progress > 0.9 ? 'rgba(0, 255, 255, 0.6)' : 'rgba(0, 255, 0, 0.4)';
+            ctx.lineWidth = 0.5;
+            ctx.strokeRect(cellX, cellY, cellW, cellH);
+
+            // Chevron + percentage
+            ctx.fillStyle = barColor;
             ctx.font = 'bold 7px monospace';
             ctx.textAlign = 'left';
-            const chevOffset = (Date.now() / 200) % 14;
-            ctx.fillText('>>', rowX + 2 - chevOffset % 7, rowY + 10);
-
-            if (!compact) {
-                // Binary stream
-                ctx.font = '7px monospace';
-                const binOffset = Math.floor(Date.now() / 80);
-                for (let b = 0; b < 8; b++) {
-                    const bit = ((binOffset + b + i * 7) * 13) % 2;
-                    const alpha = 0.3 + 0.5 * (((binOffset + b) % 5) / 5);
-                    ctx.fillStyle = `rgba(0, 255, 0, ${alpha})`;
-                    ctx.fillText(bit.toString(), rowX + 18 + b * 6, rowY + 10);
-                }
-            }
-
-            // Progress bar
-            const barX = compact ? rowX + 18 : rowX + 70;
-            const barW = compact ? rowW - 52 : rowW - 104;
-            const barColor = progress > 0.9 ? '#0ff' : '#0f0';
-            renderNGEBar(barX, rowY + 3, barW, 8, progress, barColor, { segments: 8 });
-
-            // Percentage
-            const pctText = progress >= 1 ? 'XFER' : `${Math.floor(progress * 100)}%`;
-            ctx.fillStyle = progress >= 1 ? '#0ff' : '#0f0';
-            ctx.font = 'bold 7px monospace';
+            const chevFrame = Math.floor(Date.now() / 200) % 3;
+            ctx.fillText('>' .repeat(chevFrame + 1), cellX + 2, cellY + 10);
             ctx.textAlign = 'right';
-            ctx.fillText(pctText, rowX + rowW - 2, rowY + 10);
+            const pctText = `${Math.floor(progress * 100)}%`;
+            ctx.fillText(pctText, cellX + cellW - 2, cellY + 10);
+        }
+
+        // Queue overflow indicator
+        if (queuedCount > 0) {
+            const queueY = streamY + streamH - 12;
+            const pulse = 0.5 + 0.5 * Math.sin(Date.now() * 0.004);
+            ctx.fillStyle = `rgba(0, 255, 0, ${0.3 + pulse * 0.4})`;
+            ctx.font = 'bold 7px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(`+${queuedCount} QUEUED \u25B6`, streamX + streamW / 2, queueY + 8);
         }
     }
 
@@ -16166,7 +16081,6 @@ function renderTechTree(layout) {
         ? Math.min(1, (Date.now() - techTreeAnimState.appearStartTime) / 600)
         : 1;
 
-    // During appear animation, modulate alpha
     if (appearProgress < 1) {
         ctx.save();
         ctx.globalAlpha = easeOutCubic(appearProgress);
@@ -16178,8 +16092,144 @@ function renderTechTree(layout) {
     const gapEndX = missionStart - 6;
     const gapW = gapEndX - gapStartX;
 
-    // Small screen: hide entirely if gap < 180px
-    if (gapW < 180) return;
+    if (gapW < 140) return;
+
+    // === TECH.SYS NGE Panel Container ===
+    const panelX = gapStartX;
+    const panelY = layout.statusZone.y;
+    const panelW = gapW;
+    const panelH = layout.statusZone.h; // Match status zone height
+
+    renderNGEPanel(panelX, panelY, panelW, panelH, {
+        color: '#0a4',
+        cutCorners: [],
+        alpha: 0.55,
+        label: 'TECH.SYS'
+    });
+
+    // Blink lights in header
+    renderNGEBlinkLight(panelX + panelW - 18, panelY + 6, '#0a4', 700);
+    renderNGEBlinkLight(panelX + panelW - 10, panelY + 6, '#0a4', 700);
+
+    // Clip to panel interior
+    ctx.save();
+    const innerX = panelX + 3;
+    const innerY = panelY + 18; // Below header
+    const innerW = panelW - 6;
+    const innerH = panelH - 22;
+    ctx.beginPath();
+    ctx.rect(innerX, innerY, innerW, innerH);
+    ctx.clip();
+
+    // === 1/3 Research Queue | 2/3 Tech Tree ===
+    const researchW = Math.floor(innerW * 0.33);
+    const treeW = innerW - researchW - 3; // 3px divider gap
+    const researchX = innerX;
+    const treeX = innerX + researchW + 3;
+
+    // --- LEFT: Research Queue (1/3) ---
+    // Background
+    ctx.fillStyle = 'rgba(0, 15, 0, 0.25)';
+    ctx.fillRect(researchX, innerY, researchW, innerH);
+    ctx.strokeStyle = 'rgba(0, 170, 68, 0.3)';
+    ctx.lineWidth = 0.5;
+    ctx.strokeRect(researchX, innerY, researchW, innerH);
+
+    // Research header
+    ctx.fillStyle = 'rgba(0, 200, 80, 0.7)';
+    ctx.font = 'bold 7px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('RESEARCH.Q', researchX + 3, innerY + 8);
+
+    const rqY = innerY + 12;
+    const rqLineH = 14;
+
+    if (techTree.activeResearch) {
+        const node = getTechNode(techTree.activeResearch.nodeId);
+        if (node) {
+            const chipDef = TECH_CHIP_DEFS.find(c => c.id === techTree.activeResearch.nodeId);
+            const shortName = chipDef ? chipDef.text : node.name;
+            const progress = 1 - (techTree.activeResearch.timeRemaining / techTree.activeResearch.totalTime);
+            const timeLeft = Math.ceil(techTree.activeResearch.timeRemaining);
+
+            // Active research item
+            ctx.fillStyle = 'rgba(0, 40, 0, 0.5)';
+            ctx.fillRect(researchX + 2, rqY, researchW - 4, rqLineH);
+
+            // Priority number
+            ctx.fillStyle = '#0f0';
+            ctx.font = 'bold 7px monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText('1', researchX + 4, rqY + 10);
+
+            // Name
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 7px monospace';
+            ctx.fillText(shortName.substring(0, 8), researchX + 14, rqY + 10);
+
+            // Timer
+            ctx.textAlign = 'right';
+            ctx.fillStyle = timeLeft <= 5 ? '#ff0' : '#0f0';
+            ctx.fillText(`${timeLeft}s`, researchX + researchW - 4, rqY + 10);
+
+            // Progress bar
+            renderNGEBar(researchX + 2, rqY + rqLineH - 3, researchW - 4, 2, progress, '#0a4', { segments: 8 });
+
+            // Blink
+            renderNGEBlinkLight(researchX + researchW - 10, rqY + 2, '#0f0', 300);
+        }
+    } else {
+        ctx.fillStyle = 'rgba(0, 170, 68, 0.2)';
+        ctx.font = '7px monospace';
+        ctx.textAlign = 'center';
+        const blinkOn = Math.floor(Date.now() / 2000) % 2 === 0;
+        if (blinkOn) ctx.fillText('IDLE', researchX + researchW / 2, rqY + 10);
+    }
+
+    // Queue items
+    const queueItems = techTree.queue ? techTree.queue.slice(0, 3) : [];
+    for (let i = 0; i < queueItems.length; i++) {
+        const qNode = getTechNode(queueItems[i]);
+        const qChip = TECH_CHIP_DEFS.find(c => c.id === queueItems[i]);
+        const qName = qChip ? qChip.text : (qNode ? qNode.name : '???');
+        const qItemY = rqY + rqLineH + 2 + i * (rqLineH - 2);
+
+        ctx.fillStyle = 'rgba(0, 15, 0, 0.3)';
+        ctx.fillRect(researchX + 2, qItemY, researchW - 4, rqLineH - 3);
+
+        ctx.fillStyle = 'rgba(0, 200, 80, 0.5)';
+        ctx.font = 'bold 7px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(`${i + 2}`, researchX + 4, qItemY + 9);
+
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+        ctx.font = '7px monospace';
+        ctx.fillText(qName.substring(0, 8), researchX + 14, qItemY + 9);
+
+        if (qNode) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.textAlign = 'right';
+            ctx.fillText(`${qNode.researchTime}s`, researchX + researchW - 4, qItemY + 9);
+        }
+    }
+
+    // Researched count at bottom
+    if (techTree.researched.size > 0) {
+        const countY = innerY + innerH - 10;
+        ctx.fillStyle = 'rgba(0, 170, 68, 0.4)';
+        ctx.font = '7px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${techTree.researched.size}/15 DONE`, researchX + researchW / 2, countY + 6);
+    }
+
+    // --- RIGHT: Tech Tree Nodes (2/3) ---
+    // Divider line
+    ctx.strokeStyle = 'rgba(0, 170, 68, 0.3)';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(treeX - 2, innerY + 2);
+    ctx.lineTo(treeX - 2, innerY + innerH - 2);
+    ctx.stroke();
 
     const tracks = ['powerGrid', 'droneCommand', 'defenseNetwork'];
     const trackPrefixes = ['pg', 'dc', 'dn'];
@@ -16189,20 +16239,21 @@ function renderTechTree(layout) {
         'rgba(221, 102, 0, 0.04)'
     ];
 
-    // Node dimensions
-    const isMicro = gapW < 220;
-    const nodeW = isMicro ? 32 : 40;
-    const nodeH = isMicro ? 14 : 18;
-    const nodeGap = isMicro ? 4 : 6;
+    // Node dimensions scaled to fit
+    const isMicro = treeW < 160;
+    const nodeW = isMicro ? 26 : Math.min(40, Math.floor((treeW - 30) / 5));
+    const nodeH = isMicro ? 12 : Math.min(18, Math.floor((innerH - 20) / 3.6));
+    const nodeGap = isMicro ? 3 : Math.min(6, Math.floor((treeW - 5 * nodeW) / 4));
     const nodesPerTrack = 5;
     const trackNodeWidth = nodesPerTrack * nodeW + (nodesPerTrack - 1) * nodeGap;
 
-    // Center nodes in gap
-    const startX = gapStartX + Math.max(0, (gapW - trackNodeWidth) / 2);
+    // Center nodes in tree zone
+    const startX = treeX + Math.max(2, (treeW - trackNodeWidth) / 2);
 
-    // Row positions
+    // Row positions — centered vertically in inner area
     const rowH = nodeH + 4;
-    const baseY = 4;
+    const totalTreeH = 3 * rowH + 2 * 2;
+    const baseY = innerY + Math.max(2, (innerH - totalTreeH) / 2);
 
     // Update animation state
     techTreeAnimState.dashOffset += 0.5;
@@ -16216,14 +16267,14 @@ function renderTechTree(layout) {
 
         // Row background tint
         ctx.fillStyle = trackBgColors[t];
-        ctx.fillRect(gapStartX, rowY, gapW, rowH);
+        ctx.fillRect(treeX, rowY, treeW, rowH);
 
         // Bio-organic particle background
         const now = Date.now();
-        for (let p = 0; p < 15; p++) {
+        for (let p = 0; p < 10; p++) {
             const seed = t * 100 + p;
             const speed = 0.2 + (seed % 7) * 0.1;
-            const px = gapStartX + ((seed * 37 + now * speed * 0.001) % gapW);
+            const px = treeX + ((seed * 37 + now * speed * 0.001) % treeW);
             const py = rowY + 2 + (seed * 13) % (rowH - 4);
             const onDur = 100 + (seed * 17) % 300;
             const offDur = 200 + (seed * 23) % 600;
@@ -16246,7 +16297,6 @@ function renderTechTree(layout) {
             const nx = startX + n * (nodeW + nodeGap);
             const ny = rowY + 2;
 
-            // Determine node state
             const isResearched = techTree.researched.has(nodeId);
             const isResearching = techTree.activeResearch && techTree.activeResearch.nodeId === nodeId;
 
@@ -16296,7 +16346,6 @@ function renderTechTree(layout) {
                 ctx.fillRect(nx, ny, nodeW, nodeH);
                 ctx.strokeRect(nx, ny, nodeW, nodeH);
                 ctx.shadowBlur = 0;
-                // Progress bar at bottom
                 const progress = 1 - (techTree.activeResearch.timeRemaining / techTree.activeResearch.totalTime);
                 ctx.fillStyle = `rgba(${hexToRgb(color)}, 0.8)`;
                 ctx.fillRect(nx, ny + nodeH - 2, nodeW * progress, 2);
@@ -16321,11 +16370,11 @@ function renderTechTree(layout) {
 
             // Blinking indicator lights for researched nodes
             if (isResearched) {
-                const blinkRate = 600 + n * 200; // tier 1=600ms, tier 5=1400ms
+                const blinkRate = 600 + n * 200;
                 const trackColor = color;
                 for (let li = 0; li < 2; li++) {
-                    const ly = ny + 5 + li * 6;
-                    const lx = nx + nodeW - 5;
+                    const ly = ny + 3 + li * (nodeH > 14 ? 6 : 4);
+                    const lx = nx + nodeW - 4;
                     const phaseOff = li * 300;
                     const isLightOn = Math.floor((Date.now() + phaseOff) / blinkRate) % 2 === 0;
                     if (isLightOn) {
@@ -16343,89 +16392,20 @@ function renderTechTree(layout) {
 
             // Node text
             const textAlpha = isResearched ? 0.8 : (isResearching ? 0.6 : 0.2);
-            const fontSize = isMicro ? 6 : 7;
+            const fontSize = isMicro ? 5 : Math.min(7, nodeH > 14 ? 7 : 6);
             ctx.font = `bold ${fontSize}px monospace`;
             ctx.textAlign = 'left';
             ctx.fillStyle = `rgba(${hexToRgb(color)}, ${isResearched ? 0.9 : textAlpha})`;
-            ctx.fillText(chipDef.text.substring(0, 3), nx + 2, ny + (isMicro ? 9 : 11));
-            if (!isMicro) {
+            ctx.fillText(chipDef.text.substring(0, 3), nx + 2, ny + (nodeH > 14 ? 11 : 9));
+            if (!isMicro && nodeW > 30) {
                 ctx.fillStyle = `rgba(255, 255, 255, ${textAlpha})`;
                 ctx.font = `${fontSize}px monospace`;
-                ctx.fillText(chipDef.text.substring(4), nx + 20, ny + 11);
+                ctx.fillText(chipDef.text.substring(4), nx + 18, ny + (nodeH > 14 ? 11 : 9));
             }
         }
     }
 
-    // Research display below tech tree
-    const researchY = baseY + 3 * (rowH + 2) + 2;
-    if (techTree.activeResearch) {
-        const node = getTechNode(techTree.activeResearch.nodeId);
-        if (node) {
-            const chipDef = TECH_CHIP_DEFS.find(c => c.id === techTree.activeResearch.nodeId);
-            const shortName = chipDef ? chipDef.text : node.name;
-            const progress = 1 - (techTree.activeResearch.timeRemaining / techTree.activeResearch.totalTime);
-            const timeLeft = Math.ceil(techTree.activeResearch.timeRemaining);
-
-            // Background
-            ctx.fillStyle = 'rgba(0, 20, 0, 0.4)';
-            ctx.fillRect(gapStartX, researchY, gapW, 16);
-            ctx.strokeStyle = 'rgba(0, 170, 68, 0.5)';
-            ctx.lineWidth = 0.5;
-            ctx.strokeRect(gapStartX, researchY, gapW, 16);
-
-            // Priority number
-            ctx.fillStyle = '#0f0';
-            ctx.font = 'bold 10px monospace';
-            ctx.textAlign = 'left';
-            ctx.fillText('1', gapStartX + 4, researchY + 12);
-
-            // Name
-            ctx.fillStyle = '#fff';
-            ctx.font = 'bold 9px monospace';
-            ctx.fillText(shortName, gapStartX + 18, researchY + 12);
-
-            // Progress bar
-            const barX = gapStartX + 18 + shortName.length * 6 + 4;
-            const barW = Math.max(30, gapW - barX + gapStartX - 40);
-            renderNGEBar(barX, researchY + 4, barW, 8, progress, '#0a4', { segments: 15 });
-
-            // Timer
-            ctx.fillStyle = '#fff';
-            ctx.font = 'bold 9px monospace';
-            ctx.textAlign = 'right';
-            ctx.fillText(`${timeLeft}s`, gapStartX + gapW - 4, researchY + 12);
-
-            // Blink light
-            renderNGEBlinkLight(gapStartX + gapW - 14, researchY + 2, '#0f0', 300);
-        }
-    }
-
-    // Queue items
-    const queueItems = techTree.queue ? techTree.queue.slice(0, 2) : [];
-    for (let i = 0; i < queueItems.length; i++) {
-        const qNode = getTechNode(queueItems[i]);
-        const qChip = TECH_CHIP_DEFS.find(c => c.id === queueItems[i]);
-        const qName = qChip ? qChip.text : (qNode ? qNode.name : '???');
-        const qY = researchY + 18 + i * 14;
-
-        ctx.fillStyle = 'rgba(0, 15, 0, 0.3)';
-        ctx.fillRect(gapStartX, qY, gapW, 14);
-
-        ctx.fillStyle = 'rgba(0, 200, 80, 0.5)';
-        ctx.font = 'bold 9px monospace';
-        ctx.textAlign = 'left';
-        ctx.fillText(`${i + 2}`, gapStartX + 4, qY + 11);
-
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
-        ctx.font = '8px monospace';
-        ctx.fillText(qName, gapStartX + 18, qY + 11);
-
-        if (qNode) {
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-            ctx.textAlign = 'right';
-            ctx.fillText(`${qNode.researchTime}s`, gapStartX + gapW - 4, qY + 11);
-        }
-    }
+    ctx.restore(); // End clip
 
     // Close appear animation alpha wrapper
     if (appearProgress < 1) {
@@ -20642,7 +20622,14 @@ function buildWaveSummary(completedWave) {
         droneHarvests: waveStats.droneHarvests,
         bioMatterEarned: waveStats.bioMatterEarned,
         lostDeliveries: waveStats.lostDeliveries,
-        lostBioMatter: waveStats.lostBioMatter
+        lostBioMatter: waveStats.lostBioMatter,
+        // UFO status snapshot
+        ufoHealth: ufo ? ufo.health : 0,
+        ufoMaxHealth: CONFIG.UFO_START_HEALTH,
+        ufoEnergy: ufo ? ufo.energy : 0,
+        ufoMaxEnergy: ufo ? (CONFIG.UFO_MAX_ENERGY * (1 + playerInventory.maxEnergyBonus)) : CONFIG.UFO_MAX_ENERGY,
+        ufoShieldCharges: activePowerups.shield.charges,
+        ufoEnergyCells: playerInventory.energyCells
     };
 }
 
@@ -21172,6 +21159,8 @@ function getContextualShopGuidance() {
     if (!harvesterUnlocked && wave >= 2) return pick(guidance.noHarvester);
     // No revive charges - existential threat
     if (playerInventory.energyCells <= 0 && wave >= 2) return pick(guidance.noShields);
+    // Hull damage - nudge toward repair kits
+    if (ufo && ufo.health < CONFIG.UFO_START_HEALTH) return pick(guidance.lowHealth);
     // Has biomatter but no queued research
     if (bioMatter > 0 && !techTree.activeResearch && techTree.queue.length === 0) {
         const availableResearch = getAllTechNodes().filter(n => canResearchNode(n.id));
@@ -21475,23 +21464,102 @@ function renderWaveSummary() {
     }
 
     if (waveSummaryState.elapsed >= waveSummaryState.timings.totalsEnd) {
-        // Fade-in for cumulative score
+        // Fade-in for totals section
         const scoreAge = Math.max(0, waveSummaryState.elapsed - waveSummaryState.timings.totalsEnd);
         const scoreAlpha = Math.min(1, scoreAge / 0.25);
         ctx.save();
         ctx.globalAlpha = scoreAlpha;
+
+        // === UFO STATUS + CUMULATIVE SCORE side by side ===
+        const statusW = Math.floor((panelWidth - padding * 3) / 3);
+        const scoreColumnX = panelX + padding + statusW + padding;
+
+        // Left column: UFO STATUS
+        const statusX = panelX + padding;
+        const statusStartY = cursorY;
+
+        ctx.fillStyle = '#0af';
+        ctx.font = 'bold 14px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText('UFO STATUS', statusX, statusStartY);
+
+        // Hull bar
+        const barStartY = statusStartY + 18;
+        const barH = 10;
+        const barW = statusW - 4;
+        const healthPct = waveSummary.ufoMaxHealth > 0 ? waveSummary.ufoHealth / waveSummary.ufoMaxHealth : 0;
+        const healthColor = healthPct > 0.75 ? '#0f0' : (healthPct > 0.25 ? '#ff0' : '#f44');
+
+        ctx.fillStyle = '#666';
+        ctx.font = '10px monospace';
+        ctx.fillText('HULL', statusX, barStartY + 8);
+        // Bar background
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+        ctx.fillRect(statusX + 36, barStartY, barW - 36, barH);
+        // Bar fill
+        ctx.fillStyle = healthColor;
+        ctx.fillRect(statusX + 36, barStartY, (barW - 36) * healthPct, barH);
+        // Bar border
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(statusX + 36, barStartY, barW - 36, barH);
+        // Value
+        ctx.fillStyle = healthColor;
+        ctx.font = 'bold 10px monospace';
+        ctx.textAlign = 'right';
+        ctx.fillText(`${Math.ceil(waveSummary.ufoHealth)}/${waveSummary.ufoMaxHealth}`, statusX + barW, barStartY + 8);
+
+        // Energy bar
+        const energyBarY = barStartY + barH + 6;
+        const energyPct = waveSummary.ufoMaxEnergy > 0 ? Math.min(1, waveSummary.ufoEnergy / waveSummary.ufoMaxEnergy) : 0;
+        const energyColor = energyPct > 0.5 ? '#0ff' : (energyPct > 0.2 ? '#ff0' : '#f44');
+
+        ctx.fillStyle = '#666';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText('NRG', statusX, energyBarY + 8);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+        ctx.fillRect(statusX + 36, energyBarY, barW - 36, barH);
+        ctx.fillStyle = energyColor;
+        ctx.fillRect(statusX + 36, energyBarY, (barW - 36) * energyPct, barH);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.strokeRect(statusX + 36, energyBarY, barW - 36, barH);
+        ctx.fillStyle = energyColor;
+        ctx.font = 'bold 10px monospace';
+        ctx.textAlign = 'right';
+        ctx.fillText(`${Math.ceil(waveSummary.ufoEnergy)}/${Math.ceil(waveSummary.ufoMaxEnergy)}`, statusX + barW, energyBarY + 8);
+
+        // Shield charges + Energy cells
+        const infoY = energyBarY + barH + 8;
+        ctx.fillStyle = '#666';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText('SHD', statusX, infoY + 8);
+        ctx.fillStyle = waveSummary.ufoShieldCharges > 0 ? '#0af' : '#555';
+        ctx.font = 'bold 10px monospace';
+        ctx.fillText(`${waveSummary.ufoShieldCharges}`, statusX + 36, infoY + 8);
+
+        ctx.fillStyle = '#666';
+        ctx.font = '10px monospace';
+        ctx.fillText('CEL', statusX + 60, infoY + 8);
+        ctx.fillStyle = waveSummary.ufoEnergyCells > 0 ? '#f0f' : '#555';
+        ctx.font = 'bold 10px monospace';
+        ctx.fillText(`${waveSummary.ufoEnergyCells}`, statusX + 96, infoY + 8);
+
+        // Right column: cumulative score
         ctx.fillStyle = '#bbb';
         ctx.font = 'bold 16px monospace';
         ctx.textAlign = 'left';
-        ctx.fillText('CUMULATIVE SCORE', panelX + padding, cursorY);
+        ctx.fillText('CUMULATIVE SCORE', scoreColumnX, cursorY);
         ctx.textAlign = 'right';
-        // Brief glow when it first appears
         if (scoreAge < 0.4) {
             ctx.shadowColor = 'rgba(255, 255, 255, ' + (0.4 * (1 - scoreAge / 0.4)) + ')';
             ctx.shadowBlur = 12;
         }
         ctx.fillStyle = '#fff';
         ctx.fillText(waveSummary.cumulativeScore.toLocaleString(), panelX + panelWidth - padding, cursorY);
+        ctx.shadowBlur = 0;
+
         ctx.restore();
     }
 
@@ -22179,11 +22247,18 @@ function updateWaveTransition(dt) {
         missionCommanderState.cooldownTimer = 15;
         initHUDBoot();
 
+        // Wave 1: trigger UFO quantum phase-in materialization
+        if (wave === 1) {
+            ufoPhaseInState = { active: true, timer: 0, phase: 'noise' };
+        }
+
         // Reset auto-deploy cooldown
         autoDeployCooldown = 0;
 
-        // Spawn tanks for new wave
-        spawnTanks();
+        // Spawn tanks (skip wave 1 — tutorial handles tank entrance)
+        if (wave !== 1) {
+            spawnTanks();
+        }
 
         // Clear projectiles
         projectiles = [];
@@ -22279,15 +22354,19 @@ function getShopTabItems(tab) {
     return ids.map(id => CONFIG.SHOP_ITEMS.find(i => i.id === id)).filter(Boolean);
 }
 
-// Check if a shop item is owned/maxed
+// Check if a shop item is owned/maxed (cart-aware for stackable items)
 function getShopItemStatus(item) {
     if (item.effect === 'missileSwarm' && missileUnlocked) return 'owned';
     if (item.effect === 'harvesterDrone' && harvesterUnlocked) return 'owned';
     if (item.effect === 'battleDrone' && battleDroneUnlocked) return 'owned';
-    if (item.effect === 'bombBlast' && bombBlastTier >= CONFIG.BOMB_BLAST_TIERS.length - 1) return 'maxed';
-    if (item.effect === 'bombDamage' && bombDamageTier >= CONFIG.BOMB_DAMAGE_TIERS.length - 1) return 'maxed';
-    if (item.effect === 'bombCapacity' && playerInventory.maxBombs >= CONFIG.BOMB_MAX_COUNT) return 'maxed';
-    if (item.effect === 'missileCapacity' && missileGroupCount >= CONFIG.MISSILE_MAX_GROUPS) return 'maxed';
+    const cartBombBlasts = shopCart.filter(id => id === 'bomb_blast').length;
+    const cartBombDamages = shopCart.filter(id => id === 'bomb_damage').length;
+    const cartBombs = shopCart.filter(id => id === 'bomb_single').length;
+    const cartMissiles = shopCart.filter(id => id === 'missile_capacity').length;
+    if (item.effect === 'bombBlast' && bombBlastTier + cartBombBlasts >= CONFIG.BOMB_BLAST_TIERS.length - 1) return 'maxed';
+    if (item.effect === 'bombDamage' && bombDamageTier + cartBombDamages >= CONFIG.BOMB_DAMAGE_TIERS.length - 1) return 'maxed';
+    if (item.effect === 'bombCapacity' && playerInventory.maxBombs + cartBombs >= CONFIG.BOMB_MAX_COUNT) return 'maxed';
+    if (item.effect === 'missileCapacity' && missileGroupCount + cartMissiles >= CONFIG.MISSILE_MAX_GROUPS) return 'maxed';
     if (item.requiresMissile && !missileUnlocked && !shopCart.includes('missile_swarm')) return 'locked';
     return 'available';
 }
@@ -22656,6 +22735,22 @@ function renderShop() {
             ctx.lineWidth = 1;
         }
         ctx.stroke();
+
+        // Pulsing glow on repair/shield items when hull is damaged
+        if ((item.id === 'repair' || item.id === 'shield_single') && ufo && ufo.health < CONFIG.UFO_START_HEALTH && status === 'available') {
+            const urgency = 1 - (ufo.health / CONFIG.UFO_START_HEALTH); // 0..1, higher = more damaged
+            const pulseSpeed = 2 + urgency * 4; // Faster pulse when more damaged
+            const pulseAlpha = (0.3 + urgency * 0.5) * (0.5 + 0.5 * Math.sin(performance.now() * 0.001 * pulseSpeed));
+            ctx.save();
+            ctx.strokeStyle = item.id === 'repair' ? `rgba(0, 255, 0, ${pulseAlpha})` : `rgba(0, 170, 255, ${pulseAlpha})`;
+            ctx.lineWidth = 2;
+            ctx.shadowColor = item.id === 'repair' ? '#0f0' : '#0af';
+            ctx.shadowBlur = 8 + urgency * 12;
+            ctx.beginPath();
+            ctx.roundRect(leftContentLeft, iy, leftContentW, itemCardH, 6);
+            ctx.stroke();
+            ctx.restore();
+        }
 
         // Icon
         const iconSize = Math.min(30, itemCardH - 12);
@@ -23869,17 +23964,27 @@ function shopAddToCart(itemId) {
         createFloatingText(canvas.width / 2, 300, 'ALREADY OWNED!', '#f44');
         return;
     }
-    if (item.effect === 'bombBlast' && bombBlastTier >= CONFIG.BOMB_BLAST_TIERS.length - 1) {
+    // Cart-aware max checks for stackable upgrades
+    const cartBombBlasts = shopCart.filter(id => id === 'bomb_blast').length;
+    const cartBombDamages = shopCart.filter(id => id === 'bomb_damage').length;
+    const cartBombs = shopCart.filter(id => id === 'bomb_single').length;
+    const cartMissiles = shopCart.filter(id => id === 'missile_capacity').length;
+    if (item.effect === 'bombBlast' && bombBlastTier + cartBombBlasts >= CONFIG.BOMB_BLAST_TIERS.length - 1) {
         SFX.error && SFX.error();
         createFloatingText(canvas.width / 2, 300, 'MAXED OUT!', '#f44');
         return;
     }
-    if (item.effect === 'bombDamage' && bombDamageTier >= CONFIG.BOMB_DAMAGE_TIERS.length - 1) {
+    if (item.effect === 'bombDamage' && bombDamageTier + cartBombDamages >= CONFIG.BOMB_DAMAGE_TIERS.length - 1) {
         SFX.error && SFX.error();
         createFloatingText(canvas.width / 2, 300, 'MAXED OUT!', '#f44');
         return;
     }
-    if (item.effect === 'bombCapacity' && playerInventory.maxBombs >= CONFIG.BOMB_MAX_COUNT) {
+    if (item.effect === 'bombCapacity' && playerInventory.maxBombs + cartBombs >= CONFIG.BOMB_MAX_COUNT) {
+        SFX.error && SFX.error();
+        createFloatingText(canvas.width / 2, 300, 'MAXED OUT!', '#f44');
+        return;
+    }
+    if (item.effect === 'missileCapacity' && missileGroupCount + cartMissiles >= CONFIG.MISSILE_MAX_GROUPS) {
         SFX.error && SFX.error();
         createFloatingText(canvas.width / 2, 300, 'MAXED OUT!', '#f44');
         return;
