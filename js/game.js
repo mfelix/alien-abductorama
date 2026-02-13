@@ -5037,7 +5037,7 @@ function renderCoordChargeHint() {
     const panelX = coord.x;
     const panelY = coord.y - coord.height / 2 - 50;
 
-    renderHintPanel(panelX, panelY, panelW, panelH);
+    renderHintPanel(panelX, panelY, panelW, panelH, TUTORIAL_CONFIG.COLORS.coordinator_charge);
 
     // [SPACE] key badge + text
     const keyW = 60;
@@ -5147,17 +5147,19 @@ function renderTutorialHints() {
     ctx.restore();
 }
 
-function renderHintPanel(cx, cy, width, height) {
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-    ctx.beginPath();
-    ctx.roundRect(cx - width / 2, cy - height / 2, width, height, 10);
-    ctx.fill();
+function renderHintPanel(cx, cy, width, height, color) {
+    color = color || '#0ff';
+    renderNGEPanel(cx - width / 2, cy - height / 2, width, height, {
+        color: color,
+        cutCorners: ['tr'],
+        alpha: 0.6
+    });
 }
 
 function renderMoveHint(cx, cy, t) {
     const panelW = 220;
     const panelH = 50;
-    renderHintPanel(cx, cy, panelW, panelH);
+    renderHintPanel(cx, cy, panelW, panelH, TUTORIAL_CONFIG.COLORS.movement);
 
     // Key badges: [<] [>]
     const keyY = cy - 11;
@@ -5184,7 +5186,7 @@ function renderMoveHint(cx, cy, t) {
 function renderBeamHint(cx, cy, t) {
     const panelW = 320;
     const panelH = 60;
-    renderHintPanel(cx, cy, panelW, panelH);
+    renderHintPanel(cx, cy, panelW, panelH, TUTORIAL_CONFIG.COLORS.beam);
 
     // [SPACE] key badge
     const keyW = 60;
@@ -5204,25 +5206,52 @@ function renderBeamHint(cx, cy, t) {
     ctx.textAlign = 'left';
     ctx.fillText(textLabel, startX + keyW + 12, cy - 1);
 
-    // Animated chevron arrows pointing down
-    const chevronAlpha = 0.3 + Math.sin(t * 4) * 0.25 + 0.25;
-    ctx.strokeStyle = `rgba(255, 255, 0, ${chevronAlpha})`;
+    // NGE targeting reticle arrows - angular brackets cascading downward
+    const bracketW = 12;
+    const bracketH = 8;
+    const bracketSpacing = 16;
+    const bracketStartY = cy + 14;
+    const contractAmt = Math.sin(t * 3 * Math.PI * 2) * 3; // Contract/expand at 3Hz
+
     ctx.lineWidth = 2;
-    const chevronY = cy + 12;
-    for (let i = -1; i <= 1; i++) {
-        const chevX = cx + i * 20;
+    for (let i = 0; i < 3; i++) {
+        const bracketAlpha = 0.9 - i * 0.25; // Top brightest, bottom dimmest
+        ctx.strokeStyle = `rgba(255, 255, 0, ${bracketAlpha})`;
+        const by = bracketStartY + i * bracketSpacing;
+        const halfW = bracketW / 2 + contractAmt;
+
+        // Left bracket >
         ctx.beginPath();
-        ctx.moveTo(chevX - 6, chevronY);
-        ctx.lineTo(chevX, chevronY + 7);
-        ctx.lineTo(chevX + 6, chevronY);
+        ctx.moveTo(cx - halfW - 4, by);
+        ctx.lineTo(cx - 4, by + bracketH / 2);
+        ctx.lineTo(cx - halfW - 4, by + bracketH);
+        ctx.stroke();
+
+        // Right bracket <
+        ctx.beginPath();
+        ctx.moveTo(cx + halfW + 4, by);
+        ctx.lineTo(cx + 4, by + bracketH / 2);
+        ctx.lineTo(cx + halfW + 4, by + bracketH);
         ctx.stroke();
     }
+
+    // Pulsing dashed beam guide line to ground
+    const guideAlpha = 0.1 + Math.sin(t * 3) * 0.1 + 0.1;
+    ctx.strokeStyle = `rgba(255, 255, 0, ${guideAlpha})`;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 8]);
+    ctx.lineDashOffset = -t * 40; // Scrolls downward
+    ctx.beginPath();
+    ctx.moveTo(cx, bracketStartY + 3 * bracketSpacing);
+    ctx.lineTo(cx, canvas.height * 0.85);
+    ctx.stroke();
+    ctx.setLineDash([]);
 }
 
 function renderWarpJukeHint(cx, cy, t) {
     const panelW = 340;
     const panelH = 50;
-    renderHintPanel(cx, cy, panelW, panelH);
+    renderHintPanel(cx, cy, panelW, panelH, TUTORIAL_CONFIG.COLORS.warp_juke);
 
     // Two arrow key badges with jitter effect
     const textLabel = 'DOUBLE-TAP TO DODGE!';
@@ -5251,7 +5280,7 @@ function renderWarpJukeHint(cx, cy, t) {
 function renderBombHint(cx, cy, t) {
     const panelW = 280;
     const panelH = 50;
-    renderHintPanel(cx, cy, panelW, panelH);
+    renderHintPanel(cx, cy, panelW, panelH, TUTORIAL_CONFIG.COLORS.bomb);
 
     // [Z/B] key badge
     const keyW = 40;
@@ -5443,29 +5472,43 @@ function renderTutorialCompletion() {
     ctx.translate(canvas.width / 2, cy);
     ctx.scale(scale, scale);
 
-    // Background panel with cycling border
-    const panelW = 380;
-    const panelH = 70;
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-    ctx.beginPath();
-    ctx.roundRect(-panelW / 2, -panelH / 2, panelW, panelH, 10);
-    ctx.fill();
+    // NGE notification bar with cycling color
+    const panelW = Math.min(600, canvas.width * 0.5);
+    const panelH = 50;
+    const cycleColors = [
+        TUTORIAL_CONFIG.COLORS.movement,
+        TUTORIAL_CONFIG.COLORS.beam,
+        TUTORIAL_CONFIG.COLORS.warp_juke,
+        TUTORIAL_CONFIG.COLORS.bomb
+    ];
+    const colorIdx = Math.floor((t * 4) % cycleColors.length);
+    const currentColor = cycleColors[colorIdx];
 
-    // Cycling border
-    const borderColors = [TUTORIAL_CONFIG.COLORS.movement, TUTORIAL_CONFIG.COLORS.beam, TUTORIAL_CONFIG.COLORS.bomb];
-    const borderIdx = Math.floor((t * 4) % borderColors.length);
-    ctx.strokeStyle = borderColors[borderIdx];
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.roundRect(-panelW / 2, -panelH / 2, panelW, panelH, 10);
-    ctx.stroke();
+    // NGE panel with diagonal slash cut corners
+    renderNGEPanel(-panelW / 2, -panelH / 2, panelW, panelH, {
+        color: currentColor,
+        cutCorners: ['tl', 'br'],
+        alpha: 0.7
+    });
 
-    // "ALL SYSTEMS GO!" text
+    // "ALL SYSTEMS GO" text with color-cycling glow
+    ctx.shadowBlur = 12;
+    ctx.shadowColor = currentColor;
     ctx.fillStyle = '#fff';
-    ctx.font = 'bold 32px monospace';
+    ctx.font = 'bold 28px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('ALL SYSTEMS GO!', 0, 12);
+    ctx.textBaseline = 'middle';
+    ctx.fillText('ALL SYSTEMS GO', 0, 0);
+    ctx.shadowBlur = 0;
 
+    // Flanking cascade indicators (3 on each side)
+    const indicatorStartX = panelW / 2 - 50;
+    for (let i = 0; i < 3; i++) {
+        renderNGEIndicator(indicatorStartX + i * 14, 0, 'square', currentColor, 'cascade', { cascadeIndex: i, cascadeTotal: 3 });
+        renderNGEIndicator(-indicatorStartX - i * 14, 0, 'square', currentColor, 'cascade', { cascadeIndex: i, cascadeTotal: 3 });
+    }
+
+    ctx.textBaseline = 'alphabetic';
     ctx.restore();
 }
 
