@@ -4777,17 +4777,24 @@ function updateTutorial(dt) {
                 tutorialState.hintTimer = 0;
                 triggerTutorialCommander('beamTargets');
                 SFX.tutorialHintAppear && SFX.tutorialHintAppear();
-                // Boot the mission panel now (deferred from initial boot on wave 1)
+                // Boot the mission and biomatter panels now (deferred from initial boot on wave 1)
                 if (wave === 1) {
                     hudBootState.panels.mission.active = true;
-                    hudBootState.panels.mission.phase = 'waiting';
+                    hudBootState.panels.mission.phase = 'booting';
                     hudBootState.panels.mission.progress = 0;
-                    hudBootState.panels.mission.startTime = hudBootState.timer; // start from current time
+                    hudBootState.panels.mission._bootStartTimer = hudBootState.timer;
                     hudBootState.panels.mission._lastDiagLine = -1;
+                    hudBootState.panels.biomatter.active = true;
+                    hudBootState.panels.biomatter.phase = 'booting';
+                    hudBootState.panels.biomatter.progress = 0;
+                    hudBootState.panels.biomatter._bootStartTimer = hudBootState.timer;
+                    hudBootState.panels.biomatter._lastDiagLine = -1;
+                    SFX.bootPanelStart && SFX.bootPanelStart();
                     // Re-enter booting phase if boot was complete
                     if (hudBootState.phase === 'complete') {
                         hudBootState.phase = 'booting';
-                        hudBootState.duration = hudBootState.timer + hudBootState.panels.mission.duration + 0.5;
+                        const maxDur = Math.max(hudBootState.panels.mission.duration, hudBootState.panels.biomatter.duration);
+                        hudBootState.duration = hudBootState.timer + maxDur + 0.5;
                     }
                 }
             } else if (tutorialState.phase === 'WARP_JUKE') {
@@ -14299,10 +14306,11 @@ function renderHUDFrame() {
     }
 
     // Bio-matter upload panel (right gap between mission and systems)
-    if (panelReady('biomatter') && layout.bioMatterZone.w >= 120) {
+    const biomatterVisible = wave !== 1 || !tutorialState || tutorialState.beamHintShown;
+    if (biomatterVisible && panelReady('biomatter') && layout.bioMatterZone.w >= 120) {
         renderBioMatterPanel(layout.bioMatterZone);
     }
-    if (booting && hudBootState.panels.biomatter.active && hudBootState.panels.biomatter.phase !== 'waiting') {
+    if (biomatterVisible && booting && hudBootState.panels.biomatter.active && hudBootState.panels.biomatter.phase !== 'waiting') {
         if (layout.bioMatterZone.w >= 120) {
             renderPanelBootOverlay(layout.bioMatterZone, layout.bioMatterZone.h, '#0f0', 'BM.CONDUIT', hudBootState.panels.biomatter, hudBootState.bootLines.biomatter);
         }
@@ -16793,8 +16801,8 @@ function initHUDBoot() {
     p.status.active = true;
     p.mission.active = wave !== 1;  // deferred on wave 1 — boots when beam tutorial starts
     p.systems.active = true;
-    p.techsys.active = true;
-    p.biomatter.active = true;
+    p.techsys.active = wave !== 1;   // hidden on wave 1 — appears when player reaches shop
+    p.biomatter.active = wave !== 1; // deferred on wave 1 — boots when beam tutorial starts
 
     const hasWeapons = hudBootState.techSnapshot.hasBombs || hudBootState.techSnapshot.hasMissiles;
     p.weapons.active = hasWeapons;
