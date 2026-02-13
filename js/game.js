@@ -16875,7 +16875,7 @@ function updateHUDBoot(dt) {
 
         // Panel boot triggers based on trace position
         const panelTriggers = {
-            status: 0.01, mission: 0.07, systems: 0.14,
+            status: 0.01, techsys: 0.04, mission: 0.07, biomatter: 0.10, systems: 0.14,
             fleet: 0.20, commander: 0.42, opslog: 0.55,
             diagnostics: 0.60, weapons: 0.70
         };
