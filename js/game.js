@@ -2128,6 +2128,328 @@ const SFX = {
             osc2.start(t + 0.1);
             osc2.stop(t + 0.2);
         }
+    },
+
+    // Boot: CRT power-on thunk + rising hum
+    crtTurnOn: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const bufLen = audioCtx.sampleRate * 0.03;
+        const buf = audioCtx.createBuffer(1, bufLen, audioCtx.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < bufLen; i++) data[i] = (Math.random() * 2 - 1) * (1 - i/bufLen);
+        const src = audioCtx.createBufferSource();
+        src.buffer = buf;
+        const bp = audioCtx.createBiquadFilter();
+        bp.type = 'bandpass'; bp.frequency.value = 130; bp.Q.value = 1.5;
+        const g = audioCtx.createGain();
+        g.gain.setValueAtTime(0.06, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
+        src.connect(bp); bp.connect(g); g.connect(audioCtx.destination);
+        src.start(t); src.stop(t + 0.03);
+        const hum = audioCtx.createOscillator();
+        const humG = audioCtx.createGain();
+        hum.type = 'sine';
+        hum.frequency.setValueAtTime(60, t);
+        hum.frequency.exponentialRampToValueAtTime(180, t + 0.3);
+        humG.gain.setValueAtTime(0.03, t);
+        humG.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+        hum.connect(humG); humG.connect(audioCtx.destination);
+        hum.start(t); hum.stop(t + 0.3);
+    },
+
+    // Boot: Alien Quantum startup chord (3-layer)
+    alienStartupChime: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        // Layer 1: Sub-harmonic foundation
+        const sub = audioCtx.createOscillator();
+        const subG = audioCtx.createGain();
+        sub.type = 'triangle';
+        sub.frequency.setValueAtTime(55, t);
+        sub.frequency.setValueAtTime(55, t + 0.5);
+        sub.frequency.linearRampToValueAtTime(82.4, t + 2.0);
+        subG.gain.setValueAtTime(0.001, t);
+        subG.gain.linearRampToValueAtTime(0.15, t + 0.2);
+        subG.gain.setValueAtTime(0.15, t + 1.4);
+        subG.gain.exponentialRampToValueAtTime(0.01, t + 2.0);
+        sub.connect(subG); subG.connect(audioCtx.destination);
+        sub.start(t); sub.stop(t + 2.0);
+        // Layer 2: Chord pad
+        const freqs = [220, 277, 370];
+        const targets = [233, 294, 392];
+        const lp = audioCtx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.setValueAtTime(200, t);
+        lp.frequency.exponentialRampToValueAtTime(4000, t + 0.8);
+        lp.frequency.setValueAtTime(4000, t + 0.8);
+        lp.frequency.exponentialRampToValueAtTime(2000, t + 2.0);
+        const padG = audioCtx.createGain();
+        padG.gain.setValueAtTime(0.001, t);
+        padG.gain.linearRampToValueAtTime(0.06, t + 0.4);
+        padG.gain.setValueAtTime(0.06, t + 1.4);
+        padG.gain.exponentialRampToValueAtTime(0.001, t + 2.0);
+        lp.connect(padG); padG.connect(audioCtx.destination);
+        for (let i = 0; i < 3; i++) {
+            const osc = audioCtx.createOscillator();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(freqs[i], t);
+            osc.frequency.linearRampToValueAtTime(targets[i], t + 2.0);
+            osc.detune.value = (i - 1) * 5;
+            osc.connect(lp);
+            osc.start(t); osc.stop(t + 2.0);
+        }
+        // Layer 3: Crystalline ring-out
+        const ringFreqs = [1760, 2217];
+        for (let i = 0; i < 2; i++) {
+            const ring = audioCtx.createOscillator();
+            const ringG = audioCtx.createGain();
+            ring.type = 'sine';
+            ring.frequency.value = ringFreqs[i];
+            ringG.gain.setValueAtTime(0.001, t);
+            ringG.gain.setValueAtTime(0.001, t + 0.6);
+            ringG.gain.linearRampToValueAtTime(0.1, t + 0.8);
+            ringG.gain.exponentialRampToValueAtTime(0.001, t + 2.0);
+            ring.connect(ringG); ringG.connect(audioCtx.destination);
+            ring.start(t); ring.stop(t + 2.0);
+        }
+    },
+
+    // Boot: Four-tone corner sequence
+    borderTraceCorner: (cornerIndex) => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const freqs = [740, 659, 554, 440];
+        const freq = freqs[Math.min(cornerIndex, 3)];
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        osc.detune.value = 3;
+        g.gain.setValueAtTime(0.001, t);
+        g.gain.linearRampToValueAtTime(0.12, t + 0.005);
+        g.gain.setValueAtTime(0.12, t + 0.045);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.165);
+        osc.connect(g); g.connect(audioCtx.destination);
+        osc.start(t); osc.stop(t + 0.165);
+        const harm = audioCtx.createOscillator();
+        const hg = audioCtx.createGain();
+        harm.type = 'triangle';
+        harm.frequency.value = freq * 4;
+        hg.gain.setValueAtTime(0.001, t);
+        hg.gain.linearRampToValueAtTime(0.04, t + 0.005);
+        hg.gain.exponentialRampToValueAtTime(0.001, t + 0.165);
+        harm.connect(hg); hg.connect(audioCtx.destination);
+        harm.start(t); harm.stop(t + 0.165);
+    },
+
+    // Boot: Post-boot "online" confirmation
+    alienQuantumOnline: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const notes = [261.6, 329.6, 392.0, 523.3];
+        for (let i = 0; i < 4; i++) {
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            osc.type = 'sine';
+            osc.frequency.value = notes[i];
+            const start = t + i * 0.05;
+            g.gain.setValueAtTime(0.001, start);
+            g.gain.linearRampToValueAtTime(0.05, start + 0.005);
+            g.gain.exponentialRampToValueAtTime(0.001, start + (i === 3 ? 0.3 : 0.12));
+            osc.connect(g); g.connect(audioCtx.destination);
+            osc.start(start); osc.stop(start + (i === 3 ? 0.3 : 0.12));
+        }
+    },
+
+    // Health: Warning beep system (3 stages)
+    healthWarning: (stage) => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        if (stage === 1) {
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            osc.type = 'square'; osc.frequency.value = 440;
+            g.gain.setValueAtTime(0.001, t);
+            g.gain.linearRampToValueAtTime(0.08, t + 0.002);
+            g.gain.setValueAtTime(0.08, t + 0.032);
+            g.gain.exponentialRampToValueAtTime(0.001, t + 0.082);
+            osc.connect(g); g.connect(audioCtx.destination);
+            osc.start(t); osc.stop(t + 0.082);
+        } else if (stage === 2) {
+            const freqs = [523, 659];
+            for (let i = 0; i < 2; i++) {
+                const osc = audioCtx.createOscillator();
+                const g = audioCtx.createGain();
+                osc.type = 'square'; osc.frequency.value = freqs[i];
+                const start = t + i * 0.08;
+                g.gain.setValueAtTime(0.001, start);
+                g.gain.linearRampToValueAtTime(0.12, start + 0.002);
+                g.gain.setValueAtTime(0.12, start + 0.027);
+                g.gain.exponentialRampToValueAtTime(0.001, start + 0.067);
+                osc.connect(g); g.connect(audioCtx.destination);
+                osc.start(start); osc.stop(start + 0.067);
+            }
+        } else if (stage === 3) {
+            const freqs = [659, 784, 1047];
+            const gains = [0.12, 0.14, 0.18];
+            for (let i = 0; i < 3; i++) {
+                const osc = audioCtx.createOscillator();
+                const g = audioCtx.createGain();
+                osc.type = 'square'; osc.frequency.value = freqs[i];
+                const start = t + i * 0.06;
+                g.gain.setValueAtTime(0.001, start);
+                g.gain.linearRampToValueAtTime(gains[i], start + 0.001);
+                g.gain.setValueAtTime(gains[i], start + 0.021);
+                g.gain.exponentialRampToValueAtTime(0.001, start + 0.051);
+                osc.connect(g); g.connect(audioCtx.destination);
+                osc.start(start); osc.stop(start + 0.051);
+            }
+        }
+    },
+
+    // Health: Structural stress creak
+    structuralStress: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const bufLen = audioCtx.sampleRate * 0.2;
+        const buf = audioCtx.createBuffer(1, bufLen, audioCtx.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < bufLen; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i/bufLen, 1.5);
+        const src = audioCtx.createBufferSource();
+        src.buffer = buf;
+        const bp = audioCtx.createBiquadFilter();
+        bp.type = 'bandpass'; bp.Q.value = 2;
+        bp.frequency.setValueAtTime(1500, t);
+        bp.frequency.exponentialRampToValueAtTime(800, t + 0.2);
+        const g = audioCtx.createGain();
+        g.gain.setValueAtTime(0.03, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+        src.connect(bp); bp.connect(g); g.connect(audioCtx.destination);
+        src.start(t); src.stop(t + 0.2);
+    },
+
+    // Health: Panel flicker electric pop
+    panelFlicker: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const bufLen = audioCtx.sampleRate * 0.03;
+        const buf = audioCtx.createBuffer(1, bufLen, audioCtx.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < bufLen; i++) data[i] = (Math.random() * 2 - 1) * (1 - i/bufLen);
+        const src = audioCtx.createBufferSource();
+        src.buffer = buf;
+        const hp = audioCtx.createBiquadFilter();
+        hp.type = 'highpass'; hp.frequency.value = 2000;
+        const g = audioCtx.createGain();
+        g.gain.setValueAtTime(0.02, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
+        src.connect(hp); hp.connect(g); g.connect(audioCtx.destination);
+        src.start(t); src.stop(t + 0.03);
+    },
+
+    // Health: Glitch burst sound
+    glitchBurst: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const dur = 0.03 + Math.random() * 0.03;
+        const osc = audioCtx.createOscillator();
+        const osc2 = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        const g2 = audioCtx.createGain();
+        osc.type = 'square'; osc.frequency.value = 100 + Math.random() * 700;
+        osc2.type = 'sawtooth'; osc2.frequency.value = 50 + Math.random() * 150;
+        g.gain.setValueAtTime(0.08, t); g.gain.setValueAtTime(0.001, t + dur);
+        g2.gain.setValueAtTime(0.04, t); g2.gain.setValueAtTime(0.001, t + dur);
+        const steps = Math.floor(dur / 0.015);
+        for (let i = 1; i <= steps; i++) {
+            osc.frequency.setValueAtTime(100 + Math.random() * 700, t + i * 0.015);
+        }
+        osc.connect(g); g.connect(audioCtx.destination);
+        osc2.connect(g2); g2.connect(audioCtx.destination);
+        osc.start(t); osc.stop(t + dur);
+        osc2.start(t); osc2.stop(t + dur);
+    },
+
+    // Health: Spark/crackle sound
+    sparkCrackle: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const numBursts = 2 + Math.floor(Math.random() * 3);
+        let offset = 0;
+        for (let i = 0; i < numBursts; i++) {
+            const burstDur = 0.008 + Math.random() * 0.007;
+            const bufLen = Math.floor(audioCtx.sampleRate * burstDur);
+            const buf = audioCtx.createBuffer(1, bufLen, audioCtx.sampleRate);
+            const data = buf.getChannelData(0);
+            for (let j = 0; j < bufLen; j++) data[j] = Math.random() * 2 - 1;
+            const src = audioCtx.createBufferSource();
+            src.buffer = buf;
+            const hp = audioCtx.createBiquadFilter();
+            hp.type = 'highpass'; hp.frequency.value = 3000;
+            const g = audioCtx.createGain();
+            g.gain.setValueAtTime(0.04 + Math.random() * 0.04, t + offset);
+            src.connect(hp); hp.connect(g); g.connect(audioCtx.destination);
+            src.start(t + offset); src.stop(t + offset + burstDur);
+            offset += burstDur + 0.005 + Math.random() * 0.015;
+        }
+    },
+
+    // Bio-matter: Cache fill blip
+    bioMatterBlip: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(1800, t);
+        osc.frequency.exponentialRampToValueAtTime(2200, t + 0.03);
+        g.gain.setValueAtTime(0.001, t);
+        g.gain.linearRampToValueAtTime(0.05, t + 0.002);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
+        osc.connect(g); g.connect(audioCtx.destination);
+        osc.start(t); osc.stop(t + 0.03);
+    },
+
+    // Bio-matter: Upload tick
+    uploadTick: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.type = 'square'; osc.frequency.value = 2000;
+        g.gain.setValueAtTime(0.01, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.015);
+        osc.connect(g); g.connect(audioCtx.destination);
+        osc.start(t); osc.stop(t + 0.015);
+    },
+
+    // Bio-matter: Upload complete chime
+    uploadComplete: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const freqs = [500, 550, 600, 650, 700, 750, 800, 1000];
+        for (let i = 0; i < 8; i++) {
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            osc.type = 'sine'; osc.frequency.value = freqs[i];
+            const start = t + i * 0.04;
+            g.gain.setValueAtTime(0.001, start);
+            g.gain.linearRampToValueAtTime(0.03 + i * 0.002, start + 0.002);
+            g.gain.exponentialRampToValueAtTime(0.001, start + 0.04);
+            osc.connect(g); g.connect(audioCtx.destination);
+            osc.start(start); osc.stop(start + (i === 7 ? 0.2 : 0.04));
+        }
+        const main = audioCtx.createOscillator();
+        const mg = audioCtx.createGain();
+        main.type = 'sine'; main.frequency.value = 2400;
+        const chimeStart = t + 0.32;
+        mg.gain.setValueAtTime(0.001, chimeStart);
+        mg.gain.linearRampToValueAtTime(0.1, chimeStart + 0.005);
+        mg.gain.setValueAtTime(0.1, chimeStart + 0.105);
+        mg.gain.exponentialRampToValueAtTime(0.001, chimeStart + 0.305);
+        main.connect(mg); mg.connect(audioCtx.destination);
+        main.start(chimeStart); main.stop(chimeStart + 0.305);
     }
 };
 
@@ -3436,6 +3758,9 @@ class Target {
                     bioMatter += bmEarned;
                     waveStats.bioMatterEarned += bmEarned;
                     createFloatingText(this.x + 30, this.y - 15, `+${bmEarned} BM`, '#4f4', { fontSize: 18 });
+                    bioUploadState.flashAlpha = 1.0;
+                    bioUploadState.bitRate += 10;
+                    SFX.bioMatterBlip();
                 }
 
                 // Track quota progress
@@ -8553,6 +8878,9 @@ class HarvesterDrone {
                     waveStats.bioMatterEarned += bmEarned;
                     createFloatingText(this.x, this.y - 30, `+${totalPoints}`, '#0f0');
                     createFloatingText(this.x + 20, this.y - 50, `+${bmEarned} BM`, '#4f4', { fontSize: 18 });
+                    bioUploadState.flashAlpha = 1.0;
+                    bioUploadState.bitRate += 10;
+                    SFX.bioMatterBlip();
                     if (ufo) { ufo.health = Math.min(CONFIG.UFO_START_HEALTH, ufo.health + CONFIG.HEAL_PER_ABDUCTION); }
                     if (score > highScore) { highScore = score; localStorage.setItem('alienAbductoramaHighScore', highScore); }
                     SFX.droneOrbReceive && SFX.droneOrbReceive();
@@ -12032,6 +12360,27 @@ function startGame() {
         frameIntake: 0, frameOutput: 0,
         peakValue: 100, smoothPeak: 100
     };
+    healthFreakoutState = {
+        sparks: [], smokePuffs: [], flickerTimers: {},
+        lastJoltTime: 0, distortionBands: [],
+        warningToneTimer: 0, warningToneInterval: 2.0,
+    };
+    bioUploadState = {
+        streamOffset: 0, bitRate: 0, bitRateSamples: [],
+        flashAlpha: 0, uploadPhase: 'idle', uploadCounter: 0, uploadTicks: 0,
+    };
+    techTreeAnimState = {
+        dashOffset: 0, researchGlowPhase: 0, nodeAppearAnims: {},
+    };
+    preBootState = {
+        phase: 'inactive', timer: 0, crtProgress: 0,
+        logoAlpha: 0, traceProgress: 0,
+        postTextIndex: 0, postTextAlpha: 1.0, borderPersist: 0,
+    };
+    diagEnhancedState = {
+        energyRateBuffer: new Float32Array(20),
+        energyRateWriteIdx: 0, energyRateSampleTimer: 0,
+    };
 
     techTree = {
         researched: new Set(),
@@ -12654,7 +13003,60 @@ let hudAnimState = {
     scanlineOffset: 0,
     energyPulseTimer: 0,
     energyPulseActive: false,
-    energyPulseY: 0
+    energyPulseY: 0,
+    lastAmbientGlitch: 0,
+    nextAmbientGlitch: 0,
+    chromaticTimer: 0,
+    staticBlocks: [],
+    scanlineSpeedMod: 1.0
+};
+
+// Health freakout effects
+let healthFreakoutState = {
+    sparks: [],          // [{x, y, vx, vy, life, maxLife, color}]
+    smokePuffs: [],      // [{x, y, vx, vy, life, maxLife, radius}]
+    flickerTimers: {},   // {panelKey: nextFlickerTime}
+    lastJoltTime: 0,
+    distortionBands: [], // [{y, height, shiftX, life}]
+    warningToneTimer: 0,
+    warningToneInterval: 2.0,
+};
+
+// Bio-matter upload conduit
+let bioUploadState = {
+    streamOffset: 0,         // Horizontal offset for scrolling binary stream
+    bitRate: 0,              // Smoothed collection rate
+    bitRateSamples: [],      // Last 3s of collection timestamps
+    flashAlpha: 0,           // Collection flash brightness
+    uploadPhase: 'idle',     // 'idle'|'uploading'|'complete'
+    uploadCounter: 0,        // Countdown during end-of-wave upload
+    uploadTicks: 0,
+};
+
+// Tech tree horizontal visualization
+let techTreeAnimState = {
+    dashOffset: 0,           // Animated dash offset for connections
+    researchGlowPhase: 0,   // Sine phase for researching node glow
+    nodeAppearAnims: {},     // {nodeId: {startTime, progress}}
+};
+
+// Enhanced boot sequence
+let preBootState = {
+    phase: 'inactive',       // 'inactive'|'crt'|'logo'|'dissolve'|'trace'|'panel_boot'|'post'
+    timer: 0,
+    crtProgress: 0,
+    logoAlpha: 0,
+    traceProgress: 0,
+    postTextIndex: 0,
+    postTextAlpha: 1.0,
+    borderPersist: 0,        // 0-1, how much of border is lit
+};
+
+// Enhanced DIAG.SYS sparkline data
+let diagEnhancedState = {
+    energyRateBuffer: new Float32Array(20),
+    energyRateWriteIdx: 0,
+    energyRateSampleTimer: 0,
 };
 
 let hudBootState = {
@@ -12878,7 +13280,7 @@ function getHUDLayout() {
         weaponsZone: { x: margin, y: 140, w: leftW, h: 200 },
         fleetZone: { x: canvas.width - rightW - margin, y: fleetY, w: rightW, h: 300 },
         commanderZone: { x: margin, y: canvas.height - 110, w: Math.min(260, canvas.width * 0.22), h: 100 },
-        diagnosticsZone: { x: margin, y: canvas.height - 330, w: leftW, h: 100 },
+        diagnosticsZone: { x: margin, y: canvas.height - 390, w: leftW, h: 160 },
         opsLogZone: { x: margin, y: canvas.height - 220, w: Math.min(240, canvas.width * 0.20), h: 100 }
     };
 }
@@ -12954,9 +13356,113 @@ function renderHUDEnergyPulse(layout) {
     ctx.restore();
 }
 
+function renderFullColumnScanlines(layout) {
+    const healthPct = ufo ? ufo.health / CONFIG.UFO_START_HEALTH :
+                      (typeof finalHealth !== 'undefined' ? finalHealth / CONFIG.UFO_START_HEALTH : 1.0);
+
+    // Compute glitch intensity from health
+    let glitchIntensity = 0;
+    if (healthPct <= 0.05) glitchIntensity = 1.0;
+    else if (healthPct <= 0.10) glitchIntensity = 0.8;
+    else if (healthPct <= 0.25) glitchIntensity = 0.5;
+    else if (healthPct <= 0.50) glitchIntensity = 0.2;
+
+    // Left column: covers status + weapons + diag + opslog + commander
+    const leftW = layout.statusZone.x + layout.statusZone.w + 10;
+    renderColumnScanlines(0, 0, leftW, canvas.height, 0.008, glitchIntensity);
+
+    // Right column: covers systems + NRG.FLOW + fleet
+    const rightX = layout.systemsZone.x - 10;
+    renderColumnScanlines(rightX, 0, canvas.width - rightX, canvas.height, 0.008, glitchIntensity);
+}
+
+function renderColumnScanlines(x, y, w, h, baseAlpha, glitchIntensity) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y, w, h);
+    ctx.clip();
+
+    const offset = hudAnimState.scanlineOffset;
+
+    // Base scanlines (every 3px)
+    for (let ly = y - 3 + (offset % 3); ly < y + h; ly += 3) {
+        let shiftX = 0;
+        const shiftChance = 0.05 + glitchIntensity * 0.25;
+        const maxShift = 1 + Math.floor(glitchIntensity * 3);
+        if (glitchIntensity > 0 && Math.random() < shiftChance) {
+            shiftX = (Math.random() - 0.5) * maxShift * 2;
+        }
+
+        ctx.fillStyle = `rgba(255, 255, 255, ${baseAlpha})`;
+        ctx.fillRect(x + shiftX, ly, w, 1);
+    }
+
+    // Chromatic aberration (glitch intensity >= 0.3)
+    if (glitchIntensity >= 0.3) {
+        const chromaticRate = glitchIntensity * 2;
+        if (Math.random() < chromaticRate / 60) {
+            const bandY = y + Math.random() * h;
+            const bandH = 2 + Math.random() * 4;
+            const alpha = 0.04 * glitchIntensity;
+            ctx.fillStyle = `rgba(255, 0, 0, ${alpha})`;
+            ctx.fillRect(x - 1, bandY, w, bandH);
+            ctx.fillStyle = `rgba(0, 255, 0, ${alpha})`;
+            ctx.fillRect(x, bandY, w, bandH);
+            ctx.fillStyle = `rgba(0, 0, 255, ${alpha})`;
+            ctx.fillRect(x + 1, bandY, w, bandH);
+        }
+    }
+
+    // Brief static blocks (glitch intensity >= 0.5)
+    if (glitchIntensity >= 0.5 && Math.random() < glitchIntensity * 1.5 / 60) {
+        const bw = 20 + Math.random() * 40;
+        const bh = 4 + Math.random() * 8;
+        const bx = x + Math.random() * (w - bw);
+        const by = y + Math.random() * (h - bh);
+        const alpha = 0.08 * glitchIntensity;
+        for (let py = by; py < by + bh; py += 2) {
+            for (let px = bx; px < bx + bw; px += 2) {
+                const gray = Math.floor(Math.random() * 200);
+                ctx.fillStyle = `rgba(${gray}, ${gray}, ${gray}, ${alpha})`;
+                ctx.fillRect(px, py, 2, 2);
+            }
+        }
+    }
+
+    // Ambient periodic glitch (even at full health)
+    const now = Date.now();
+    if (now > hudAnimState.nextAmbientGlitch) {
+        hudAnimState.nextAmbientGlitch = now + 8000 + Math.random() * 7000;
+        hudAnimState.lastAmbientGlitch = now;
+    }
+    if (now - hudAnimState.lastAmbientGlitch < 50) {
+        ctx.fillStyle = `rgba(255, 255, 255, ${baseAlpha * 2})`;
+        for (let ly = y; ly < y + h; ly += 3) {
+            ctx.fillRect(x, ly, w, 1);
+        }
+    }
+
+    ctx.restore();
+}
+
 function renderHUDFrame() {
     const layout = getHUDLayout();
     const booting = hudBootState.phase === 'booting';
+
+    // Health-based HUD shake
+    const healthPct = ufo ? ufo.health / CONFIG.UFO_START_HEALTH : 1.0;
+    let shakeX = 0, shakeY = 0;
+    if (healthPct < 0.10 && !booting) {
+        const shakeIntensity = Math.min(5, ((0.10 - healthPct) / 0.05) * 3);
+        shakeX = (Math.random() - 0.5) * shakeIntensity;
+        shakeY = (Math.random() - 0.5) * shakeIntensity;
+        if (healthPct < 0.05 && Date.now() - healthFreakoutState.lastJoltTime < 50) {
+            shakeX *= 2.5;
+            shakeY *= 2.5;
+        }
+        ctx.save();
+        ctx.translate(shakeX, shakeY);
+    }
 
     // Helper: true if a panel's boot is done and real content should render
     const panelReady = (key) => !booting || !hudBootState.panels[key].active || hudBootState.panels[key].phase === 'online';
@@ -13018,8 +13524,9 @@ function renderHUDFrame() {
         ctx.restore();
     }
 
-    // Research progress bar + queue: render below weapons zone (suppress during boot)
-    if (techTree.activeResearch && !booting) {
+    // Research progress bar + queue: only render below weapons when tech tree gap is too small
+    const techTreeGapW = layout.missionZone.x - 6 - (layout.statusZone.x + layout.statusZone.w + 6);
+    if (techTree.activeResearch && !booting && techTreeGapW < 180) {
         const node = getTechNode(techTree.activeResearch.nodeId);
         if (node) {
             const rX = layout.weaponsZone.x;
@@ -13213,8 +13720,18 @@ function renderHUDFrame() {
         renderHUDEnergyPulse(layout);
     }
 
+    // Full-column scan lines (with health-linked glitching)
+    if (!booting) {
+        renderFullColumnScanlines(layout);
+    }
+
     // Coordinator distress arrows (kept separate - they're world-space indicators)
     renderCoordDistressArrows();
+
+    // End shake transform
+    if (healthPct < 0.10 && !booting) {
+        ctx.restore();
+    }
 }
 
 function easeOutCubic(t) {
@@ -13282,13 +13799,7 @@ function renderStatusZone(zone) {
         ctx.fillText(`(${multiplier}x)`, x + pad + 40, y + 88);
     }
 
-    // Bio-matter
-    if (bioMatter > 0 || (techTree.activeResearch || techTree.researched.size > 0)) {
-        renderNGELabel(x + pad + 4, y + 104, 'B.MTR:', '#0a0');
-        ctx.fillStyle = '#0f0';
-        ctx.font = 'bold 14px monospace';
-        ctx.fillText(bioMatter.toString(), x + pad + 58, y + 104);
-    }
+    // Bio-matter (moved to mission zone)
 
     // Blinking status light
     renderNGEBlinkLight(x + w - 12, y + 8, '#0ff', 800);
@@ -13433,6 +13944,66 @@ function renderMissionZone(zone) {
     renderNGEIndicator(x + 12, y + 110 - 6, 'circle', '#0a0', 'steady', { rate: 900, phaseOffset: 450 });
     renderNGEIndicator(x + w - 8, y + 110 - 6, 'diamond', '#0a0', 'steady', { rate: 1100 });
 
+    // B.MTR display (moved from status zone)
+    if (bioMatter > 0 || (techTree.activeResearch || techTree.researched.size > 0)) {
+        const bmtrY = y + 82;
+
+        // Label and value
+        ctx.fillStyle = '#0a0';
+        ctx.font = 'bold 9px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText('B.MTR:', x + 6, bmtrY + 10);
+
+        ctx.fillStyle = '#0f0';
+        ctx.font = 'bold 14px monospace';
+        ctx.fillText(bioMatter.toString(), x + 50, bmtrY + 10);
+
+        // Upload conduit visualization
+        const conduitX = x + 80;
+        const conduitW = w - 86;
+        const conduitH = 12;
+        const conduitY = bmtrY + 1;
+
+        // Conduit background
+        ctx.fillStyle = 'rgba(0, 40, 0, 0.3)';
+        ctx.fillRect(conduitX, conduitY, conduitW, conduitH);
+        ctx.strokeStyle = 'rgba(0, 170, 68, 0.5)';
+        ctx.lineWidth = 0.5;
+        ctx.strokeRect(conduitX, conduitY, conduitW, conduitH);
+
+        // Collection flash
+        if (bioUploadState.flashAlpha > 0) {
+            ctx.fillStyle = `rgba(0, 255, 0, ${bioUploadState.flashAlpha * 0.15})`;
+            ctx.fillRect(conduitX, conduitY, conduitW, conduitH);
+        }
+
+        // Scrolling binary data stream
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(conduitX + 1, conduitY + 1, conduitW - 2, conduitH - 2);
+        ctx.clip();
+        ctx.font = '7px monospace';
+        ctx.textAlign = 'left';
+        const charW = 8;
+        const offset = bioUploadState.streamOffset % charW;
+        const numChars = Math.ceil(conduitW / charW) + 2;
+        for (let i = 0; i < numChars; i++) {
+            const cx = conduitX + 1 + i * charW - offset;
+            const charIdx = Math.floor((cx + bioUploadState.streamOffset) / charW);
+            const bit = ((charIdx * 7 + 13) % 3 === 0) ? '1' : '0';
+            const alpha = 0.2 + 0.4 * ((charIdx % 5) / 5);
+            ctx.fillStyle = `rgba(0, 255, 0, ${alpha})`;
+            ctx.fillText(bit, cx, conduitY + 10);
+        }
+        ctx.restore();
+
+        // Bit rate display
+        ctx.fillStyle = '#0a0';
+        ctx.font = '6px monospace';
+        ctx.textAlign = 'left';
+        const rateText = bioUploadState.bitRate > 0 ? `${Math.round(bioUploadState.bitRate)} b/s` : 'IDLE';
+        ctx.fillText('\u2191 ' + rateText, conduitX, bmtrY + 22);
+    }
 }
 
 function renderHarvestCounterNGE(x, y, w) {
@@ -13501,7 +14072,15 @@ function renderSystemsZone(zone) {
     const { x, y, w } = zone;
     const pad = 6;
 
-    renderNGEPanel(x, y, w, 88, { color: '#f80', cutCorners: ['tr'], label: 'SYS.INTG' });
+    // Dynamic panel height based on visible content
+    const cellCount = playerInventory.energyCells;
+    let panelH = 48; // minimum: header (22) + shield bar (22) + padding (4)
+    if (cellCount > 0) panelH = 70; // add revive cell row
+    if (playerInventory.speedBonus > 0) panelH += 16;
+    if (playerInventory.maxEnergyBonus > 0) panelH += 14;
+    panelH = Math.max(panelH, 52); // minimum aesthetic height
+
+    renderNGEPanel(x, y, w, panelH, { color: '#f80', cutCorners: ['tr'], label: 'SYS.INTG' });
 
     // Shield bar (segmented)
     const shieldY = y + 22;
@@ -13592,14 +14171,14 @@ function renderSystemsZone(zone) {
     const shldPct = ufo ? ufo.health / CONFIG.UFO_START_HEALTH : finalHealth / CONFIG.UFO_START_HEALTH;
     const sysJColor = shldPct > 0.5 ? '#f80' : (shldPct > 0.25 ? '#fc0' : '#f44');
     const sysJGlow = shldPct < 0.25 ? 8 : 4;
-    renderNGEIndicator(x + 4, y + 88 - 8, 'cross', sysJColor, 'reactive', {
+    renderNGEIndicator(x + 4, y + panelH - 8, 'cross', sysJColor, 'reactive', {
         reactiveValue: shldPct, reactiveThresholds: [
             { threshold: 0.5, rate: 1000 },
             { threshold: 0.25, rate: 500 },
             { threshold: 0, rate: 150 }
         ], glowIntensity: sysJGlow
     });
-    renderNGEIndicator(x + w - 8, y + 88 - 8, 'diamond', '#f80', 'steady', { rate: 800 });
+    renderNGEIndicator(x + w - 8, y + panelH - 8, 'diamond', '#f80', 'steady', { rate: 800 });
 }
 
 function renderEnergyGraph(systemsZone) {
@@ -13607,10 +14186,15 @@ function renderEnergyGraph(systemsZone) {
 
     const { x, y, w } = systemsZone;
 
-    // Calculate Y position below systems zone content
-    let graphY = y + 88 + 8;
-    if (playerInventory.speedBonus > 0) graphY += 22;
-    if (playerInventory.maxEnergyBonus > 0) graphY += 14;
+    // Recompute dynamic panel height (same logic as renderSystemsZone)
+    const cells = playerInventory.energyCells;
+    let sysPanelH = 48;
+    if (cells > 0) sysPanelH = 70;
+    if (playerInventory.speedBonus > 0) sysPanelH += 16;
+    if (playerInventory.maxEnergyBonus > 0) sysPanelH += 14;
+    sysPanelH = Math.max(sysPanelH, 52);
+
+    let graphY = y + sysPanelH + 8; // 8px gap below dynamic panel
 
     const graphW = w;
     const graphH = 72;
@@ -13641,19 +14225,32 @@ function renderEnergyGraph(systemsZone) {
     const gw = graphW - 28 - 6;
     const gh = 48;
 
-    // Grid lines (horizontal)
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
-    ctx.lineWidth = 0.5;
-    for (let i = 0; i <= 2; i++) {
-        const ly = gy + gh - (i / 2) * gh;
+    // Animated horizontal grid lines (5 lines at 0%, 25%, 50%, 75%, 100%)
+    for (let i = 0; i <= 4; i++) {
+        const ly = gy + gh - (i / 4) * gh;
+        const pulseAlpha = 0.04 + 0.02 * Math.sin(Date.now() / 2000 + i * 0.5);
+        ctx.strokeStyle = `rgba(255, 136, 0, ${pulseAlpha})`;
+        ctx.lineWidth = 0.5;
         ctx.beginPath(); ctx.moveTo(gx, ly); ctx.lineTo(gx + gw, ly); ctx.stroke();
     }
 
-    // Grid lines (vertical, every 5s = 30 samples)
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
-    for (let i = 1; i < 6; i++) {
-        const lx = gx + (i / 6) * gw;
+    // Animated vertical grid lines (6 lines, drift rightward)
+    const vDrift = (Date.now() / 1000) % (gw / 6);
+    for (let i = 0; i < 6; i++) {
+        const lx = gx + ((i / 6) * gw + vDrift) % gw;
+        ctx.strokeStyle = 'rgba(255, 136, 0, 0.04)';
+        ctx.lineWidth = 0.5;
         ctx.beginPath(); ctx.moveTo(lx, gy); ctx.lineTo(lx, gy + gh); ctx.stroke();
+
+        // Intersection dots (every other intersection blinks)
+        for (let j = 0; j <= 4; j++) {
+            const iy = gy + gh - (j / 4) * gh;
+            const dotOn = ((i + j) % 2 === 0) ? (Math.floor(Date.now() / 500) % 2 === 0) : true;
+            if (dotOn) {
+                ctx.fillStyle = 'rgba(255, 136, 0, 0.12)';
+                ctx.fillRect(lx, iy, 1, 1);
+            }
+        }
     }
 
     // Y-axis labels
@@ -13677,32 +14274,66 @@ function renderEnergyGraph(systemsZone) {
     const idx = energyTimeSeries.writeIndex;
     const mapY = (val) => gy + gh - (Math.min(val, yMax) / yMax) * gh;
 
-    // OUTPUT line (red) with fill
+    // OUTPUT line (red) with glow
+    ctx.save();
+    ctx.shadowColor = '#f44';
+    ctx.shadowBlur = 3;
     ctx.beginPath();
-    ctx.strokeStyle = 'rgba(255, 68, 68, 0.8)';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(255, 68, 68, 0.9)';
+    ctx.lineWidth = 1.5;
+    let prevOutY = null;
     for (let i = 0; i < 180; i++) {
         const bufIdx = (idx + i) % 180;
         const px = gx + (i / 179) * gw;
         const py = mapY(energyTimeSeries.outputBuffer[bufIdx]);
         if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        // Peak detection (local maximum)
+        if (prevOutY !== null && i > 1) {
+            const prevPrevIdx = (idx + i - 2) % 180;
+            const prevPrevY = mapY(energyTimeSeries.outputBuffer[prevPrevIdx]);
+            if (prevOutY < py && prevOutY < prevPrevY && energyTimeSeries.outputBuffer[(idx + i - 1) % 180] > 0.5) {
+                ctx.save();
+                ctx.fillStyle = '#f44';
+                ctx.shadowBlur = 6;
+                ctx.beginPath();
+                ctx.arc(gx + ((i - 1) / 179) * gw, prevOutY, 2, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+                // Re-start the path after the arc
+                ctx.beginPath();
+                ctx.moveTo(px, py);
+            }
+        }
+        prevOutY = py;
     }
     ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.restore();
 
-    // Output fill
-    const outGrad = ctx.createLinearGradient(0, gy, 0, gy + gh);
-    outGrad.addColorStop(0, 'rgba(255, 68, 68, 0.15)');
-    outGrad.addColorStop(1, 'rgba(255, 68, 68, 0)');
+    // Fill gradient for output
+    ctx.beginPath();
+    ctx.moveTo(gx, gy + gh);
+    for (let i = 0; i < 180; i++) {
+        const bufIdx = (idx + i) % 180;
+        const px = gx + (i / 179) * gw;
+        const py = mapY(energyTimeSeries.outputBuffer[bufIdx]);
+        ctx.lineTo(px, py);
+    }
     ctx.lineTo(gx + gw, gy + gh);
-    ctx.lineTo(gx, gy + gh);
     ctx.closePath();
+    const outGrad = ctx.createLinearGradient(0, gy, 0, gy + gh);
+    outGrad.addColorStop(0, 'rgba(255, 68, 68, 0.20)');
+    outGrad.addColorStop(1, 'rgba(255, 68, 68, 0)');
     ctx.fillStyle = outGrad;
     ctx.fill();
 
-    // INTAKE line (green) with fill
+    // INTAKE line (green) with glow
+    ctx.save();
+    ctx.shadowColor = '#0f0';
+    ctx.shadowBlur = 3;
     ctx.beginPath();
-    ctx.strokeStyle = 'rgba(0, 255, 0, 0.8)';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(0, 255, 0, 0.9)';
+    ctx.lineWidth = 1.5;
     for (let i = 0; i < 180; i++) {
         const bufIdx = (idx + i) % 180;
         const px = gx + (i / 179) * gw;
@@ -13710,16 +14341,61 @@ function renderEnergyGraph(systemsZone) {
         if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
     }
     ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.restore();
 
-    // Intake fill
-    const inGrad = ctx.createLinearGradient(0, gy, 0, gy + gh);
-    inGrad.addColorStop(0, 'rgba(0, 255, 0, 0.12)');
-    inGrad.addColorStop(1, 'rgba(0, 255, 0, 0)');
+    // Fill gradient for intake
+    ctx.beginPath();
+    ctx.moveTo(gx, gy + gh);
+    for (let i = 0; i < 180; i++) {
+        const bufIdx = (idx + i) % 180;
+        const px = gx + (i / 179) * gw;
+        const py = mapY(energyTimeSeries.intakeBuffer[bufIdx]);
+        ctx.lineTo(px, py);
+    }
     ctx.lineTo(gx + gw, gy + gh);
-    ctx.lineTo(gx, gy + gh);
     ctx.closePath();
+    const inGrad = ctx.createLinearGradient(0, gy, 0, gy + gh);
+    inGrad.addColorStop(0, 'rgba(0, 255, 0, 0.15)');
+    inGrad.addColorStop(1, 'rgba(0, 255, 0, 0)');
     ctx.fillStyle = inGrad;
     ctx.fill();
+
+    // "NOW" indicator (right edge)
+    const nowBlink = Math.floor(Date.now() / 600) % 2 === 0;
+    if (nowBlink) {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+        ctx.fillRect(gx + gw - 3, gy, 3, gh);
+    }
+
+    // Beam activity overlay
+    if (ufo && ufo.beamActive) {
+        const beamPulse = Math.sin(Date.now() / 200) * 0.5 + 0.5;
+        ctx.fillStyle = `rgba(255, 0, 0, ${0.06 + beamPulse * 0.06})`;
+        ctx.fillRect(gx + gw - 4, gy, 4, gh);
+        if (Math.floor(Date.now() / 300) % 2 === 0) {
+            ctx.fillStyle = '#f44';
+            ctx.font = '7px monospace';
+            ctx.textAlign = 'right';
+            ctx.fillText('BEAM', gx + gw - 2, gy - 2);
+        }
+    }
+
+    // Low energy state (< 15%)
+    if (ufo && ufo.energy / ufo.maxEnergy < 0.15) {
+        ctx.fillStyle = 'rgba(255, 0, 0, 0.04)';
+        ctx.fillRect(gx, gy, gw, gh);
+        const minY = mapY(10);
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = '#f44';
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(gx, minY); ctx.lineTo(gx + gw, minY); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#f44';
+        ctx.font = '6px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText('MIN', gx + 1, minY - 2);
+    }
 }
 
 function renderWeaponsZone(zone) {
@@ -14193,7 +14869,7 @@ function renderCommanderZone(zone) {
 function renderDiagnosticsZone(zone) {
     const { x, y, w, h } = zone;
     const pad = 6;
-    const lineH = 12;
+    const lineH = 14;
 
     renderNGEPanel(x, y, w, h, { color: '#0af', cutCorners: ['tl'], alpha: 0.5 });
 
@@ -14213,7 +14889,12 @@ function renderDiagnosticsZone(zone) {
     if (ufo) {
         const energyPct = ufo.energy / ufo.maxEnergy;
         const energyStatus = energyPct > 0.25 ? 'nominal' : (energyPct > 0.1 ? 'caution' : 'critical');
-        lines.push({ label: 'NRG.MAIN', value: `${Math.ceil(ufo.energy)}/${ufo.maxEnergy}`, status: energyStatus });
+        lines.push({ label: 'NRG.MAIN', value: `${Math.ceil(ufo.energy)}/${ufo.maxEnergy}`, status: energyStatus, bar: energyPct });
+    }
+
+    // NRG.RATE sparkline
+    if (ufo) {
+        lines.push({ label: 'NRG.RATE', value: '', status: 'nominal', sparkline: true });
     }
 
     // Beam status
@@ -14224,7 +14905,10 @@ function renderDiagnosticsZone(zone) {
     // Shield
     const shldVal = ufo ? ufo.health : finalHealth;
     const shldPct = shldVal / CONFIG.UFO_START_HEALTH;
-    lines.push({ label: 'SHLD.INTG', value: `${Math.ceil(shldVal)}/${CONFIG.UFO_START_HEALTH}`, status: shldPct > 0.25 ? 'nominal' : 'critical' });
+    lines.push({ label: 'SHLD.INTG', value: `${Math.ceil(shldVal)}/${CONFIG.UFO_START_HEALTH}`, status: shldPct > 0.25 ? 'nominal' : 'critical', bar: shldPct });
+
+    // Section divider
+    lines.push({ divider: true });
 
     // Drones
     if (harvesterUnlocked) {
@@ -14250,6 +14934,11 @@ function renderDiagnosticsZone(zone) {
         lines.push({ label: cLabel, value: `NRG ${Math.round(cPct * 100)}%`, status: cPct > 0.25 ? 'nominal' : 'critical' });
     }
 
+    // Section divider
+    if (missileUnlocked || playerInventory.maxBombs > 0) {
+        lines.push({ divider: true });
+    }
+
     if (missileUnlocked && missileGroupCount > 0) {
         const ready = missileGroups.filter(g => g.ready).length;
         lines.push({ label: 'ORD.MSL', value: `${ready}/${missileGroupCount} RDY`, status: ready > 0 ? 'nominal' : 'caution' });
@@ -14263,6 +14952,18 @@ function renderDiagnosticsZone(zone) {
     const tankCount = tanks ? tanks.filter(t => t.alive).length : 0;
     const thrStatus = tankCount > 5 ? 'critical' : (tankCount > 3 ? 'caution' : 'nominal');
     lines.push({ label: 'THR.PROX', value: `${tankCount} HOSTILE`, status: thrStatus });
+
+    // Combo counter
+    if (typeof comboCount !== 'undefined' && comboCount > 1) {
+        lines.push({ label: 'COMBO', value: `x${comboCount}`, status: comboCount >= 5 ? 'nominal' : 'caution' });
+    }
+
+    // Wave timer
+    if (typeof waveTimer !== 'undefined') {
+        const mins = Math.floor(waveTimer / 60);
+        const secs = Math.floor(waveTimer % 60);
+        lines.push({ label: 'WAVE.T', value: `${mins}:${secs.toString().padStart(2, '0')}`, status: 'nominal' });
+    }
 
     // Render lines with scroll
     const startY = y + 20;
@@ -14278,16 +14979,16 @@ function renderDiagnosticsZone(zone) {
     if (totalLineH > viewH) {
         diagnosticsState.scrollPauseTimer -= 1/60;
         if (diagnosticsState.scrollPauseTimer <= 0) {
-            diagnosticsState.scrollOffset += diagnosticsState.scrollDirection * 0.4;
+            diagnosticsState.scrollOffset += diagnosticsState.scrollDirection * 0.3;
             const maxScroll = totalLineH - viewH;
             if (diagnosticsState.scrollOffset >= maxScroll) {
                 diagnosticsState.scrollOffset = maxScroll;
                 diagnosticsState.scrollDirection = -1;
-                diagnosticsState.scrollPauseTimer = 2;
+                diagnosticsState.scrollPauseTimer = 3;
             } else if (diagnosticsState.scrollOffset <= 0) {
                 diagnosticsState.scrollOffset = 0;
                 diagnosticsState.scrollDirection = 1;
-                diagnosticsState.scrollPauseTimer = 2;
+                diagnosticsState.scrollPauseTimer = 3;
             }
         }
         scrollY = diagnosticsState.scrollOffset;
@@ -14298,20 +14999,105 @@ function renderDiagnosticsZone(zone) {
         if (ly < startY - lineH || ly > startY + viewH) continue;
 
         const line = lines[i];
+
+        // Divider line
+        if (line.divider) {
+            ctx.strokeStyle = 'rgba(0, 170, 255, 0.1)';
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.moveTo(x + pad, ly + lineH / 2);
+            ctx.lineTo(x + w - pad, ly + lineH / 2);
+            ctx.stroke();
+            continue;
+        }
+
         ctx.font = '9px monospace';
         ctx.textAlign = 'left';
         ctx.fillStyle = line.status === 'critical' ? '#f44' : '#8af';
-        ctx.fillText(line.label, x + pad, ly + 9);
-        ctx.fillStyle = line.status === 'critical' ? '#f44' : '#ccc';
-        ctx.textAlign = 'right';
-        ctx.fillText(line.value, x + w - pad - 12, ly + 9);
-        ctx.textAlign = 'left';
+        ctx.fillText(line.label, x + pad, ly + 10);
+
+        // Bar graph rendering
+        if (line.bar !== undefined) {
+            const barX = x + pad + 65;
+            const barW = 60;
+            const barH = 8;
+            const barY = ly + 2;
+            const barColor = line.status === 'critical' ? '#f44' : (line.status === 'caution' ? '#fc0' : '#0af');
+            ctx.fillStyle = 'rgba(0, 20, 40, 0.4)';
+            ctx.fillRect(barX, barY, barW, barH);
+            ctx.fillStyle = barColor;
+            ctx.fillRect(barX, barY, barW * Math.max(0, Math.min(1, line.bar)), barH);
+            ctx.strokeStyle = `rgba(0, 170, 255, 0.3)`;
+            ctx.lineWidth = 0.5;
+            ctx.strokeRect(barX, barY, barW, barH);
+        }
+        // Sparkline rendering
+        else if (line.sparkline) {
+            const slX = x + pad + 65;
+            const slW = 50;
+            const slH = 10;
+            const slY = ly + 1;
+            ctx.fillStyle = 'rgba(0, 20, 40, 0.3)';
+            ctx.fillRect(slX, slY, slW, slH);
+            // Draw sparkline from ring buffer
+            const buf = diagEnhancedState.energyRateBuffer;
+            const writeIdx = diagEnhancedState.energyRateWriteIdx;
+            let minV = Infinity, maxV = -Infinity;
+            for (let j = 0; j < 20; j++) {
+                const v = buf[j];
+                if (v < minV) minV = v;
+                if (v > maxV) maxV = v;
+            }
+            const range = Math.max(1, maxV - minV);
+            ctx.beginPath();
+            ctx.strokeStyle = '#0af';
+            ctx.lineWidth = 1;
+            for (let j = 0; j < 20; j++) {
+                const bufJ = (writeIdx + j) % 20;
+                const px = slX + (j / 19) * slW;
+                const py = slY + slH - ((buf[bufJ] - minV) / range) * slH;
+                if (j === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+            }
+            ctx.stroke();
+            // Zero line
+            if (minV < 0 && maxV > 0) {
+                const zeroY = slY + slH - ((0 - minV) / range) * slH;
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+                ctx.lineWidth = 0.5;
+                ctx.beginPath();
+                ctx.moveTo(slX, zeroY);
+                ctx.lineTo(slX + slW, zeroY);
+                ctx.stroke();
+            }
+        }
+        else {
+            ctx.fillStyle = line.status === 'critical' ? '#f44' : '#ccc';
+            ctx.textAlign = 'right';
+            ctx.fillText(line.value, x + w - pad - 12, ly + 10);
+            ctx.textAlign = 'left';
+        }
 
         // Status dot
-        renderNGEStatusDot(x + w - pad - 4, ly + 6, line.status, 2);
+        renderNGEStatusDot(x + w - pad - 4, ly + 7, line.status, 2);
     }
 
     ctx.restore();
+
+    // Scroll arrows when content overflows
+    if (totalLineH > viewH) {
+        if (scrollY > 0) {
+            ctx.fillStyle = 'rgba(0, 170, 255, 0.5)';
+            ctx.font = '8px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('\u25B2', x + w / 2, startY + 6);
+        }
+        if (scrollY < totalLineH - viewH) {
+            ctx.fillStyle = 'rgba(0, 170, 255, 0.5)';
+            ctx.font = '8px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('\u25BC', x + w / 2, y + h - 4);
+        }
+    }
 }
 
 function renderOpsLogZone(zone) {
@@ -14390,88 +15176,247 @@ const TECH_CHIP_DEFS = [
 ];
 
 const TRACK_COLORS = {
-    powerGrid: '#ff0',
+    powerGrid: '#f80',
     droneCommand: '#48f',
-    defenseNetwork: '#f80'
+    defenseNetwork: '#d60'
 };
 
 function renderTechChips(layout) {
-    const researched = techTree.researched;
-    if (researched.size === 0) return;
+    renderTechTree(layout);
+}
 
+function renderTechTree(layout) {
     const statusEnd = layout.statusZone.x + layout.statusZone.w;
     const missionStart = layout.missionZone.x;
-    const gapStartX = statusEnd + 4;
-    const gapEndX = missionStart - 4;
+    const gapStartX = statusEnd + 6;
+    const gapEndX = missionStart - 6;
     const gapW = gapEndX - gapStartX;
-    if (gapW < 44) return;
 
-    let curX = gapStartX;
-    let curY = 6;
-    let lastTrack = null;
+    // Small screen: hide entirely if gap < 180px
+    if (gapW < 180) return;
 
-    for (const chipDef of TECH_CHIP_DEFS) {
-        if (!researched.has(chipDef.id)) continue;
+    const tracks = ['powerGrid', 'droneCommand', 'defenseNetwork'];
+    const trackPrefixes = ['pg', 'dc', 'dn'];
+    const trackBgColors = [
+        'rgba(255, 136, 0, 0.04)',
+        'rgba(68, 136, 255, 0.04)',
+        'rgba(221, 102, 0, 0.04)'
+    ];
 
-        const chipW = chipDef.width;
-        const trackColor = TRACK_COLORS[chipDef.track];
+    // Node dimensions
+    const isMicro = gapW < 220;
+    const nodeW = isMicro ? 32 : 40;
+    const nodeH = isMicro ? 14 : 18;
+    const nodeGap = isMicro ? 4 : 6;
+    const nodesPerTrack = 5;
+    const trackNodeWidth = nodesPerTrack * nodeW + (nodesPerTrack - 1) * nodeGap;
 
-        // Track separator
-        if (lastTrack && lastTrack !== chipDef.track) {
-            if (curX + 2 <= gapEndX) {
-                ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.moveTo(curX, curY + 2);
-                ctx.lineTo(curX, curY + 16);
-                ctx.stroke();
-                curX += 4;
+    // Center nodes in gap
+    const startX = gapStartX + Math.max(0, (gapW - trackNodeWidth) / 2);
+
+    // Row positions
+    const rowH = nodeH + 4;
+    const baseY = 4;
+
+    // Update animation state
+    techTreeAnimState.dashOffset += 0.5;
+    techTreeAnimState.researchGlowPhase = (Date.now() / 800) * Math.PI * 2;
+
+    for (let t = 0; t < 3; t++) {
+        const track = tracks[t];
+        const prefix = trackPrefixes[t];
+        const color = TRACK_COLORS[track];
+        const rowY = baseY + t * (rowH + 2);
+
+        // Row background tint
+        ctx.fillStyle = trackBgColors[t];
+        ctx.fillRect(gapStartX, rowY, gapW, rowH);
+
+        // Bio-organic particle background
+        const now = Date.now();
+        for (let p = 0; p < 15; p++) {
+            const seed = t * 100 + p;
+            const speed = 0.2 + (seed % 7) * 0.1;
+            const px = gapStartX + ((seed * 37 + now * speed * 0.001) % gapW);
+            const py = rowY + 2 + (seed * 13) % (rowH - 4);
+            const onDur = 100 + (seed * 17) % 300;
+            const offDur = 200 + (seed * 23) % 600;
+            const cycle = onDur + offDur;
+            const isOn = (now % cycle) < onDur;
+            if (isOn) {
+                const alpha = 0.15 + ((seed * 11) % 25) * 0.01;
+                const size = (p % 2 === 0) ? 1 : 2;
+                ctx.fillStyle = `rgba(${hexToRgb(color)}, ${alpha})`;
+                ctx.fillRect(px, py, size, size);
             }
         }
 
-        // Wrap to next row if needed
-        if (curX + chipW > gapEndX) {
-            curX = gapStartX;
-            curY += 21;
+        // Render 5 nodes for this track
+        for (let n = 0; n < nodesPerTrack; n++) {
+            const nodeId = `${prefix}${n + 1}`;
+            const chipDef = TECH_CHIP_DEFS.find(c => c.id === nodeId);
+            if (!chipDef) continue;
+
+            const nx = startX + n * (nodeW + nodeGap);
+            const ny = rowY + 2;
+
+            // Determine node state
+            const isResearched = techTree.researched.has(nodeId);
+            const isResearching = techTree.activeResearch && techTree.activeResearch.nodeId === nodeId;
+
+            // Connecting line to next node
+            if (n < nodesPerTrack - 1) {
+                const lineStartX = nx + nodeW;
+                const lineEndX = nx + nodeW + nodeGap;
+                const lineY = ny + nodeH / 2;
+                const nextNodeId = `${prefix}${n + 2}`;
+                const nextResearched = techTree.researched.has(nextNodeId);
+
+                if (isResearched && nextResearched) {
+                    ctx.save();
+                    ctx.strokeStyle = `rgba(${hexToRgb(color)}, 0.7)`;
+                    ctx.lineWidth = 1.5;
+                    ctx.shadowColor = color;
+                    ctx.shadowBlur = 2;
+                    ctx.beginPath(); ctx.moveTo(lineStartX, lineY); ctx.lineTo(lineEndX, lineY); ctx.stroke();
+                    ctx.shadowBlur = 0;
+                    ctx.restore();
+                } else if (isResearched) {
+                    ctx.save();
+                    ctx.strokeStyle = `rgba(${hexToRgb(color)}, 0.4)`;
+                    ctx.lineWidth = 1;
+                    ctx.setLineDash([2, 2]);
+                    ctx.lineDashOffset = -techTreeAnimState.dashOffset;
+                    ctx.beginPath(); ctx.moveTo(lineStartX, lineY); ctx.lineTo(lineEndX, lineY); ctx.stroke();
+                    ctx.setLineDash([]);
+                    ctx.restore();
+                } else {
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
+                    ctx.lineWidth = 0.5;
+                    ctx.beginPath(); ctx.moveTo(lineStartX, lineY); ctx.lineTo(lineEndX, lineY); ctx.stroke();
+                }
+            }
+
+            // Node background
+            if (isResearching) {
+                const glowPhase = Math.sin(techTreeAnimState.researchGlowPhase);
+                const glowBlur = 3 + glowPhase * 2;
+                ctx.save();
+                ctx.fillStyle = `rgba(${hexToRgb(color)}, 0.12)`;
+                ctx.shadowColor = color;
+                ctx.shadowBlur = glowBlur;
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 1.5;
+                ctx.fillRect(nx, ny, nodeW, nodeH);
+                ctx.strokeRect(nx, ny, nodeW, nodeH);
+                ctx.shadowBlur = 0;
+                // Progress bar at bottom
+                const progress = 1 - (techTree.activeResearch.timeRemaining / techTree.activeResearch.totalTime);
+                ctx.fillStyle = `rgba(${hexToRgb(color)}, 0.8)`;
+                ctx.fillRect(nx, ny + nodeH - 2, nodeW * progress, 2);
+                ctx.restore();
+            } else if (isResearched) {
+                ctx.fillStyle = `rgba(${hexToRgb(color)}, 0.25)`;
+                ctx.fillRect(nx, ny, nodeW, nodeH);
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 1;
+                ctx.strokeRect(nx, ny, nodeW, nodeH);
+            } else {
+                ctx.fillStyle = 'rgba(20, 20, 30, 0.3)';
+                ctx.fillRect(nx, ny, nodeW, nodeH);
+                ctx.save();
+                ctx.setLineDash([2, 2]);
+                ctx.strokeStyle = `rgba(${hexToRgb(color)}, 0.15)`;
+                ctx.lineWidth = 0.5;
+                ctx.strokeRect(nx, ny, nodeW, nodeH);
+                ctx.setLineDash([]);
+                ctx.restore();
+            }
+
+            // Node text
+            const textAlpha = isResearched ? 0.8 : (isResearching ? 0.6 : 0.2);
+            const fontSize = isMicro ? 6 : 7;
+            ctx.font = `bold ${fontSize}px monospace`;
+            ctx.textAlign = 'left';
+            ctx.fillStyle = `rgba(${hexToRgb(color)}, ${isResearched ? 0.9 : textAlpha})`;
+            ctx.fillText(chipDef.text.substring(0, 3), nx + 2, ny + (isMicro ? 9 : 11));
+            if (!isMicro) {
+                ctx.fillStyle = `rgba(255, 255, 255, ${textAlpha})`;
+                ctx.font = `${fontSize}px monospace`;
+                ctx.fillText(chipDef.text.substring(4), nx + 20, ny + 11);
+            }
         }
+    }
 
-        // Chip background with cut corner
-        ctx.fillStyle = 'rgba(5, 8, 18, 0.5)';
-        ctx.beginPath();
-        ctx.moveTo(curX, curY);
-        ctx.lineTo(curX + chipW - 4, curY);
-        ctx.lineTo(curX + chipW, curY + 4);
-        ctx.lineTo(curX + chipW, curY + 18);
-        ctx.lineTo(curX, curY + 18);
-        ctx.closePath();
-        ctx.fill();
+    // Research display below tech tree
+    const researchY = baseY + 3 * (rowH + 2) + 2;
+    if (techTree.activeResearch) {
+        const node = getTechNode(techTree.activeResearch.nodeId);
+        if (node) {
+            const chipDef = TECH_CHIP_DEFS.find(c => c.id === techTree.activeResearch.nodeId);
+            const shortName = chipDef ? chipDef.text : node.name;
+            const progress = 1 - (techTree.activeResearch.timeRemaining / techTree.activeResearch.totalTime);
+            const timeLeft = Math.ceil(techTree.activeResearch.timeRemaining);
 
-        // Chip border
-        ctx.strokeStyle = trackColor;
-        ctx.lineWidth = 0.5;
-        ctx.stroke();
+            // Background
+            ctx.fillStyle = 'rgba(0, 20, 0, 0.4)';
+            ctx.fillRect(gapStartX, researchY, gapW, 16);
+            ctx.strokeStyle = 'rgba(0, 170, 68, 0.5)';
+            ctx.lineWidth = 0.5;
+            ctx.strokeRect(gapStartX, researchY, gapW, 16);
 
-        // Chip text - prefix in track color
-        ctx.fillStyle = trackColor;
-        ctx.globalAlpha = 0.7;
-        ctx.font = 'bold 7px monospace';
+            // Priority number
+            ctx.fillStyle = '#0f0';
+            ctx.font = 'bold 10px monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText('1', gapStartX + 4, researchY + 12);
+
+            // Name
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 9px monospace';
+            ctx.fillText(shortName, gapStartX + 18, researchY + 12);
+
+            // Progress bar
+            const barX = gapStartX + 18 + shortName.length * 6 + 4;
+            const barW = Math.max(30, gapW - barX + gapStartX - 40);
+            renderNGEBar(barX, researchY + 4, barW, 8, progress, '#0a4', { segments: 15 });
+
+            // Timer
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 9px monospace';
+            ctx.textAlign = 'right';
+            ctx.fillText(`${timeLeft}s`, gapStartX + gapW - 4, researchY + 12);
+
+            // Blink light
+            renderNGEBlinkLight(gapStartX + gapW - 14, researchY + 2, '#0f0', 300);
+        }
+    }
+
+    // Queue items
+    const queueItems = techTree.queue ? techTree.queue.slice(0, 2) : [];
+    for (let i = 0; i < queueItems.length; i++) {
+        const qNode = getTechNode(queueItems[i]);
+        const qChip = TECH_CHIP_DEFS.find(c => c.id === queueItems[i]);
+        const qName = qChip ? qChip.text : (qNode ? qNode.name : '???');
+        const qY = researchY + 18 + i * 14;
+
+        ctx.fillStyle = 'rgba(0, 15, 0, 0.3)';
+        ctx.fillRect(gapStartX, qY, gapW, 14);
+
+        ctx.fillStyle = 'rgba(0, 200, 80, 0.5)';
+        ctx.font = 'bold 9px monospace';
         ctx.textAlign = 'left';
-        ctx.fillText(chipDef.text.substring(0, 3), curX + 2, curY + 11);
-        // Suffix in white
-        ctx.fillStyle = 'rgba(255,255,255,0.6)';
-        ctx.globalAlpha = 1;
-        ctx.font = '7px monospace';
-        ctx.fillText(chipDef.text.substring(4), curX + 20, curY + 11);
+        ctx.fillText(`${i + 2}`, gapStartX + 4, qY + 11);
 
-        // Status blink light (2x2)
-        const blinkOn = Math.floor(Date.now() / 1200) % 2 === 0;
-        ctx.fillStyle = blinkOn ? trackColor : 'rgba(255,255,255,0.08)';
-        if (blinkOn) { ctx.shadowColor = trackColor; ctx.shadowBlur = 3; }
-        ctx.fillRect(curX + chipW - 5, curY + 8, 2, 2);
-        ctx.shadowBlur = 0;
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+        ctx.font = '8px monospace';
+        ctx.fillText(qName, gapStartX + 18, qY + 11);
 
-        lastTrack = chipDef.track;
-        curX += chipW + 3;
+        if (qNode) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.textAlign = 'right';
+            ctx.fillText(`${qNode.researchTime}s`, gapStartX + gapW - 4, qY + 11);
+        }
     }
 }
 
@@ -14581,7 +15526,11 @@ function triggerTutorialCommander(phase) {
 // Update HUD animations each frame
 function updateHUDAnimations(dt) {
     hudAnimState.energyFlowPhase += dt;
-    hudAnimState.scanlineOffset = (hudAnimState.scanlineOffset + dt * 120) % 300;
+    const baseSpeed = 80;
+    const modSpeed = 60 * Math.sin(Date.now() / 3000);
+    const burstMod = (Date.now() % 5000 < 200) ? 2.0 : 1.0;
+    const scanSpeed = (baseSpeed + modSpeed) * burstMod;
+    hudAnimState.scanlineOffset = (hudAnimState.scanlineOffset + dt * scanSpeed) % 300;
 
     // Energy pulse animation (~3.5 second cycle)
     hudAnimState.energyPulseTimer += dt;
@@ -14603,18 +15552,196 @@ function updateHUDAnimations(dt) {
         updateOpsLog(dt);
     }
 
+    // Health freakout updates
+    if (gameState === 'PLAYING') {
+        updateHealthFreakout(dt);
+    }
+
+    // DIAG.SYS sparkline data (sample every 500ms)
+    if (gameState === 'PLAYING') {
+        diagEnhancedState.energyRateSampleTimer += dt;
+        if (diagEnhancedState.energyRateSampleTimer >= 0.5) {
+            diagEnhancedState.energyRateSampleTimer -= 0.5;
+            const netRate = energyTimeSeries.frameIntake - energyTimeSeries.frameOutput;
+            diagEnhancedState.energyRateBuffer[diagEnhancedState.energyRateWriteIdx] = netRate;
+            diagEnhancedState.energyRateWriteIdx = (diagEnhancedState.energyRateWriteIdx + 1) % 20;
+        }
+    }
+
+    // Bio upload conduit animation
+    if (gameState === 'PLAYING') {
+        const speed = bioUploadState.flashAlpha > 0 ? 90 : 30;
+        bioUploadState.streamOffset += dt * speed;
+        bioUploadState.flashAlpha = Math.max(0, bioUploadState.flashAlpha - dt * 10);
+        bioUploadState.bitRate *= Math.pow(0.5, dt / 1.5);
+        if (bioUploadState.bitRate < 0.1) bioUploadState.bitRate = 0;
+    }
+
     // Update boot sequence
     if (hudBootState.phase === 'booting') {
         updateHUDBoot(dt);
     }
 }
 
+function updateHealthFreakout(dt) {
+    const healthPct = ufo ? ufo.health / CONFIG.UFO_START_HEALTH : 1.0;
+    if (healthPct >= 0.25) {
+        healthFreakoutState.sparks = [];
+        healthFreakoutState.smokePuffs = [];
+        healthFreakoutState.warningToneTimer = 0;
+        return;
+    }
+
+    // Warning tone system
+    healthFreakoutState.warningToneTimer += dt;
+    let stage = 0, interval = 2.0;
+    if (healthPct < 0.05) { stage = 3; interval = 0.8; }
+    else if (healthPct < 0.15) { stage = 2; interval = 1.2; }
+    else if (healthPct < 0.25) { stage = 1; interval = 2.0; }
+
+    if (stage > 0 && healthFreakoutState.warningToneTimer >= interval) {
+        healthFreakoutState.warningToneTimer = 0;
+        SFX.healthWarning(stage);
+    }
+
+    // Spark particles (health < 10%)
+    if (healthPct < 0.10) {
+        if (Math.random() < dt * 3) {
+            const side = Math.random() < 0.5 ? 'left' : 'right';
+            const baseX = side === 'left' ? 10 + Math.random() * 210 : canvas.width - 205 + Math.random() * 195;
+            const baseY = Math.random() * canvas.height;
+            healthFreakoutState.sparks.push({
+                x: baseX, y: baseY,
+                vx: (Math.random() - 0.5) * 80,
+                vy: -20 - Math.random() * 40,
+                life: 0, maxLife: 0.2 + Math.random() * 0.3,
+                color: Math.random() < 0.33 ? '#ff0' : (Math.random() < 0.5 ? '#f80' : '#f44')
+            });
+        }
+        if (healthFreakoutState.sparks.length > 30) {
+            healthFreakoutState.sparks.splice(0, healthFreakoutState.sparks.length - 30);
+        }
+    }
+
+    // Update spark positions
+    for (let i = healthFreakoutState.sparks.length - 1; i >= 0; i--) {
+        const s = healthFreakoutState.sparks[i];
+        s.life += dt;
+        s.x += s.vx * dt;
+        s.y += s.vy * dt;
+        s.vy += 40 * dt;
+        if (s.life >= s.maxLife) {
+            healthFreakoutState.sparks.splice(i, 1);
+        }
+    }
+
+    // Smoke puffs from UFO (health < 10%)
+    if (healthPct < 0.10 && ufo) {
+        if (Math.random() < dt * 2) {
+            healthFreakoutState.smokePuffs.push({
+                x: ufo.x + (Math.random() - 0.5) * 40,
+                y: ufo.y - 10,
+                vx: (Math.random() - 0.5) * 5,
+                vy: -10 - Math.random() * 10,
+                life: 0, maxLife: 0.8 + Math.random() * 0.7,
+                radius: 4 + Math.random() * 4
+            });
+        }
+        if (healthFreakoutState.smokePuffs.length > 10) {
+            healthFreakoutState.smokePuffs.splice(0, healthFreakoutState.smokePuffs.length - 10);
+        }
+    }
+
+    // Update smoke puffs
+    for (let i = healthFreakoutState.smokePuffs.length - 1; i >= 0; i--) {
+        const p = healthFreakoutState.smokePuffs[i];
+        p.life += dt;
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vx += (Math.random() - 0.5) * dt * 5;
+        p.radius *= 1 + dt * 0.5;
+        if (p.life >= p.maxLife) {
+            healthFreakoutState.smokePuffs.splice(i, 1);
+        }
+    }
+
+    // Structural stress sound (health < 5%)
+    if (healthPct < 0.05) {
+        const now = Date.now();
+        if (now - healthFreakoutState.lastJoltTime > 500 + Math.random() * 500) {
+            healthFreakoutState.lastJoltTime = now;
+            SFX.structuralStress();
+        }
+    }
+}
+
+function renderHealthFreakout(layout) {
+    const healthPct = ufo ? ufo.health / CONFIG.UFO_START_HEALTH : 1.0;
+    if (healthPct >= 0.25) return;
+
+    // Tier 1: Red tint overlay (health < 25%)
+    const tintAlpha = (0.25 - healthPct) * 0.08;
+    const pulse = Math.sin(Date.now() / (healthPct < 0.10 ? 300 : 800)) * 0.5 + 0.5;
+    ctx.fillStyle = `rgba(255, 0, 0, ${tintAlpha * pulse})`;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Tier 2: Render spark particles (health < 10%)
+    for (const s of healthFreakoutState.sparks) {
+        const alpha = 1 - s.life / s.maxLife;
+        ctx.fillStyle = s.color;
+        ctx.globalAlpha = alpha;
+        const size = 1 + (s.life < s.maxLife * 0.3 ? 1 : 0);
+        ctx.fillRect(s.x, s.y, size, size);
+    }
+    ctx.globalAlpha = 1;
+
+    // Render smoke puffs from UFO
+    for (const p of healthFreakoutState.smokePuffs) {
+        const alpha = 0.3 * (1 - p.life / p.maxLife);
+        ctx.fillStyle = `rgba(60, 60, 60, ${alpha})`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // Tier 3: Red vignette (health < 5%)
+    if (healthPct < 0.05) {
+        const vigAlpha = 0.1 + 0.1 * Math.sin(Date.now() / 150);
+        const grad = ctx.createRadialGradient(
+            canvas.width / 2, canvas.height / 2, Math.min(canvas.width, canvas.height) * 0.35,
+            canvas.width / 2, canvas.height / 2, Math.max(canvas.width, canvas.height) * 0.7
+        );
+        grad.addColorStop(0, 'rgba(255, 0, 0, 0)');
+        grad.addColorStop(1, `rgba(255, 0, 0, ${vigAlpha})`);
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        if (Math.random() < 0.1) {
+            SFX.panelFlicker();
+        }
+    }
+}
+
 function initHUDBoot() {
     hudBootState.phase = 'booting';
     hudBootState.timer = 0;
-    hudBootState.duration = 3.5;
+    hudBootState.duration = 5.5;
     hudBootState._allOnlinePlayed = false;
     pushOpsLogEvent(`-- WAVE ${wave} --`, '#fff', { type: 'waveStart', bold: true, skipThrottle: true });
+
+    // Initialize pre-boot wrapper
+    preBootState.phase = 'crt';
+    preBootState.timer = 0;
+    preBootState.crtProgress = 0;
+    preBootState.logoAlpha = 0;
+    preBootState.traceProgress = 0;
+    preBootState.postTextIndex = 0;
+    preBootState.postTextAlpha = 1.0;
+    preBootState.borderPersist = 0;
+    preBootState._crtSoundPlayed = false;
+    preBootState._chimeSoundPlayed = false;
+    preBootState._onlineSoundPlayed = false;
+    preBootState._cornerSoundsPlayed = [false, false, false, false];
 
     // Snapshot current tech state
     hudBootState.techSnapshot = {
@@ -14670,43 +15797,111 @@ function initHUDBoot() {
 function updateHUDBoot(dt) {
     hudBootState.timer += dt;
 
+    // Pre-boot phase management
+    const preBoot = preBootState;
+    if (preBoot.phase === 'crt') {
+        preBoot.timer += dt;
+        preBoot.crtProgress = Math.min(1, preBoot.timer / 0.3);
+        if (preBoot.timer >= 0.2 && !preBoot._crtSoundPlayed) {
+            preBoot._crtSoundPlayed = true;
+            SFX.crtTurnOn();
+        }
+        if (preBoot.timer >= 0.3) {
+            preBoot.phase = 'logo';
+            preBoot.timer = 0;
+            if (!preBoot._chimeSoundPlayed) {
+                preBoot._chimeSoundPlayed = true;
+                SFX.alienStartupChime();
+            }
+        }
+    } else if (preBoot.phase === 'logo') {
+        preBoot.timer += dt;
+        preBoot.logoAlpha = Math.min(1, preBoot.timer / 0.2);
+        if (preBoot.timer >= 0.5) {
+            preBoot.phase = 'dissolve';
+            preBoot.timer = 0;
+        }
+    } else if (preBoot.phase === 'dissolve') {
+        preBoot.timer += dt;
+        preBoot.logoAlpha = Math.max(0, 1 - preBoot.timer / 0.2);
+        if (preBoot.timer >= 0.2) {
+            preBoot.phase = 'trace';
+            preBoot.timer = 0;
+        }
+    } else if (preBoot.phase === 'trace') {
+        preBoot.timer += dt;
+        preBoot.traceProgress = Math.min(1, preBoot.timer / 0.75);
+
+        // Corner tone triggers
+        const corners = [0, 0.165, 0.33, 0.495];
+        for (let i = 0; i < 4; i++) {
+            if (preBoot.traceProgress >= corners[i] / 0.75 && !preBoot._cornerSoundsPlayed[i]) {
+                preBoot._cornerSoundsPlayed[i] = true;
+                SFX.borderTraceCorner(i);
+            }
+        }
+
+        // Panel boot triggers based on trace position
+        const panelTriggers = {
+            status: 0.01, mission: 0.07, systems: 0.14,
+            fleet: 0.20, commander: 0.42, opslog: 0.55,
+            diagnostics: 0.60, weapons: 0.70
+        };
+        const p = hudBootState.panels;
+        for (const [key, triggerProgress] of Object.entries(panelTriggers)) {
+            const panel = p[key];
+            if (panel.active && panel.phase === 'waiting' && preBoot.traceProgress >= triggerProgress) {
+                panel.phase = 'booting';
+                panel.progress = 0;
+                panel._bootStartTimer = hudBootState.timer;
+                panel._lastDiagLine = -1;
+                SFX.bootPanelStart && SFX.bootPanelStart();
+            }
+        }
+
+        if (preBoot.timer >= 0.75) {
+            preBoot.phase = 'panel_boot';
+            preBoot.timer = 0;
+        }
+    } else if (preBoot.phase === 'panel_boot') {
+        preBoot.timer += dt;
+    }
+
+    // Panel progress updates (only when panels have been triggered)
     const p = hudBootState.panels;
     let allOnline = true;
 
     for (const [key, panel] of Object.entries(p)) {
         if (!panel.active) continue;
 
-        const elapsed = hudBootState.timer - panel.startTime;
-        if (elapsed < 0) {
+        if (panel.phase === 'waiting') {
+            // Panel not yet triggered by trace - skip but mark not all online
             allOnline = false;
             continue;
         }
 
-        if (panel.phase === 'waiting') {
-            panel.phase = 'booting';
-            panel._lastDiagLine = -1;
-            SFX.bootPanelStart && SFX.bootPanelStart();
-        }
+        if (panel.phase === 'booting') {
+            const elapsed = hudBootState.timer - (panel._bootStartTimer || panel.startTime);
+            panel.progress = Math.min(1, elapsed / panel.duration);
 
-        panel.progress = Math.min(1, elapsed / panel.duration);
-
-        // Play data chatter when a new diagnostic line becomes visible
-        if (panel.phase === 'booting' && hudBootState.bootLines[key]) {
-            const visibleLine = Math.floor(panel.progress * hudBootState.bootLines[key].length);
-            if (visibleLine > (panel._lastDiagLine || -1)) {
-                panel._lastDiagLine = visibleLine;
-                const lineText = hudBootState.bootLines[key][visibleLine] || '';
-                if (lineText.startsWith('[SKIP]')) {
-                    SFX.bootMissileSkip && SFX.bootMissileSkip();
-                } else {
-                    SFX.bootDataChatter && SFX.bootDataChatter();
+            // Play data chatter when a new diagnostic line becomes visible
+            if (hudBootState.bootLines[key]) {
+                const visibleLine = Math.floor(panel.progress * hudBootState.bootLines[key].length);
+                if (visibleLine > (panel._lastDiagLine || -1)) {
+                    panel._lastDiagLine = visibleLine;
+                    const lineText = hudBootState.bootLines[key][visibleLine] || '';
+                    if (lineText.startsWith('[SKIP]')) {
+                        SFX.bootMissileSkip && SFX.bootMissileSkip();
+                    } else {
+                        SFX.bootDataChatter && SFX.bootDataChatter();
+                    }
                 }
             }
-        }
 
-        if (panel.progress >= 1 && panel.phase === 'booting') {
-            panel.phase = 'online';
-            SFX.bootPanelOnline && SFX.bootPanelOnline();
+            if (panel.progress >= 1) {
+                panel.phase = 'online';
+                SFX.bootPanelOnline && SFX.bootPanelOnline();
+            }
         }
 
         if (panel.phase !== 'online') {
@@ -14722,6 +15917,7 @@ function updateHUDBoot(dt) {
 
     if (hudBootState.timer >= hudBootState.duration) {
         hudBootState.phase = 'complete';
+        preBootState.phase = 'inactive';
     }
 }
 
@@ -15028,32 +16224,176 @@ function renderPanelBootOverlay(zone, h, color, label, panelState, bootLines) {
 
 function renderHUDBootGlobalEffects() {
     if (hudBootState.phase !== 'booting') return;
+    const pb = preBootState;
+    const totalBootTime = hudBootState.timer;
 
-    const timer = hudBootState.timer;
+    // CRT turn-on effect
+    if (pb.phase === 'crt') {
+        // Black screen
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // CRT power-on flash (first 200ms)
-    if (timer < 0.2) {
-        const halfH = canvas.height / 2;
-        if (timer < 0.1) {
-            // Expanding white line from center
-            const expandProgress = timer / 0.1;
-            const lineH = Math.max(1, expandProgress * canvas.height);
-            const lineY = halfH - lineH / 2;
-            const alpha = 0.7 * (1 - expandProgress * 0.3);
+        if (pb.timer < 0.1) {
+            // Horizontal expanding line
+            const progress = pb.timer / 0.1;
+            const lineW = canvas.width * easeOutCubic(progress);
+            const lineX = (canvas.width - lineW) / 2;
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(lineX, canvas.height / 2, lineW, 1);
+        } else if (pb.timer < 0.3) {
+            // Vertical expansion
+            const progress = (pb.timer - 0.1) / 0.2;
+            const rectH = canvas.height * easeOutCubic(progress);
+            const rectY = (canvas.height - rectH) / 2;
+            const alpha = 0.8 * (1 - progress * 0.6);
             ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
-            ctx.fillRect(0, lineY, canvas.width, lineH);
-        } else {
-            // Fading out
-            const fadeProgress = (timer - 0.1) / 0.1;
-            const alpha = 0.5 * (1 - fadeProgress);
-            ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillRect(0, rectY, canvas.width, rectH);
         }
     }
 
-    // "ALL SYSTEMS NOMINAL" text (timer 3.0 - 3.5s)
-    if (timer >= 3.0 && timer <= 3.5) {
-        // Check if all active panels are online
+    // Logo display
+    if (pb.phase === 'logo' || (pb.phase === 'dissolve' && pb.logoAlpha > 0)) {
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.save();
+        ctx.globalAlpha = pb.logoAlpha;
+
+        // Hexagonal grid behind text (very faint)
+        ctx.strokeStyle = 'rgba(0, 255, 255, 0.04)';
+        ctx.lineWidth = 0.5;
+        const gridCX = canvas.width / 2;
+        const gridCY = canvas.height / 2;
+        for (let gx = gridCX - 100; gx < gridCX + 100; gx += 24) {
+            for (let gy = gridCY - 60; gy < gridCY + 60; gy += 21) {
+                const offsetX = (Math.floor(gy / 21) % 2) * 12;
+                renderHexagon(gx + offsetX, gy, 10);
+                ctx.stroke();
+            }
+        }
+
+        // Main title
+        ctx.fillStyle = '#0ff';
+        ctx.font = 'bold 24px monospace';
+        ctx.textAlign = 'center';
+        ctx.shadowColor = '#0ff';
+        ctx.shadowBlur = 8;
+        ctx.fillText('ALIEN QUANTUM OS', canvas.width / 2, canvas.height / 2 - 20);
+        ctx.shadowBlur = 0;
+
+        // Version
+        ctx.fillStyle = 'rgba(0, 255, 255, 0.6)';
+        ctx.font = '9px monospace';
+        ctx.fillText('v7.3.1 // QUANTUM ENTANGLEMENT CORE', canvas.width / 2, canvas.height / 2 + 10);
+
+        // Initializing text
+        const dots = '.'.repeat(1 + Math.floor(Date.now() / 200) % 3);
+        ctx.fillStyle = 'rgba(0, 255, 255, 0.4)';
+        ctx.fillText('[ INITIALIZING' + dots + ' ]', canvas.width / 2, canvas.height / 2 + 30);
+
+        // Orbiting dots
+        const orbitT = Date.now() / 3000 * Math.PI * 2;
+        for (let i = 0; i < 3; i++) {
+            const angle = orbitT + i * (Math.PI * 2 / 3);
+            const dx = Math.cos(angle) * 90;
+            const dy = Math.sin(angle) * 50;
+            ctx.fillStyle = '#0ff';
+            ctx.shadowColor = '#0ff';
+            ctx.shadowBlur = 4;
+            ctx.beginPath();
+            ctx.arc(canvas.width / 2 + dx, canvas.height / 2 + dy, 1.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        }
+
+        ctx.restore();
+    }
+
+    // Border trace
+    if (pb.phase === 'trace' || (pb.phase === 'panel_boot' && pb.timer < 0.5)) {
+        const progress = Math.min(1, pb.traceProgress);
+        const perimeterTotal = 2 * (canvas.width + canvas.height);
+
+        function borderTraceEase(t) {
+            const seg = Math.floor(t * 4);
+            const segT = (t * 4) - seg;
+            const easedSegT = 1 - Math.pow(1 - segT, 2.5);
+            return Math.min(1, (seg + easedSegT) / 4);
+        }
+
+        function getPerimeterPoint(dist) {
+            dist = ((dist % perimeterTotal) + perimeterTotal) % perimeterTotal;
+            if (dist < canvas.width) return { x: dist, y: 0 };
+            dist -= canvas.width;
+            if (dist < canvas.height) return { x: canvas.width, y: dist };
+            dist -= canvas.height;
+            if (dist < canvas.width) return { x: canvas.width - dist, y: canvas.height };
+            dist -= canvas.width;
+            return { x: 0, y: canvas.height - dist };
+        }
+
+        const distance = borderTraceEase(progress) * perimeterTotal;
+
+        // Persistent border (already traced)
+        ctx.strokeStyle = 'rgba(0, 255, 0, 0.3)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        const steps = 100;
+        for (let i = 0; i <= steps; i++) {
+            const d = (i / steps) * distance;
+            const pt = getPerimeterPoint(d);
+            if (i === 0) ctx.moveTo(pt.x, pt.y);
+            else ctx.lineTo(pt.x, pt.y);
+        }
+        ctx.stroke();
+
+        // Trace dot
+        if (progress < 1) {
+            const pt = getPerimeterPoint(distance);
+            ctx.fillStyle = '#fff';
+            ctx.shadowColor = '#0f0';
+            ctx.shadowBlur = 8;
+            ctx.beginPath();
+            ctx.arc(pt.x, pt.y, 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+
+            // Trail
+            for (let i = 1; i <= 8; i++) {
+                const trailDist = distance - i * 5;
+                if (trailDist < 0) continue;
+                const tpt = getPerimeterPoint(trailDist);
+                const alpha = 0.3 * (1 - i / 8);
+                ctx.fillStyle = `rgba(0, 255, 0, ${alpha})`;
+                ctx.fillRect(tpt.x - 1, tpt.y - 1, 2, 2);
+            }
+        }
+    }
+
+    // Post-boot text: "ALIEN QUANTUM OS IS NOW ONLINE"
+    if (totalBootTime >= hudBootState.duration - 1.0 && totalBootTime <= hudBootState.duration) {
+        const postProgress = (totalBootTime - (hudBootState.duration - 1.0)) / 1.0;
+        const text = 'ALIEN QUANTUM OS IS NOW ONLINE';
+        const charsShown = Math.floor(postProgress * text.length * 2);
+        const visibleText = text.substring(0, Math.min(text.length, charsShown));
+
+        if (!preBootState._onlineSoundPlayed && postProgress < 0.05) {
+            preBootState._onlineSoundPlayed = true;
+            SFX.alienQuantumOnline();
+        }
+
+        const alpha = postProgress > 0.8 ? Math.max(0, 1 - (postProgress - 0.8) / 0.2) : 1.0;
+        ctx.fillStyle = `rgba(0, 255, 255, ${alpha})`;
+        ctx.font = 'bold 14px monospace';
+        ctx.textAlign = 'center';
+        ctx.shadowColor = '#0ff';
+        ctx.shadowBlur = 6;
+        ctx.fillText(visibleText, canvas.width / 2, canvas.height / 2);
+        ctx.shadowBlur = 0;
+    }
+
+    // "ALL SYSTEMS NOMINAL" - adjusted timing
+    if (totalBootTime >= hudBootState.duration - 1.5 && totalBootTime <= hudBootState.duration - 0.5) {
         let allOnline = true;
         for (const [key, panel] of Object.entries(hudBootState.panels)) {
             if (panel.active && panel.phase !== 'online') {
@@ -15061,17 +16401,13 @@ function renderHUDBootGlobalEffects() {
                 break;
             }
         }
-
         if (allOnline) {
-            const textProgress = (timer - 3.0) / 0.5;
-            const alpha = textProgress < 0.3 ? textProgress / 0.3 :
-                         textProgress < 0.7 ? 1.0 :
-                         1.0 - (textProgress - 0.7) / 0.3;
-            const scale = 1.0 + (1 - textProgress) * 0.1;
-
+            const nomProgress = (totalBootTime - (hudBootState.duration - 1.5)) / 1.0;
+            const alpha = nomProgress < 0.3 ? nomProgress / 0.3 :
+                         nomProgress < 0.7 ? 1.0 :
+                         1.0 - (nomProgress - 0.7) / 0.3;
             ctx.save();
-            ctx.translate(canvas.width / 2, canvas.height / 2);
-            ctx.scale(scale, scale);
+            ctx.translate(canvas.width / 2, canvas.height / 2 - 30);
             ctx.font = 'bold 18px monospace';
             ctx.textAlign = 'center';
             ctx.fillStyle = `rgba(255, 255, 255, ${Math.max(0, alpha)})`;
@@ -21326,6 +22662,7 @@ function render() {
 
     // Render UI (not affected by shake) - NGE Evangelion HUD
     renderHUDFrame();
+    renderHealthFreakout(getHUDLayout()); // After HUD, before boot effects
 
     // Boot sequence global effects (CRT flash, ALL SYSTEMS NOMINAL)
     renderHUDBootGlobalEffects();
