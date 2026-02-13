@@ -7601,37 +7601,55 @@ class Bomb {
 
     render() {
         if (!this.alive) return;
-
         ctx.save();
         ctx.translate(this.x, this.y);
         ctx.rotate(this.rotation);
 
-        // Bomb body (dark gray sphere)
-        ctx.fillStyle = '#333';
+        const r = this.radius;
+        const now = Date.now();
+
+        // Outer shadow/glow (fuzzy dark edge)
+        ctx.shadowColor = 'rgba(30, 0, 50, 0.8)';
+        ctx.shadowBlur = 8;
+
+        // Main black orb with radial gradient (black center → transparent edge)
+        const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+        grad.addColorStop(0, 'rgba(0, 0, 0, 1)');
+        grad.addColorStop(0.6, 'rgba(5, 0, 10, 0.95)');
+        grad.addColorStop(0.85, 'rgba(10, 0, 20, 0.6)');
+        grad.addColorStop(1, 'rgba(15, 0, 30, 0)');
+        ctx.fillStyle = grad;
         ctx.beginPath();
-        ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Solid dark core (ensures true black center)
+        ctx.fillStyle = '#000';
+        ctx.beginPath();
+        ctx.arc(0, 0, r * 0.55, 0, Math.PI * 2);
         ctx.fill();
 
-        // Highlight
-        ctx.fillStyle = '#666';
-        ctx.beginPath();
-        ctx.arc(-3, -3, this.radius * 0.4, 0, Math.PI * 2);
-        ctx.fill();
+        // Dithered glitchy purple pixels scattered through the orb
+        const purples = ['#2a0030', '#1a0020', '#3b0050', '#200030', '#350045', '#180025'];
+        const seed = Math.floor(now / 80); // shifts every 80ms for subtle glitch
+        for (let i = 0; i < 14; i++) {
+            // Pseudo-random positions seeded by index + time
+            const angle = (i * 2.39996 + seed * 0.1) % (Math.PI * 2);
+            const dist = (((i * 7 + seed * 3) % 17) / 17) * r * 0.85;
+            const px = Math.cos(angle) * dist;
+            const py = Math.sin(angle) * dist;
+            const size = 1 + (i % 3);
 
-        // Fuse
-        ctx.strokeStyle = '#8B4513';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(0, -this.radius);
-        ctx.lineTo(0, -this.radius - 8);
-        ctx.stroke();
-
-        // Fuse spark
-        const sparkIntensity = Math.sin(Date.now() / 50) * 0.5 + 0.5;
-        ctx.fillStyle = `rgba(255, ${150 + sparkIntensity * 105}, 0, ${sparkIntensity})`;
-        ctx.beginPath();
-        ctx.arc(0, -this.radius - 8, 3 + sparkIntensity * 2, 0, Math.PI * 2);
-        ctx.fill();
+            // Flicker: some pixels appear/disappear
+            const flicker = Math.sin(now / 120 + i * 1.7) * 0.5 + 0.5;
+            if (flicker > 0.25) {
+                ctx.globalAlpha = flicker * 0.7;
+                ctx.fillStyle = purples[i % purples.length];
+                ctx.fillRect(px - size/2, py - size/2, size, size);
+            }
+        }
+        ctx.globalAlpha = 1;
 
         ctx.restore();
     }
@@ -13369,7 +13387,8 @@ function renderNGEBar(x, y, w, h, percent, color, opts = {}) {
         pulse = false,
         showValue = false,
         valueText = '',
-        bgColor = '#0a0c14'
+        bgColor = '#0a0c14',
+        solid = false
     } = opts;
 
     percent = Math.max(0, Math.min(1, percent));
@@ -13381,6 +13400,33 @@ function renderNGEBar(x, y, w, h, percent, color, opts = {}) {
     // Background
     ctx.fillStyle = bgColor;
     ctx.fillRect(x, y, w, h);
+
+    if (solid) {
+        // Solid continuous bar (no segmentation gaps)
+        const fillW = w * percent;
+        if (fillW > 0) {
+            if (pulse && percent < 0.25) {
+                const p = Math.sin(Date.now() / 150) * 0.3 + 0.7;
+                ctx.globalAlpha = p;
+            }
+            if (glow) {
+                ctx.shadowColor = typeof color === 'string' ? color : '#0ff';
+                ctx.shadowBlur = 4;
+            }
+            ctx.fillStyle = typeof color === 'string' ? color : '#0ff';
+            ctx.fillRect(x, y, fillW, h);
+            ctx.shadowBlur = 0;
+            ctx.globalAlpha = 1;
+            // Top edge shine
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+            ctx.fillRect(x, y, fillW, 1);
+        }
+        // Empty portion
+        if (fillW < w) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+            ctx.fillRect(x + fillW, y, w - fillW, h);
+        }
+    } else {
 
     // Segments
     for (let i = 0; i < segments; i++) {
@@ -13425,6 +13471,7 @@ function renderNGEBar(x, y, w, h, percent, color, opts = {}) {
             ctx.fillRect(segX, y, segWidth, h);
         }
     }
+    } // end solid/segmented branch
 
     // Border
     ctx.strokeStyle = `rgba(${hexToRgb(typeof color === 'string' ? color : '#0ff')}, 0.4)`;
@@ -15576,20 +15623,31 @@ function renderWeaponsZone(zone) {
         const owned = i < ownedBombs;
 
         if (filled) {
-            // Active bomb
-            ctx.fillStyle = '#444';
+            // Black orb style bomb
+            const bombGrad = ctx.createRadialGradient(bx, by, 0, bx, by, bombSize / 2);
+            bombGrad.addColorStop(0, '#000');
+            bombGrad.addColorStop(0.5, 'rgba(5, 0, 10, 0.95)');
+            bombGrad.addColorStop(0.85, 'rgba(20, 0, 35, 0.5)');
+            bombGrad.addColorStop(1, 'rgba(15, 0, 30, 0)');
+            ctx.fillStyle = bombGrad;
             ctx.beginPath();
             ctx.arc(bx, by, bombSize / 2, 0, Math.PI * 2);
             ctx.fill();
-            ctx.fillStyle = '#666';
+            // Dark core
+            ctx.fillStyle = '#000';
             ctx.beginPath();
-            ctx.arc(bx - 2, by - 2, bombSize / 4, 0, Math.PI * 2);
+            ctx.arc(bx, by, bombSize / 4, 0, Math.PI * 2);
             ctx.fill();
-            const sparkIntensity = Math.sin(Date.now() / 100 + i) * 0.5 + 0.5;
-            ctx.fillStyle = `rgba(255, ${150 + sparkIntensity * 100}, 0, ${0.7 + sparkIntensity * 0.3})`;
-            ctx.beginPath();
-            ctx.arc(bx, by - bombSize / 2 - 2, 2 + sparkIntensity, 0, Math.PI * 2);
-            ctx.fill();
+            // Dithered purple pixel
+            const purpleFlicker = Math.sin(Date.now() / 100 + i * 2.3) * 0.5 + 0.5;
+            if (purpleFlicker > 0.3) {
+                ctx.globalAlpha = purpleFlicker * 0.6;
+                ctx.fillStyle = '#2a0030';
+                ctx.fillRect(bx - 2, by - 1, 2, 2);
+                ctx.fillStyle = '#3b0050';
+                ctx.fillRect(bx + 1, by + 1, 1, 1);
+                ctx.globalAlpha = 1;
+            }
         } else if (owned) {
             // Owned but empty (recharging)
             ctx.fillStyle = '#1a1a1a';
@@ -15772,6 +15830,121 @@ function getFleetStatusType(state, energyPercent) {
     }
 }
 
+// Fleet status text — compact military-style status label per entity state
+function getFleetStatusText(state, energyPercent, type) {
+    switch (state) {
+        case 'FALLING': return 'DROP.SEQ';
+        case 'LANDING': return 'LND.LOCK';
+        case 'UNFOLDING': return 'SYS.INIT';
+        case 'DEPLOYING': return 'DEPLOY';
+        case 'SEEKING': return type === 'harvester' ? 'TGT.SCAN' : 'TGT.ACQ';
+        case 'COLLECTING': return 'RES.LOCK';
+        case 'DELIVERING': return 'RTN.BASE';
+        case 'ATTACKING': return 'WPN.HOT';
+        case 'PATROLLING': return 'GRD.SWP';
+        case 'ACTIVE': return energyPercent < 0.25 ? 'PWR.LOW' : 'NOMINAL';
+        case 'LOW_ENERGY': return 'NRG.CRIT';
+        case 'DYING': return 'MAYDAY';
+        case 'POWER_OFF': return 'OFFLINE';
+        default: return energyPercent < 0.25 ? 'PWR.LOW' : 'NOMINAL';
+    }
+}
+
+// Fleet micro energy matrix — tiny NRG-style pixel grid per entity
+function renderFleetMicroGrid(gx, gy, energyPct, entityColor, now) {
+    const cols = 5;
+    const rows = 2;
+    const cellSize = 2;
+    const cellGap = 1;
+    const totalCells = cols * rows;
+    const filledCells = Math.floor(energyPct * totalCells);
+
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+            const ci = r * cols + c;
+            const cx = gx + c * (cellSize + cellGap);
+            const cy = gy + r * (cellSize + cellGap);
+
+            if (ci < filledCells) {
+                const phase = Math.sin(now / 200 + ci * 0.9) * 0.15;
+                const flicker = energyPct < 0.25 && Math.random() > 0.6 ? 0.3 : 0;
+                ctx.globalAlpha = Math.min(1, 0.55 + phase + flicker);
+                ctx.fillStyle = energyPct > 0.5 ? entityColor : energyPct > 0.25 ? '#fc0' : '#f44';
+                ctx.fillRect(cx, cy, cellSize, cellSize);
+                ctx.globalAlpha = 1;
+            } else {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
+                ctx.fillRect(cx, cy, cellSize, cellSize);
+            }
+        }
+    }
+}
+
+// Fleet micro status element — state-reactive compact readout per entity
+function renderFleetMicroStatus(mx, my, entity, entityColor, now) {
+    const energyPct = entity.energyTimer / entity.maxEnergy;
+
+    switch (entity.state) {
+        case 'COLLECTING': {
+            // Batch progress dots (harvest cargo indicator)
+            const batchMax = entity.batchSize || 3;
+            const batchCur = entity.batchCount || 0;
+            for (let i = 0; i < batchMax; i++) {
+                ctx.fillStyle = i < batchCur ? entityColor : 'rgba(255,255,255,0.06)';
+                ctx.fillRect(mx + i * 4, my + 1, 2, 2);
+            }
+            // Collect progress bar
+            const prog = entity.collectProgress || 0;
+            ctx.fillStyle = entityColor;
+            ctx.globalAlpha = 0.4;
+            ctx.fillRect(mx, my + 4, prog * batchMax * 4, 1);
+            ctx.globalAlpha = 1;
+            break;
+        }
+        case 'ATTACKING': {
+            // Fire-rate flicker bars
+            for (let i = 0; i < 4; i++) {
+                const a = Math.sin(now / 40 + i * 1.8) * 0.4 + 0.5;
+                ctx.globalAlpha = a;
+                ctx.fillStyle = '#f44';
+                ctx.fillRect(mx + i * 4, my, 2, 3);
+            }
+            ctx.globalAlpha = 1;
+            break;
+        }
+        case 'SEEKING': case 'PATROLLING': {
+            // Scan sweep animation
+            const sweep = (now / 120) % (5 * 3);
+            for (let i = 0; i < 5; i++) {
+                const dist = Math.abs(i * 3 - sweep);
+                const a = Math.max(0.06, 1 - dist / 6);
+                ctx.globalAlpha = a;
+                ctx.fillStyle = entityColor;
+                ctx.fillRect(mx + i * 3, my + 1, 2, 2);
+            }
+            ctx.globalAlpha = 1;
+            break;
+        }
+        case 'DELIVERING': {
+            // Return pulse — dot bouncing back toward start
+            const bounce = Math.sin(now / 200) * 0.5 + 0.5;
+            const bx = mx + (1 - bounce) * 14;
+            ctx.fillStyle = entityColor;
+            ctx.globalAlpha = 0.7;
+            ctx.fillRect(bx, my + 1, 2, 2);
+            // Trail
+            ctx.globalAlpha = 0.2;
+            ctx.fillRect(bx + 3, my + 1, 4, 1);
+            ctx.globalAlpha = 1;
+            break;
+        }
+        default: {
+            // Energy micro grid
+            renderFleetMicroGrid(mx, my, energyPct, entityColor, now);
+        }
+    }
+}
+
 // Fleet status micro-indicator — tiny animated symbols (diamonds, dots, squares, triangles)
 function renderFleetStatusIndicator(fx, fy, statusType, now) {
     const s = 5;
@@ -15872,7 +16045,7 @@ function renderFleetZone(zone) {
     let harvCoordNum = 0;
     let atkCoordNum = 0;
 
-    // === COORDINATOR SECTIONS (with horizontal borders, canvas lines, stretched bars) ===
+    // === COORDINATOR SECTIONS (separator lines, status text, solid bars, section flash) ===
     for (let ci = 0; ci < aliveCoords.length; ci++) {
         const coord = aliveCoords[ci];
         const isHarvester = coord.type === 'harvester';
@@ -15884,16 +16057,15 @@ function renderFleetZone(zone) {
         const coordColor = isHarvester ? '#0dc' : '#fa0';
         const energyPercent = coord.energyTimer / coord.maxEnergy;
         const timeLeft = Math.ceil(coord.energyTimer);
+        const sectionStartY = curY - 5;
 
-        // Horizontal border between coordinator sections
-        if (ci > 0) {
-            ctx.strokeStyle = 'rgba(68, 136, 255, 0.2)';
-            ctx.lineWidth = 0.5;
-            ctx.beginPath();
-            ctx.moveTo(x + pad, curY - 5);
-            ctx.lineTo(x + w - pad, curY - 5);
-            ctx.stroke();
-        }
+        // Full-width separator line above EVERY coordinator (cognitive section divider)
+        ctx.strokeStyle = 'rgba(68, 136, 255, 0.15)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x + 2, curY - 5);
+        ctx.lineTo(x + w - 2, curY - 5);
+        ctx.stroke();
 
         // Canvas-drawn connector line (replaces ASCII ├─)
         ctx.strokeStyle = '#445';
@@ -15909,15 +16081,21 @@ function renderFleetZone(zone) {
         ctx.font = 'bold 9px monospace';
         ctx.fillText(coordLabel, x + pad + 14, curY + 4);
 
-        // Status indicator (tiny animated symbol)
-        const coordStatus = getFleetStatusType(coord.state, energyPercent);
-        renderFleetStatusIndicator(x + pad + 78, curY, coordStatus, now);
+        // Status text (replaces icon — compact military-style label)
+        const coordStatusText = getFleetStatusText(coord.state, energyPercent, coord.type);
+        const coordStatusColor = energyPercent < 0.15 ? '#f44' : energyPercent < 0.25 ? '#fc0' : 'rgba(136, 153, 170, 0.7)';
+        ctx.fillStyle = coordStatusColor;
+        ctx.font = '7px monospace';
+        ctx.fillText(coordStatusText, x + pad + 74, curY + 3);
 
-        // Stretched energy bar (fills most of panel width)
+        // Micro energy grid (NRG-style pixel matrix)
+        renderFleetMicroGrid(x + w - pad - 30, curY - 1, energyPercent, coordColor, now);
+
+        // Solid energy bar (no segmentation — continuous pixel fill)
         const coordBarX = x + pad + 14;
         const coordBarW = w - pad * 2 - 38;
         renderNGEBar(coordBarX, curY + 8, coordBarW, 5, energyPercent, coordColor, {
-            segments: Math.max(6, Math.floor(coordBarW / 8)),
+            solid: true,
             pulse: energyPercent < 0.25
         });
 
@@ -15947,11 +16125,30 @@ function renderFleetZone(zone) {
 
         curY += rowH;
 
-        // === SUB-DRONES (canvas lines, d.01 naming, stretched bars, status indicators) ===
+        // === SUB-DRONES (uppercase D, status text, micro readouts, segmented bars, critical flash) ===
         const aliveSubDrones = coord.subDrones ? coord.subDrones.filter(d => d.alive) : [];
         for (let si = 0; si < aliveSubDrones.length; si++) {
             const sub = aliveSubDrones[si];
             const isLastSub = si === aliveSubDrones.length - 1;
+            const subEnergyPercent = sub.energyTimer / sub.maxEnergy;
+            const subColor = sub.type === 'harvester' ? '#0a0' : '#a44';
+
+            // Critical/dying row flash (whole row strobes when about to die)
+            const subIsCritical = subEnergyPercent < 0.15 || sub.state === 'DYING' || sub.state === 'POWER_OFF';
+            if (subIsCritical && sub.state !== 'POWER_OFF') {
+                const rowFlashPhase = Math.floor(now / 80) % 4;
+                let rowFc;
+                switch (rowFlashPhase) {
+                    case 0: rowFc = subColor; break;
+                    case 1: rowFc = '#000'; break;
+                    case 2: rowFc = '#f33'; break;
+                    default: rowFc = '#000'; break;
+                }
+                ctx.fillStyle = rowFc;
+                ctx.globalAlpha = 0.15;
+                ctx.fillRect(x + pad, curY - 4, w - pad * 2, rowH - 2);
+                ctx.globalAlpha = 1;
+            }
 
             // Canvas-drawn vertical connector from coordinator
             ctx.strokeStyle = '#334';
@@ -15967,21 +16164,25 @@ function renderFleetZone(zone) {
             ctx.lineTo(x + pad + 18, curY + 3);
             ctx.stroke();
 
-            // Drone label: d.01, d.02 (no type prefix)
-            const subLabel = `d.${String(si + 1).padStart(2, '0')}`;
-            const subColor = sub.type === 'harvester' ? '#0a0' : '#a44';
+            // Drone label: D.01, D.02 (uppercase D)
+            const subLabel = `D.${String(si + 1).padStart(2, '0')}`;
             ctx.fillStyle = subColor;
             ctx.font = '9px monospace';
             ctx.fillText(subLabel, x + pad + 20, curY + 3);
 
-            // Status indicator
-            const droneStatus = getFleetStatusType(sub.state, sub.energyTimer / sub.maxEnergy);
-            renderFleetStatusIndicator(x + pad + 50, curY - 1, droneStatus, now);
+            // Status text (replaces icon)
+            const subStatusText = getFleetStatusText(sub.state, subEnergyPercent, sub.type);
+            const subStatusColor = subEnergyPercent < 0.15 ? '#f44' : subEnergyPercent < 0.25 ? '#fc0' : '#667';
+            ctx.fillStyle = subStatusColor;
+            ctx.font = '7px monospace';
+            ctx.fillText(subStatusText, x + pad + 50, curY + 2);
 
-            // Stretched drone energy bar
+            // Micro status readout (state-reactive compact element)
+            renderFleetMicroStatus(x + w - pad - 30, curY - 2, sub, subColor, now);
+
+            // Stretched drone energy bar (segmented)
             const subBarX = x + pad + 20;
             const subBarW = w - pad * 2 - 44;
-            const subEnergyPercent = sub.energyTimer / sub.maxEnergy;
             renderNGEBar(subBarX, curY + 7, subBarW, 4, subEnergyPercent, subColor, {
                 segments: Math.max(4, Math.floor(subBarW / 8))
             });
@@ -16003,8 +16204,8 @@ function renderFleetZone(zone) {
                 ctx.globalAlpha = 1;
             }
 
-            // Time (right-aligned)
-            ctx.fillStyle = '#667';
+            // Time (right-aligned, red when critical)
+            ctx.fillStyle = subEnergyPercent < 0.15 ? '#f44' : '#667';
             ctx.font = '8px monospace';
             ctx.textAlign = 'right';
             ctx.fillText(`${Math.ceil(sub.energyTimer)}s`, x + w - pad, curY + 3);
@@ -16012,17 +16213,35 @@ function renderFleetZone(zone) {
 
             curY += rowH;
         }
+
+        // Coordinator section distress flash (flashes entire section box when critical)
+        const coordIsCritical = energyPercent < 0.2 || coord.state === 'LOW_ENERGY' || coord.state === 'DYING';
+        if (coordIsCritical) {
+            const sectionEndY = curY - 2;
+            const sectionFlashPhase = Math.floor(now / 100) % 4;
+            let sectionFc;
+            switch (sectionFlashPhase) {
+                case 0: sectionFc = coordColor; break;
+                case 1: sectionFc = '#000'; break;
+                case 2: sectionFc = '#f33'; break;
+                default: sectionFc = '#000'; break;
+            }
+            ctx.fillStyle = sectionFc;
+            ctx.globalAlpha = 0.1;
+            ctx.fillRect(x + 2, sectionStartY, w - 4, sectionEndY - sectionStartY);
+            ctx.globalAlpha = 1;
+        }
     }
 
     // === RAW DRONES (not attached to coordinators) ===
     if (rawDrones > 0) {
         // Section border
         if (aliveCoords.length > 0) {
-            ctx.strokeStyle = 'rgba(68, 136, 255, 0.2)';
-            ctx.lineWidth = 0.5;
+            ctx.strokeStyle = 'rgba(68, 136, 255, 0.15)';
+            ctx.lineWidth = 1;
             ctx.beginPath();
-            ctx.moveTo(x + pad, curY - 5);
-            ctx.lineTo(x + w - pad, curY - 5);
+            ctx.moveTo(x + 2, curY - 5);
+            ctx.lineTo(x + w - 2, curY - 5);
             ctx.stroke();
         }
 
@@ -16043,6 +16262,25 @@ function renderFleetZone(zone) {
         for (let i = 0; i < activeDrones.length; i++) {
             const drone = activeDrones[i];
             const isLastDrone = i === activeDrones.length - 1;
+            const droneEnergyPct = drone.energyTimer / drone.maxEnergy;
+            const droneColor = drone.type === 'harvester' ? '#0a0' : '#a44';
+
+            // Critical/dying row flash (whole row strobes)
+            const droneIsCritical = droneEnergyPct < 0.15 || drone.state === 'DYING' || drone.state === 'POWER_OFF';
+            if (droneIsCritical && drone.state !== 'POWER_OFF') {
+                const rowFlashPhase = Math.floor(now / 80) % 4;
+                let rowFc;
+                switch (rowFlashPhase) {
+                    case 0: rowFc = droneColor; break;
+                    case 1: rowFc = '#000'; break;
+                    case 2: rowFc = '#f33'; break;
+                    default: rowFc = '#000'; break;
+                }
+                ctx.fillStyle = rowFc;
+                ctx.globalAlpha = 0.15;
+                ctx.fillRect(x + pad, curY - 4, w - pad * 2, rowH - 2);
+                ctx.globalAlpha = 1;
+            }
 
             // Canvas connector lines
             ctx.strokeStyle = '#334';
@@ -16056,20 +16294,25 @@ function renderFleetZone(zone) {
             ctx.lineTo(x + pad + 18, curY + 3);
             ctx.stroke();
 
-            const droneLabel = `d.${String(i + 1).padStart(2, '0')}`;
-            const droneColor = drone.type === 'harvester' ? '#0a0' : '#a44';
+            // Drone label: D.01, D.02 (uppercase D)
+            const droneLabel = `D.${String(i + 1).padStart(2, '0')}`;
             ctx.fillStyle = droneColor;
             ctx.font = '9px monospace';
             ctx.fillText(droneLabel, x + pad + 20, curY + 3);
 
-            // Status indicator
-            const dStatus = getFleetStatusType(drone.state, drone.energyTimer / drone.maxEnergy);
-            renderFleetStatusIndicator(x + pad + 50, curY - 1, dStatus, now);
+            // Status text (replaces icon)
+            const droneStatusText = getFleetStatusText(drone.state, droneEnergyPct, drone.type);
+            const droneStatusColor = droneEnergyPct < 0.15 ? '#f44' : droneEnergyPct < 0.25 ? '#fc0' : '#667';
+            ctx.fillStyle = droneStatusColor;
+            ctx.font = '7px monospace';
+            ctx.fillText(droneStatusText, x + pad + 50, curY + 2);
 
-            // Stretched energy bar
+            // Micro status readout (state-reactive compact element)
+            renderFleetMicroStatus(x + w - pad - 30, curY - 2, drone, droneColor, now);
+
+            // Stretched energy bar (segmented)
             const droneBarX = x + pad + 20;
             const droneBarW = w - pad * 2 - 44;
-            const droneEnergyPct = drone.energyTimer / drone.maxEnergy;
             renderNGEBar(droneBarX, curY + 7, droneBarW, 4, droneEnergyPct, droneColor, {
                 segments: Math.max(4, Math.floor(droneBarW / 8))
             });
@@ -16091,8 +16334,8 @@ function renderFleetZone(zone) {
                 ctx.globalAlpha = 1;
             }
 
-            // Time
-            ctx.fillStyle = '#667';
+            // Time (red when critical)
+            ctx.fillStyle = droneEnergyPct < 0.15 ? '#f44' : '#667';
             ctx.font = '8px monospace';
             ctx.textAlign = 'right';
             ctx.fillText(`${Math.ceil(drone.energyTimer)}s`, x + w - pad, curY + 3);
@@ -19189,24 +19432,41 @@ function renderBombCount(startX, startY) {
         ctx.translate(x, y);
         ctx.scale(scale, scale);
 
-        // Bomb body
-        ctx.fillStyle = filled ? '#333' : '#1a1a1a';
-        ctx.beginPath();
-        ctx.arc(0, 0, bombSize / 2, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Highlight
-        ctx.fillStyle = filled ? '#555' : '#2a2a2a';
-        ctx.beginPath();
-        ctx.arc(-2, -2, bombSize / 4, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Fuse spark
         if (filled) {
-            const sparkIntensity = Math.sin(Date.now() / 100 + i) * 0.5 + 0.5;
-            ctx.fillStyle = `rgba(255, ${150 + sparkIntensity * 100}, 0, ${0.7 + sparkIntensity * 0.3})`;
+            // Black orb style bomb
+            const bombGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, bombSize / 2);
+            bombGrad.addColorStop(0, '#000');
+            bombGrad.addColorStop(0.5, 'rgba(5, 0, 10, 0.95)');
+            bombGrad.addColorStop(0.85, 'rgba(20, 0, 35, 0.5)');
+            bombGrad.addColorStop(1, 'rgba(15, 0, 30, 0)');
+            ctx.fillStyle = bombGrad;
             ctx.beginPath();
-            ctx.arc(0, -bombSize / 2 - 2, 2 + sparkIntensity, 0, Math.PI * 2);
+            ctx.arc(0, 0, bombSize / 2, 0, Math.PI * 2);
+            ctx.fill();
+            // Dark core
+            ctx.fillStyle = '#000';
+            ctx.beginPath();
+            ctx.arc(0, 0, bombSize / 4, 0, Math.PI * 2);
+            ctx.fill();
+            // Dithered purple pixel
+            const purpleFlicker = Math.sin(Date.now() / 100 + i * 2.3) * 0.5 + 0.5;
+            if (purpleFlicker > 0.3) {
+                ctx.globalAlpha = purpleFlicker * 0.6;
+                ctx.fillStyle = '#2a0030';
+                ctx.fillRect(-2, -1, 2, 2);
+                ctx.fillStyle = '#3b0050';
+                ctx.fillRect(1, 1, 1, 1);
+                ctx.globalAlpha = 1;
+            }
+        } else {
+            // Empty bomb
+            ctx.fillStyle = '#1a1a1a';
+            ctx.beginPath();
+            ctx.arc(0, 0, bombSize / 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#2a2a2a';
+            ctx.beginPath();
+            ctx.arc(-2, -2, bombSize / 4, 0, Math.PI * 2);
             ctx.fill();
         }
 
