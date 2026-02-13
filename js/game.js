@@ -5600,6 +5600,115 @@ function applyStunDropDamage(target) {
     return false;
 }
 
+// UFO phase-in materialization state (wave 1 only)
+let ufoPhaseInState = null;
+
+function renderUFOPhaseIn() {
+    if (!ufoPhaseInState || !ufoPhaseInState.active || !ufo) return;
+    const t = ufoPhaseInState.timer;
+    const phase = ufoPhaseInState.phase;
+    const cx = ufo.x;
+    const cy = ufo.y + ufo.hoverOffset;
+    const w = ufo.width;
+    const h = ufo.height;
+
+    ctx.save();
+
+    if (phase === 'noise') {
+        // Quantum noise cloud — random colored rectangles
+        const noiseColors = ['#0ff', '#f0f', '#fff', '#006', '#0af', '#f0a'];
+        const pulseAlpha = 0.3 + Math.sin(t * 8) * 0.2;
+        ctx.globalAlpha = pulseAlpha;
+        for (let i = 0; i < 40; i++) {
+            const rx = cx - w / 2 + Math.random() * w;
+            const ry = cy - h / 2 + Math.random() * h;
+            const rw = 2 + Math.random() * 6;
+            const rh = 2 + Math.random() * 4;
+            ctx.fillStyle = noiseColors[Math.floor(Math.random() * noiseColors.length)];
+            ctx.fillRect(rx, ry, rw, rh);
+        }
+    } else if (phase === 'silhouette') {
+        // Wireframe outline that flickers
+        const flickerOn = Math.sin(t * 10 * Math.PI * 2) > -0.3;
+        if (flickerOn) {
+            ctx.globalAlpha = 0.6;
+            ctx.strokeStyle = '#0ff';
+            ctx.lineWidth = 2;
+            ctx.shadowColor = '#0ff';
+            ctx.shadowBlur = 8;
+            // Draw UFO silhouette as an ellipse
+            ctx.beginPath();
+            ctx.ellipse(cx, cy, w / 2, h / 3, 0, 0, Math.PI * 2);
+            ctx.stroke();
+            // Dome
+            ctx.beginPath();
+            ctx.ellipse(cx, cy - h / 4, w / 5, h / 4, 0, Math.PI, 0);
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+        }
+        // Horizontal scan lines sweeping down
+        const scanY = cy - h / 2 + ((t * 200) % h);
+        ctx.globalAlpha = 0.3;
+        ctx.strokeStyle = '#0ff';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(cx - w / 2, scanY);
+        ctx.lineTo(cx + w / 2, scanY);
+        ctx.stroke();
+        // Residual noise (fading)
+        const noiseFade = Math.max(0, 1 - (t - 0.4) / 0.4);
+        if (noiseFade > 0) {
+            ctx.globalAlpha = noiseFade * 0.2;
+            const rNoiseColors = ['#0ff', '#f0f', '#fff'];
+            for (let i = 0; i < Math.floor(15 * noiseFade); i++) {
+                const rx = cx - w / 2 + Math.random() * w;
+                const ry = cy - h / 2 + Math.random() * h;
+                ctx.fillStyle = rNoiseColors[Math.floor(Math.random() * rNoiseColors.length)];
+                ctx.fillRect(rx, ry, 2 + Math.random() * 3, 2);
+            }
+        }
+    } else if (phase === 'phaseLock') {
+        // Expanding shockwave ring
+        const lockT = t - 0.8;
+        const ringRadius = lockT * 200;
+        const ringAlpha = Math.max(0, 1 - lockT * 2.5);
+        if (ringAlpha > 0) {
+            ctx.globalAlpha = ringAlpha;
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            ctx.shadowColor = '#0ff';
+            ctx.shadowBlur = 12;
+            ctx.beginPath();
+            ctx.arc(cx, cy, ringRadius, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+        }
+        // Engine glow intensification
+        const glowIntensity = Math.max(0, 1 - lockT * 3);
+        if (glowIntensity > 0) {
+            ctx.globalAlpha = glowIntensity * 0.4;
+            ctx.fillStyle = '#0ff';
+            ctx.beginPath();
+            ctx.ellipse(cx, cy + h / 4, w / 3, h / 6, 0, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    } else if (phase === 'stabilize') {
+        // Residual cyan sparks
+        const sparkT = t - 1.2;
+        if (sparkT < 0.3) {
+            ctx.globalAlpha = 0.5 * (1 - sparkT / 0.3);
+            ctx.fillStyle = '#0ff';
+            for (let i = 0; i < 3; i++) {
+                const sx = cx + (Math.random() - 0.5) * w * 0.8;
+                const sy = cy + (Math.random() - 0.5) * h * 0.6;
+                ctx.fillRect(sx, sy, 2, 2);
+            }
+        }
+    }
+
+    ctx.restore();
+}
+
 class UFO {
     constructor() {
         this.width = 180;
@@ -5645,8 +5754,9 @@ class UFO {
         }
 
 
-        // Handle beam activation
-        const wantsBeam = keys['Space'];
+        // Handle beam activation (blocked during phase-in)
+        const phaseInActive = ufoPhaseInState && ufoPhaseInState.active;
+        const wantsBeam = keys['Space'] && !phaseInActive;
         const canFireBeam = (activePowerups.energy_surge.active || this.energy >= CONFIG.ENERGY_MIN_TO_FIRE) && !this.beamOutOfEnergy;
 
         // Reset out-of-energy state when player releases spacebar
@@ -5915,11 +6025,12 @@ class UFO {
             const acceleration = 2000; // px/s² — reaches full speed in ~0.2s
             const friction = 8; // Exponential decay rate — drift ~0.25s
 
-            // Accelerate toward target velocity when keys held
-            if (keys['ArrowLeft']) {
+            // Accelerate toward target velocity when keys held (blocked during phase-in)
+            const phaseInBlocking = ufoPhaseInState && ufoPhaseInState.active;
+            if (keys['ArrowLeft'] && !phaseInBlocking) {
                 this.vx = Math.max(this.vx - acceleration * dt, -effectiveSpeed);
             }
-            if (keys['ArrowRight']) {
+            if (keys['ArrowRight'] && !phaseInBlocking) {
                 this.vx = Math.min(this.vx + acceleration * dt, effectiveSpeed);
             }
 
@@ -12822,6 +12933,7 @@ function startGame() {
     gameStartTime = Date.now();
     activityPingSent = false;
     ufo = new UFO();
+    ufoPhaseInState = wave === 1 ? { active: true, timer: 0, phase: 'noise' } : null;
     targets = [];
     tanks = [];
     heavyTanks = [];
@@ -23983,6 +24095,24 @@ function update(dt) {
     }
 
     if (ufo) {
+        // Update UFO phase-in (wave 1 only)
+        if (ufoPhaseInState && ufoPhaseInState.active) {
+            ufoPhaseInState.timer += dt;
+            const pit = ufoPhaseInState.timer;
+            if (ufoPhaseInState.phase === 'noise' && pit >= 0.4) {
+                ufoPhaseInState.phase = 'silhouette';
+                SFX.quantumHum && SFX.quantumHum();
+            } else if (ufoPhaseInState.phase === 'silhouette' && pit >= 0.8) {
+                ufoPhaseInState.phase = 'phaseLock';
+                SFX.phaseLockTone && SFX.phaseLockTone();
+            } else if (ufoPhaseInState.phase === 'phaseLock' && pit >= 1.2) {
+                ufoPhaseInState.phase = 'stabilize';
+                SFX.quantumSnap && SFX.quantumSnap();
+            } else if (ufoPhaseInState.phase === 'stabilize' && pit >= 1.5) {
+                ufoPhaseInState.active = false;
+                ufoPhaseInState = null;
+            }
+        }
         ufo.update(dt);
     }
 
@@ -24223,9 +24353,17 @@ function render() {
     // Render drones (after targets/tanks, before UFO)
     renderDrones();
 
-    // Render UFO (and beam)
+    // Render UFO (and beam) — with phase-in materialization on wave 1
     if (ufo) {
-        ufo.render();
+        if (ufoPhaseInState && ufoPhaseInState.active) {
+            // During phase-in, render effects; only show real UFO after phaseLock
+            if (ufoPhaseInState.phase === 'phaseLock' || ufoPhaseInState.phase === 'stabilize') {
+                ufo.render();
+            }
+            renderUFOPhaseIn();
+        } else {
+            ufo.render();
+        }
     }
 
     // Render particles (on top of everything)
