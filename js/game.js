@@ -4661,18 +4661,11 @@ class UFO {
         this.hoverTime = 0;
         this.beamRotation = 0; // For spiral effect
         this.invincibleTimer = 0; // Invincibility after revive
-        this.vx = 0; // Track horizontal velocity for bomb physics
-        this.lastX = this.x; // For velocity calculation
+        this.vx = 0; // Horizontal velocity (drives position + bomb physics)
         this.warpGhosts = []; // Ghost trail positions for warp juke
     }
 
     update(dt) {
-        // Calculate velocity from position change (for bomb physics)
-        if (dt > 0) {
-            this.vx = (this.x - this.lastX) / dt;
-            this.lastX = this.x;
-        }
-
         // Hover animation
         this.hoverTime += dt;
         this.hoverOffset = Math.sin(this.hoverTime * 2) * 3;
@@ -4956,26 +4949,51 @@ class UFO {
         // Movement (only if not actively abducting a target)
         const isAbducting = this.beamActive && this.beamTarget;
         if (!isAbducting) {
-            let moved = false;
             const thrusterMult = techFlags.thrusterBoost ? 1.3 : 1.0;
             const effectiveSpeed = CONFIG.UFO_SPEED * (1 + playerInventory.speedBonus) * thrusterMult;
+            const acceleration = 2000; // px/s² — reaches full speed in ~0.2s
+            const friction = 8; // Exponential decay rate — drift ~0.25s
+
+            // Accelerate toward target velocity when keys held
             if (keys['ArrowLeft']) {
-                this.x -= effectiveSpeed * dt;
-                moved = true;
+                this.vx = Math.max(this.vx - acceleration * dt, -effectiveSpeed);
             }
             if (keys['ArrowRight']) {
-                this.x += effectiveSpeed * dt;
-                moved = true;
+                this.vx = Math.min(this.vx + acceleration * dt, effectiveSpeed);
             }
 
-            // Reset combo if moved
-            if (moved && combo > 0) {
+            // Apply friction when no keys held (or both held = cancel out)
+            const leftHeld = keys['ArrowLeft'];
+            const rightHeld = keys['ArrowRight'];
+            if ((!leftHeld && !rightHeld) || (leftHeld && rightHeld)) {
+                this.vx *= Math.exp(-friction * dt);
+                // Snap to zero when very slow to avoid infinite drift
+                if (Math.abs(this.vx) < 1) this.vx = 0;
+            }
+
+            // Apply velocity to position
+            this.x += this.vx * dt;
+
+            // Reset combo if moving (same as before, but based on velocity)
+            if (Math.abs(this.vx) > 10 && combo > 0) {
                 combo = 0;
             }
 
-            // Clamp to screen edges
+            // Clamp to screen edges and zero velocity at boundaries
             const halfWidth = this.width / 2;
-            this.x = Math.max(halfWidth, Math.min(canvas.width - halfWidth, this.x));
+            if (this.x < halfWidth) {
+                this.x = halfWidth;
+                this.vx = 0;
+            } else if (this.x > canvas.width - halfWidth) {
+                this.x = canvas.width - halfWidth;
+                this.vx = 0;
+            }
+        }
+
+        // Decay velocity during abduction so UFO doesn't lurch when beam ends
+        if (isAbducting) {
+            this.vx *= Math.exp(-8 * dt);
+            if (Math.abs(this.vx) < 1) this.vx = 0;
         }
     }
 
@@ -10549,6 +10567,9 @@ function triggerWarpJuke(direction) {
         const warpDistance = CONFIG.WARP_JUKE_DISTANCE * direction;
         ufo.x = Math.max(ufo.width / 2, Math.min(canvas.width - ufo.width / 2, ufo.x + warpDistance));
     }
+
+    // Kill momentum so the UFO doesn't keep sliding in the pre-warp direction
+    ufo.vx = 0;
 
     // Create warp effect particles
     const steps = 10;
