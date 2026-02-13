@@ -13783,6 +13783,10 @@ let preBootState = {
     postTextIndex: 0,
     postTextAlpha: 1.0,
     borderPersist: 0,        // 0-1, how much of border is lit
+    // Phase A state
+    _systemStatusFrame: { trace: 0, checkLines: [], checkTimer: 0, barProgress: 0, nominalTyped: 0, diamondPhase: 0, holdTimer: 0, fadeAlpha: 1 },
+    // Phase B state
+    _declaration: { timer: 0, hexSeeds: [], scanY: -1, accentLen: 0, frameTrace: 0, resolved: 0, resolved2: 0, holdTimer: 0, fadeAlpha: 1 },
 };
 
 // Enhanced DIAG.SYS sparkline data
@@ -13849,11 +13853,31 @@ let biosBootState = {
         health: 0,
         maxHealth: 0,
         techCount: 0,
+        techResearched: [],
         bioMatter: 0,
         droneCount: 0,
         missileGroupCount: 0,
         threatLevel: 'MODERATE'
     }
+};
+
+// Tech panel boot overlay configuration
+const TECH_BOOT_PANELS = {
+    pg1: { label: 'BM.CNDUIT', color: '#f90', tier: 1, duration: 1.0, track: 'powerGrid' },
+    pg2: { label: 'NRG.EFF',   color: '#fa0', tier: 2, duration: 0.9, track: 'powerGrid' },
+    pg3: { label: 'PWR.BCAST', color: '#fb0', tier: 3, duration: 0.9, track: 'powerGrid' },
+    pg4: { label: 'RX.AMP',    color: '#fc0', tier: 4, duration: 1.0, track: 'powerGrid' },
+    pg5: { label: 'GRID.AUTO', color: '#fd0', tier: 5, duration: 1.2, track: 'powerGrid' },
+    dc1: { label: 'DRN.UPLNK', color: '#58f', tier: 1, duration: 1.0, track: 'droneCommand' },
+    dc2: { label: 'HRV.COORD', color: '#68f', tier: 2, duration: 1.0, track: 'droneCommand' },
+    dc3: { label: 'ATK.COORD', color: '#78f', tier: 3, duration: 1.0, track: 'droneCommand' },
+    dc4: { label: 'FLT.EXPND', color: '#88f', tier: 4, duration: 1.1, track: 'droneCommand' },
+    dc5: { label: 'SWM.AUTO',  color: '#99f', tier: 5, duration: 1.2, track: 'droneCommand' },
+    dn1: { label: 'THR.BOOST', color: '#e50', tier: 1, duration: 0.9, track: 'defenseNetwork' },
+    dn2: { label: 'DRN.ARMR',  color: '#d40', tier: 2, duration: 0.9, track: 'defenseNetwork' },
+    dn3: { label: 'SHD.XFER',  color: '#c30', tier: 3, duration: 1.0, track: 'defenseNetwork' },
+    dn4: { label: 'FLT.RSLNC', color: '#b20', tier: 4, duration: 1.0, track: 'defenseNetwork' },
+    dn5: { label: 'SWM.SHLD',  color: '#a10', tier: 5, duration: 1.2, track: 'defenseNetwork' },
 };
 
 // Bio-matter upload rows for the new BIO-MATTER panel
@@ -13903,7 +13927,12 @@ let hudBootState = {
         commander: [],
         diagnostics: [],
         opslog: []
-    }
+    },
+
+    // Tech panel boot overlays (one per researched tech)
+    techPanels: {},      // Populated in initHUDBoot: { techId: { active, startTime, duration, progress, phase } }
+    techBootLines: {},   // Populated in generateBootLines: { techId: [...lines] }
+    techPanelZones: {}   // Populated in initHUDBoot: { techId: { x, y, w, h } }
 };
 
 let missionCommanderState = {
@@ -14469,6 +14498,18 @@ function renderHUDFrame() {
                 ctx.translate(slideOffset, 0);
                 renderCommanderZone(layout.commanderZone);
                 ctx.restore();
+            }
+        }
+    }
+
+    // Tech panel boot overlays
+    if (hudBootState.phase === 'booting' || hudBootState.phase === 'complete') {
+        for (const [techId, techPanel] of Object.entries(hudBootState.techPanels)) {
+            if (!techPanel.active || techPanel.phase === 'waiting') continue;
+            const zone = hudBootState.techPanelZones[techId];
+            const config = TECH_BOOT_PANELS[techId];
+            if (zone && config) {
+                renderPanelBootOverlay(zone, zone.h, config.color, config.label, techPanel, hudBootState.techBootLines[techId] || []);
             }
         }
     }
@@ -17142,6 +17183,53 @@ function renderHealthFreakout(layout) {
     }
 }
 
+function calculateTechPanelZones(layout, researchedTechs) {
+    const zones = {};
+    const techArr = researchedTechs instanceof Set ? [...researchedTechs] : researchedTechs;
+    if (techArr.length === 0) return zones;
+
+    // Right column: power grid + defense network panels stack below fleet (or below NRG.FLOW if no fleet)
+    const rightX = layout.systemsZone ? layout.systemsZone.x : canvas.width - 200;
+    const rightW = layout.systemsZone ? layout.systemsZone.w : 195;
+    let rightY = (layout.fleetZone ? layout.fleetZone.y + 300 + 6 :
+                  layout.systemsZone ? layout.systemsZone.y + layout.systemsZone.h + 106 : 200);
+
+    // Left column: drone command panels in gap beside weapons
+    const leftW = 105;
+    const leftX = layout.weaponsZone ? layout.weaponsZone.x + layout.weaponsZone.w + 4 : 10;
+    let leftY = layout.weaponsZone ? layout.weaponsZone.y : 100;
+
+    const panelH = 62; // compact height for tech panels
+    const gap = 3;
+
+    // Sort researched techs by track
+    const pgTechs = ['pg1','pg2','pg3','pg4','pg5'].filter(t => techArr.includes(t));
+    const dcTechs = ['dc1','dc2','dc3','dc4','dc5'].filter(t => techArr.includes(t));
+    const dnTechs = ['dn1','dn2','dn3','dn4','dn5'].filter(t => techArr.includes(t));
+
+    // Right column: interleave power grid and defense network
+    for (let i = 0; i < Math.max(pgTechs.length, dnTechs.length); i++) {
+        if (pgTechs[i] && rightY + panelH < canvas.height - 20) {
+            zones[pgTechs[i]] = { x: rightX, y: rightY, w: rightW, h: panelH };
+            rightY += panelH + gap;
+        }
+        if (dnTechs[i] && rightY + panelH < canvas.height - 20) {
+            zones[dnTechs[i]] = { x: rightX, y: rightY, w: rightW, h: panelH };
+            rightY += panelH + gap;
+        }
+    }
+
+    // Left column: drone command panels
+    for (const techId of dcTechs) {
+        if (leftY + panelH < canvas.height - 120) {
+            zones[techId] = { x: leftX, y: leftY, w: leftW, h: panelH };
+            leftY += panelH + gap;
+        }
+    }
+
+    return zones;
+}
+
 function initHUDBoot() {
     hudBootState.phase = 'booting';
     hudBootState.timer = 0;
@@ -17162,6 +17250,8 @@ function initHUDBoot() {
     preBootState._chimeSoundPlayed = false;
     preBootState._onlineSoundPlayed = false;
     preBootState._cornerSoundsPlayed = [false, false, false, false];
+    preBootState._systemStatusFrame = { trace: 0, checkLines: [], checkTimer: 0, barProgress: 0, nominalTyped: 0, diamondPhase: 0, holdTimer: 0, fadeAlpha: 1 };
+    preBootState._declaration = { timer: 0, hexSeeds: [], scanY: -1, accentLen: 0, frameTrace: 0, resolved: 0, resolved2: 0, holdTimer: 0, fadeAlpha: 1 };
 
     // Snapshot current tech state
     hudBootState.techSnapshot = {
@@ -17196,6 +17286,30 @@ function initHUDBoot() {
     p.commander.active = wave >= 2;
     p.diagnostics.active = techFlags.beamConduit;
     p.opslog.active = wave >= 2;
+
+    // Activate tech boot panels for researched techs
+    hudBootState.techPanels = {};
+    hudBootState.techBootLines = {};
+    const layout = getHUDLayout();
+    hudBootState.techPanelZones = calculateTechPanelZones(layout, hudBootState.techSnapshot.techResearched);
+
+    for (const techId of hudBootState.techSnapshot.techResearched) {
+        const config = TECH_BOOT_PANELS[techId];
+        if (config && hudBootState.techPanelZones[techId]) {
+            // Tier determines boot trigger: tier 1 at trace 0.75, tier 5 at 0.95
+            const triggerProgress = 0.73 + config.tier * 0.04;
+            hudBootState.techPanels[techId] = {
+                active: true,
+                startTime: 0,
+                duration: config.duration,
+                progress: 0,
+                phase: 'waiting',
+                triggerProgress: triggerProgress,
+                _bootStartTimer: 0,
+                _lastDiagLine: -1
+            };
+        }
+    }
 
     // Reset all panel states and restore default stagger times
     const defaultStartTimes = { status: 0.0, techsys: 0.1, mission: 0.15, biomatter: 0.2, systems: 0.3, diagnostics: 0.45, weapons: 0.6, fleet: 0.9, opslog: 1.1, commander: 1.2 };
@@ -17282,6 +17396,17 @@ function updateHUDBoot(dt) {
             }
         }
 
+        // Tech panel boot triggers based on trace position
+        for (const [techId, techPanel] of Object.entries(hudBootState.techPanels)) {
+            if (techPanel.active && techPanel.phase === 'waiting' && preBoot.traceProgress >= techPanel.triggerProgress) {
+                techPanel.phase = 'booting';
+                techPanel.progress = 0;
+                techPanel._bootStartTimer = hudBootState.timer;
+                techPanel._lastDiagLine = -1;
+                SFX.bootPanelStart && SFX.bootPanelStart();
+            }
+        }
+
         if (preBoot.timer >= 0.75) {
             preBoot.phase = 'panel_boot';
             preBoot.timer = 0;
@@ -17329,6 +17454,27 @@ function updateHUDBoot(dt) {
 
         if (panel.phase !== 'online') {
             allOnline = false;
+        }
+    }
+
+    // Tech panel progress updates
+    for (const [techId, techPanel] of Object.entries(hudBootState.techPanels)) {
+        if (!techPanel.active) continue;
+        if (techPanel.phase === 'booting') {
+            const elapsed = hudBootState.timer - (techPanel._bootStartTimer || 0);
+            techPanel.progress = Math.min(1, elapsed / techPanel.duration);
+            // Data chatter sounds
+            if (hudBootState.techBootLines[techId]) {
+                const visibleLine = Math.floor(techPanel.progress * hudBootState.techBootLines[techId].length);
+                if (visibleLine > (techPanel._lastDiagLine || -1)) {
+                    techPanel._lastDiagLine = visibleLine;
+                    SFX.bootDataChatter && SFX.bootDataChatter();
+                }
+            }
+            if (techPanel.progress >= 1) {
+                techPanel.phase = 'online';
+                SFX.bootPanelOnline && SFX.bootPanelOnline();
+            }
         }
     }
 
@@ -17384,6 +17530,13 @@ function generateBootLines() {
                 `[OK] BIO.MATTER MONITOR`,
             `>> STATUS NOMINAL`
         ];
+        // Tech summary lines
+        const pgCount = snap.techResearched.filter(t => t.startsWith('pg')).length;
+        const dcCount = snap.techResearched.filter(t => t.startsWith('dc')).length;
+        const dnCount = snap.techResearched.filter(t => t.startsWith('dn')).length;
+        if (pgCount > 0) lines.status.splice(-1, 0, `[OK] PWR.GRID: ${pgCount}/5 MODULES`);
+        if (dcCount > 0) lines.status.splice(-1, 0, `[OK] DRN.CMD: ${dcCount}/5 MODULES`);
+        if (dnCount > 0) lines.status.splice(-1, 0, `[OK] DEF.NET: ${dnCount}/5 MODULES`);
         lines.mission = [
             `>> INIT MISSION.CTL`,
             `TARGET QUOTA: ${snap.quotaTarget}`,
@@ -17497,6 +17650,30 @@ function generateBootLines() {
         ];
     } else {
         lines.opslog = [];
+    }
+
+    // Generate tech panel boot lines
+    const techLines = hudBootState.techBootLines;
+    const techLineMap = {
+        pg1: ['>> INIT CONDUIT.SYS', 'BEAM -> [=====>] -> DRN', '[OK] CONDUIT LINK', '>> BM.CNDUIT ACTIVE'],
+        pg2: ['>> INIT NRG.EFF', 'DRAIN.RATE: 100% -> 70%', '[OK] EFF.MOD INSTALLED', '>> NRG.EFF ACTIVE'],
+        pg3: ['>> INIT PWR.BROADCAST', 'RADIUS: [UFO]=====>>>', '[OK] BROADCAST NET UP', '>> PWR.BCAST ONLINE'],
+        pg4: ['>> INIT RX.AMPLIFIER', 'OUTPUT: [####] x2.0', '[OK] AMPLIFIER ENGAGED', '>> RX.AMP HOT'],
+        pg5: ['>> INIT GRID.AUTO', 'REGEN: +2.1/s PERPETUAL', 'MAGI.VOTE: [APPROVE]', '>> GRID AUTHORIZED'],
+        dc1: ['>> INIT DRN.UPLINK', `SLOT ALLOC: ${snap.droneSlots}`, '[OK] PATHFIND v2.1', '>> UPLINK READY'],
+        dc2: ['>> INIT HRV.PROTOCOL', '[M]--+--[H]', '[OK] HRV.NET LINKED', '>> COORD STANDING BY'],
+        dc3: ['>> INIT ATK.PROTOCOL', '[M]--+--[A]--[a][a]', '[OK] ATK.NET LINKED', '>> COORDS ARMED'],
+        dc4: ['>> INIT FLT.EXPAND', '[C1][C2][C3] x5 DRN', '[OK] 5 SUB-DRN/COORD', '>> FLEET MAX CAP'],
+        dc5: ['>> INIT SWM.AUTO', 'NEURONS: 2048 SYNC:99%', 'SENSE->DECIDE->ACT', '>> AUTONOMY ONLINE'],
+        dn1: ['>> INIT THRUSTER.MOD', 'SPD: 1.0x -> 1.3x', '[OK] THRUST CALIBRATED', '>> THR.BOOST ONLINE'],
+        dn2: ['>> INIT ARMOR.SYS', 'DMG.REDUCTION: -40%', '[OK] ARMOR APPLIED', '>> FLEET HARDENED'],
+        dn3: ['>> INIT SHD.TRANSFER', 'UFO ===> [C1] [C2]', '[OK] SHIELD LINK', '>> SHD.XFER READY'],
+        dn4: ['>> INIT FLT.RESILIENCE', 'RDPLY: -50% SHD: x2', '[OK] RESILIENCE PKG', '>> FLT.RSLNC ACTIVE'],
+        dn5: ['>> INIT SWM.SHLD', 'FIELD: PASSIVE 15HP', 'MAGI.VOTE: [APPROVE]', '>> DEFENSE ONLINE'],
+    };
+
+    for (const techId of snap.techResearched) {
+        techLines[techId] = techLineMap[techId] || [];
     }
 }
 
@@ -17957,77 +18134,477 @@ function renderHUDBootGlobalEffects() {
         }
     }
 
-    // Post-boot text: "ALIEN QUANTUM OS IS NOW ONLINE"
-    if (totalBootTime >= hudBootState.duration - 1.0 && totalBootTime <= hudBootState.duration) {
-        const postProgress = (totalBootTime - (hudBootState.duration - 1.0)) / 1.0;
-        const text = 'ALIEN QUANTUM OS IS NOW ONLINE';
-        const charsShown = Math.floor(postProgress * text.length * 2);
-        const visibleText = text.substring(0, Math.min(text.length, charsShown));
-
-        if (!preBootState._onlineSoundPlayed && postProgress < 0.05) {
-            preBootState._onlineSoundPlayed = true;
-            SFX.alienQuantumOnline();
-        }
-
-        const alpha = postProgress > 0.8 ? Math.max(0, 1 - (postProgress - 0.8) / 0.2) : 1.0;
-        ctx.fillStyle = `rgba(0, 255, 255, ${alpha})`;
-        ctx.font = 'bold 14px monospace';
-        ctx.textAlign = 'center';
-        ctx.shadowColor = '#0ff';
-        ctx.shadowBlur = 6;
-        ctx.fillText(visibleText, canvas.width / 2, canvas.height / 2);
-        ctx.shadowBlur = 0;
-    }
-
-    // "ALL SYSTEMS NOMINAL" - adjusted timing
+    // Phase A: System Status Convergence Frame
     if (totalBootTime >= hudBootState.duration - 1.5 && totalBootTime <= hudBootState.duration - 0.5) {
         let allOnline = true;
         for (const [key, panel] of Object.entries(hudBootState.panels)) {
-            if (panel.active && panel.phase !== 'online') {
-                allOnline = false;
-                break;
-            }
+            if (panel.active && panel.phase !== 'online') { allOnline = false; break; }
         }
         if (allOnline) {
-            const nomProgress = (totalBootTime - (hudBootState.duration - 1.5)) / 1.0;
-            const alpha = nomProgress < 0.3 ? nomProgress / 0.3 :
-                         nomProgress < 0.7 ? 1.0 :
-                         1.0 - (nomProgress - 0.7) / 0.3;
+            const phaseA = preBootState._systemStatusFrame;
+            const aProgress = (totalBootTime - (hudBootState.duration - 1.5)) / 1.0;
+
+            // Build active panel list
+            const panelNames = [];
+            const panelMap = { status: 'SYS.STATUS', mission: 'MISSION.CTL', systems: 'SYS.INTG',
+                techsys: 'TECH.SYS', biomatter: 'BM.CONDUIT', weapons: 'ORD.SYS',
+                fleet: 'FLEET.CMD', diagnostics: 'DIAG.SYS', opslog: 'OPS.LOG', commander: 'COMMS.SYS' };
+            for (const [key, name] of Object.entries(panelMap)) {
+                if (hudBootState.panels[key] && hudBootState.panels[key].active) panelNames.push(name);
+            }
+
+            const rows = Math.ceil(panelNames.length / 2);
+            const frameW = 320;
+            const frameH = 50 + rows * 14 + 50; // header + rows + bar + nominal
+            const fx = (canvas.width - frameW) / 2;
+            const fy = (canvas.height - frameH) / 2 - 20;
+
             ctx.save();
-            ctx.translate(canvas.width / 2, canvas.height / 2 - 30);
-            ctx.font = 'bold 18px monospace';
-            ctx.textAlign = 'center';
-            ctx.fillStyle = `rgba(255, 255, 255, ${Math.max(0, alpha)})`;
-            ctx.shadowColor = '#0ff';
-            ctx.shadowBlur = 12;
-            ctx.fillText('ALL SYSTEMS NOMINAL', 0, 0);
-            ctx.shadowBlur = 0;
+
+            // Fade at end
+            const fadeAlpha = aProgress > 0.85 ? Math.max(0, 1 - (aProgress - 0.85) / 0.15) : 1;
+            ctx.globalAlpha = fadeAlpha;
+
+            // Background
+            ctx.fillStyle = 'rgba(5, 8, 18, 0.85)';
+            ctx.fillRect(fx, fy, frameW, frameH);
+
+            // Corner brackets (L-shaped marks)
+            const arm = 12;
+            ctx.strokeStyle = 'rgba(0, 255, 255, 0.8)';
+            ctx.lineWidth = 1.5;
+            // Top-left
+            ctx.beginPath(); ctx.moveTo(fx, fy + arm); ctx.lineTo(fx, fy); ctx.lineTo(fx + arm, fy); ctx.stroke();
+            // Top-right
+            ctx.beginPath(); ctx.moveTo(fx + frameW - arm, fy); ctx.lineTo(fx + frameW, fy); ctx.lineTo(fx + frameW, fy + arm); ctx.stroke();
+            // Bottom-left
+            ctx.beginPath(); ctx.moveTo(fx, fy + frameH - arm); ctx.lineTo(fx, fy + frameH); ctx.lineTo(fx + arm, fy + frameH); ctx.stroke();
+            // Bottom-right
+            ctx.beginPath(); ctx.moveTo(fx + frameW - arm, fy + frameH); ctx.lineTo(fx + frameW, fy + frameH); ctx.lineTo(fx + frameW, fy + frameH - arm); ctx.stroke();
+
+            // Border trace (first 8% of phase)
+            if (aProgress < 0.08) {
+                const traceT = aProgress / 0.08;
+                const perim = 2 * (frameW + frameH);
+                const traceDist = traceT * perim;
+                let tx, ty;
+                if (traceDist < frameW) { tx = fx + traceDist; ty = fy; }
+                else if (traceDist < frameW + frameH) { tx = fx + frameW; ty = fy + (traceDist - frameW); }
+                else if (traceDist < 2 * frameW + frameH) { tx = fx + frameW - (traceDist - frameW - frameH); ty = fy + frameH; }
+                else { tx = fx; ty = fy + frameH - (traceDist - 2 * frameW - frameH); }
+                ctx.beginPath(); ctx.arc(tx, ty, 3, 0, Math.PI * 2);
+                ctx.fillStyle = '#0ff'; ctx.shadowColor = '#0ff'; ctx.shadowBlur = 8; ctx.fill(); ctx.shadowBlur = 0;
+            }
+
+            // Subtle border
+            ctx.strokeStyle = 'rgba(0, 255, 255, 0.3)';
+            ctx.lineWidth = 0.5;
+            ctx.strokeRect(fx, fy, frameW, frameH);
+
+            // Header: "SYSTEM STATUS"
+            if (aProgress >= 0.08) {
+                const headerText = 'SYSTEM STATUS';
+                const headerChars = aProgress < 0.12 ? Math.floor(((aProgress - 0.08) / 0.04) * headerText.length) : headerText.length;
+                ctx.font = 'bold 9px monospace';
+                ctx.textAlign = 'center';
+                // Cut border behind header
+                const hw = ctx.measureText(headerText).width + 12;
+                ctx.fillStyle = 'rgba(5, 8, 18, 0.85)';
+                ctx.fillRect(fx + (frameW - hw) / 2, fy - 5, hw, 10);
+                ctx.fillStyle = 'rgba(0, 255, 255, 0.9)';
+                ctx.fillText(headerText.substring(0, headerChars), fx + frameW / 2, fy + 4);
+            }
+
+            // Subsystem checklist (12%-50% of phase)
+            if (aProgress >= 0.12) {
+                const checkProgress = Math.min(1, (aProgress - 0.12) / 0.38);
+                const visibleRows = Math.floor(checkProgress * rows) + (checkProgress > 0 ? 1 : 0);
+                ctx.font = '8px monospace';
+                ctx.textAlign = 'left';
+
+                for (let r = 0; r < Math.min(visibleRows, rows); r++) {
+                    const isCurrent = (r === visibleRows - 1) && checkProgress < 1;
+                    for (let c = 0; c < 2; c++) {
+                        const idx = r * 2 + c;
+                        if (idx >= panelNames.length) continue;
+                        const name = panelNames[idx];
+                        const cx = fx + 16 + c * 150;
+                        const cy = fy + 22 + r * 14;
+
+                        // Name
+                        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                        ctx.fillText(name, cx, cy);
+
+                        // Dots
+                        const dotsLen = 10 - Math.floor(name.length / 2);
+                        const dots = '.'.repeat(Math.max(2, dotsLen));
+                        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+                        ctx.fillText(' ' + dots + ' ', cx + ctx.measureText(name).width, cy);
+
+                        // OK stamp
+                        if (!isCurrent || c === 0) {
+                            const okX = cx + ctx.measureText(name + ' ' + dots + ' ').width;
+                            const stampAge = (checkProgress * rows - r) * 200; // ms since this row stamped
+                            const flash = stampAge < 60;
+                            ctx.fillStyle = flash ? '#fff' : 'rgba(0, 255, 100, 1)';
+                            ctx.font = flash ? 'bold 9px monospace' : 'bold 8px monospace';
+                            if (flash) { ctx.shadowColor = '#0f0'; ctx.shadowBlur = 3; }
+                            ctx.fillText('OK', okX, cy);
+                            ctx.shadowBlur = 0;
+                            ctx.font = '8px monospace';
+                        }
+                    }
+                }
+            }
+
+            // Progress bar (50%-60% of phase)
+            if (aProgress >= 0.50) {
+                const barProgress = Math.min(1, (aProgress - 0.50) / 0.10);
+                const barX = fx + 20;
+                const barY = fy + 22 + rows * 14 + 8;
+                const barW = frameW - 40;
+                ctx.fillStyle = 'rgba(0, 255, 255, 0.15)';
+                ctx.fillRect(barX, barY, barW, 3);
+                ctx.fillStyle = '#0ff';
+                ctx.shadowColor = '#0ff'; ctx.shadowBlur = 2;
+                ctx.fillRect(barX, barY, barW * barProgress, 3);
+                ctx.shadowBlur = 0;
+                if (barProgress >= 1) {
+                    ctx.font = '7px monospace';
+                    ctx.fillStyle = 'rgba(0, 255, 255, 0.8)';
+                    ctx.textAlign = 'right';
+                    ctx.fillText('100%', barX + barW, barY + 12);
+                    ctx.textAlign = 'left';
+                }
+            }
+
+            // "ALL SYSTEMS NOMINAL" with diamonds (60%-70% of phase)
+            if (aProgress >= 0.60) {
+                const nomProgress = Math.min(1, (aProgress - 0.60) / 0.10);
+                const nomText = 'ALL SYSTEMS NOMINAL';
+                const nomChars = Math.floor(nomProgress * nomText.length);
+                const nomY = fy + frameH - 16;
+
+                // Diamond indicators
+                const diamondCount = Math.min(3, Math.floor(nomProgress * 6));
+                ctx.textAlign = 'center';
+                for (let d = 0; d < diamondCount && d < 3; d++) {
+                    const dx = fx + frameW / 2 - 90 + d * 10;
+                    ctx.save(); ctx.translate(dx, nomY - 2); ctx.rotate(Math.PI / 4);
+                    ctx.fillStyle = d < diamondCount - 1 ? 'rgba(0, 255, 100, 0.6)' : '#0f0';
+                    if (d === diamondCount - 1) { ctx.shadowColor = '#0f0'; ctx.shadowBlur = 4; }
+                    ctx.fillRect(-1.5, -1.5, 3, 3);
+                    ctx.shadowBlur = 0;
+                    ctx.restore();
+                }
+                for (let d = 0; d < diamondCount && d < 3; d++) {
+                    const dx = fx + frameW / 2 + 70 + d * 10;
+                    ctx.save(); ctx.translate(dx, nomY - 2); ctx.rotate(Math.PI / 4);
+                    ctx.fillStyle = d < diamondCount - 1 ? 'rgba(0, 255, 100, 0.6)' : '#0f0';
+                    if (d === diamondCount - 1) { ctx.shadowColor = '#0f0'; ctx.shadowBlur = 4; }
+                    ctx.fillRect(-1.5, -1.5, 3, 3);
+                    ctx.shadowBlur = 0;
+                    ctx.restore();
+                }
+
+                // Text
+                ctx.font = 'bold 11px monospace';
+                ctx.fillStyle = '#fff';
+                ctx.shadowColor = '#0ff'; ctx.shadowBlur = 8;
+                ctx.textAlign = 'center';
+                ctx.fillText(nomText.substring(0, nomChars), fx + frameW / 2, nomY);
+                ctx.shadowBlur = 0;
+            }
+
+            // Scan line sweep (70%-85% of phase)
+            if (aProgress >= 0.70 && aProgress <= 0.85) {
+                const scanProgress = (aProgress - 0.70) / 0.15;
+                const scanY = fy + scanProgress * frameH;
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+                ctx.fillRect(fx, scanY, frameW, 2);
+            }
+
+            // CRT scanlines on frame
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.06)';
+            for (let sy = fy; sy < fy + frameH; sy += 3) {
+                ctx.fillRect(fx, sy, frameW, 1);
+            }
+
             ctx.restore();
         }
     }
 
-    // Wave 1: "MOTHERSHIP UPLINK ESTABLISHED" flash after boot completes
+    // Phase B: Hex Decode System Declaration
+    if (totalBootTime >= hudBootState.duration - 1.0 && totalBootTime <= hudBootState.duration) {
+        const bProgress = (totalBootTime - (hudBootState.duration - 1.0)) / 1.0;
+
+        if (!preBootState._onlineSoundPlayed && bProgress < 0.05) {
+            preBootState._onlineSoundPlayed = true;
+            SFX.alienQuantumOnline();
+        }
+
+        ctx.save();
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        const HEX = '0123456789ABCDEF';
+        const now = Date.now();
+
+        // Fade at end
+        const fadeAlpha = bProgress > 0.80 ? Math.max(0, 1 - (bProgress - 0.80) / 0.20) : 1;
+        ctx.globalAlpha = fadeAlpha;
+
+        // Double accent lines (0-8% of phase)
+        if (bProgress >= 0) {
+            const lineLen = Math.min(140, (bProgress / 0.08) * 140);
+            ctx.strokeStyle = `rgba(0, 255, 255, ${0.4 + bProgress * 0.2})`;
+            ctx.lineWidth = 1;
+            // Top lines
+            const topY = centerY - 32;
+            ctx.beginPath(); ctx.moveTo(centerX - lineLen, topY); ctx.lineTo(centerX + lineLen, topY); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(centerX - lineLen, topY + 3); ctx.lineTo(centerX + lineLen, topY + 3); ctx.stroke();
+            // Bottom lines
+            const botY = centerY + 28;
+            ctx.beginPath(); ctx.moveTo(centerX - lineLen, botY); ctx.lineTo(centerX + lineLen, botY); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(centerX - lineLen, botY + 3); ctx.lineTo(centerX + lineLen, botY + 3); ctx.stroke();
+        }
+
+        // Inner bracket frame (8-15% of phase) — corner brackets only
+        if (bProgress >= 0.08) {
+            const frameW = 240;
+            const frameH = 50;
+            const bfx = centerX - frameW / 2;
+            const bfy = centerY - frameH / 2;
+            const fAlpha = Math.min(1, (bProgress - 0.08) / 0.07);
+
+            // Background
+            ctx.fillStyle = `rgba(5, 8, 18, ${0.7 * fAlpha})`;
+            ctx.fillRect(bfx, bfy, frameW, frameH);
+
+            // Corner brackets (16px arms)
+            const arm = 16;
+            ctx.strokeStyle = `rgba(0, 255, 255, ${0.7 * fAlpha})`;
+            ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.moveTo(bfx, bfy + arm); ctx.lineTo(bfx, bfy); ctx.lineTo(bfx + arm, bfy); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(bfx + frameW - arm, bfy); ctx.lineTo(bfx + frameW, bfy); ctx.lineTo(bfx + frameW, bfy + arm); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(bfx, bfy + frameH - arm); ctx.lineTo(bfx, bfy + frameH); ctx.lineTo(bfx + arm, bfy + frameH); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(bfx + frameW - arm, bfy + frameH); ctx.lineTo(bfx + frameW, bfy + frameH); ctx.lineTo(bfx + frameW, bfy + frameH - arm); ctx.stroke();
+        }
+
+        // Hex decode: "ALIEN QUANTUM OS" (15-45% of phase)
+        const text1 = 'ALIEN QUANTUM OS';
+        ctx.font = 'bold 18px monospace';
+        ctx.textAlign = 'center';
+        if (bProgress >= 0.15) {
+            const resolveProgress = Math.min(1, (bProgress - 0.15) / 0.30);
+            let decoded = '';
+            for (let i = 0; i < text1.length; i++) {
+                const charResolveT = i / text1.length;
+                if (resolveProgress >= charResolveT) {
+                    const timeSinceResolve = (resolveProgress - charResolveT) * 300;
+                    if (timeSinceResolve < 16) {
+                        ctx.fillStyle = '#fff';
+                        ctx.shadowColor = '#fff'; ctx.shadowBlur = 4;
+                    } else {
+                        ctx.fillStyle = '#fff';
+                        ctx.shadowColor = '#0ff'; ctx.shadowBlur = 10;
+                    }
+                    decoded += text1[i];
+                } else {
+                    if (text1[i] === ' ') { decoded += ' '; }
+                    else {
+                        const seed = (i * 7 + 13) & 0xFF;
+                        decoded += HEX[(seed + Math.floor(now / 30)) % 16];
+                    }
+                    ctx.fillStyle = 'rgba(0, 255, 255, 0.6)';
+                    ctx.shadowBlur = 0;
+                }
+            }
+            // Render char-by-char for color variation
+            const fullWidth = ctx.measureText(text1).width;
+            let charX = centerX - fullWidth / 2;
+            for (let i = 0; i < decoded.length; i++) {
+                const charResolveT = i / text1.length;
+                const isResolved = resolveProgress >= charResolveT;
+                if (isResolved) {
+                    const timeSinceResolve = resolveProgress - charResolveT;
+                    if (timeSinceResolve < 0.05) {
+                        ctx.fillStyle = '#fff'; ctx.shadowColor = '#fff'; ctx.shadowBlur = 4;
+                    } else {
+                        ctx.fillStyle = '#fff'; ctx.shadowColor = '#0ff'; ctx.shadowBlur = 10;
+                    }
+                } else {
+                    if (text1[i] !== ' ') {
+                        ctx.fillStyle = 'rgba(0, 255, 255, 0.6)';
+                    } else {
+                        ctx.fillStyle = 'transparent';
+                    }
+                    ctx.shadowBlur = 0;
+                }
+                const ch = decoded[i];
+                ctx.textAlign = 'left';
+                ctx.fillText(ch, charX, centerY - 8);
+                charX += ctx.measureText(ch).width;
+            }
+            ctx.shadowBlur = 0;
+        }
+
+        // Hex decode: "IS NOW ONLINE" (30-55% of phase, staggered)
+        const text2 = 'IS NOW ONLINE';
+        ctx.font = 'bold 14px monospace';
+        if (bProgress >= 0.30) {
+            const resolveProgress2 = Math.min(1, (bProgress - 0.30) / 0.25);
+            const fullWidth2 = ctx.measureText(text2).width;
+            let charX2 = centerX - fullWidth2 / 2;
+            for (let i = 0; i < text2.length; i++) {
+                const charResolveT = i / text2.length;
+                const isResolved = resolveProgress2 >= charResolveT;
+                let ch;
+                if (isResolved) {
+                    ch = text2[i];
+                    const timeSinceResolve = resolveProgress2 - charResolveT;
+                    if (timeSinceResolve < 0.05) {
+                        ctx.fillStyle = '#0ff'; ctx.shadowColor = '#0ff'; ctx.shadowBlur = 4;
+                    } else {
+                        ctx.fillStyle = '#0ff'; ctx.shadowColor = '#0ff'; ctx.shadowBlur = 6;
+                    }
+                } else {
+                    if (text2[i] === ' ') { ch = ' '; ctx.fillStyle = 'transparent'; }
+                    else {
+                        const seed = (i * 11 + 37) & 0xFF;
+                        ch = HEX[(seed + Math.floor(now / 30)) % 16];
+                        ctx.fillStyle = 'rgba(0, 255, 255, 0.4)';
+                    }
+                    ctx.shadowBlur = 0;
+                }
+                ctx.textAlign = 'left';
+                ctx.fillText(ch, charX2, centerY + 10);
+                charX2 += ctx.measureText(ch).width;
+            }
+            ctx.shadowBlur = 0;
+        }
+
+        // Confirmation scan (45-55% of phase)
+        if (bProgress >= 0.45 && bProgress <= 0.55) {
+            const scanT = (bProgress - 0.45) / 0.10;
+            const scanY = (centerY - 25) + scanT * 50;
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+            ctx.fillRect(centerX - 120, scanY, 240, 2);
+        }
+
+        // Diamond indicators (50-60% of phase)
+        if (bProgress >= 0.50) {
+            const dAlpha = Math.min(1, (bProgress - 0.50) / 0.10);
+            const pulse = bProgress < 0.60 ? 1.0 : 0.4;
+            for (const dx of [centerX - 140, centerX + 136]) {
+                ctx.save(); ctx.translate(dx, centerY - 2); ctx.rotate(Math.PI / 4);
+                ctx.fillStyle = `rgba(0, 255, 0, ${dAlpha * pulse})`;
+                if (pulse > 0.5) { ctx.shadowColor = '#0f0'; ctx.shadowBlur = 6; }
+                ctx.fillRect(-2.5, -2.5, 5, 5);
+                ctx.shadowBlur = 0;
+                ctx.restore();
+            }
+        }
+
+        // Version text (55-65% of phase)
+        if (bProgress >= 0.55) {
+            const vAlpha = Math.min(1, (bProgress - 0.55) / 0.10);
+            ctx.font = '7px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = `rgba(0, 255, 255, ${0.5 * vAlpha})`;
+            ctx.fillText('v7.3.1 // CORE ACTIVE', centerX, centerY + 40);
+        }
+
+        ctx.restore();
+    }
+
+    // Wave 1: Mothership Uplink Transmission Banner
     if (wave === 1 && hudBootState.phase === 'complete') {
         const bootElapsed = hudBootState.timer;
         if (bootElapsed < 0.8) {
             ctx.save();
-            // Edge pulse (first 100ms)
+
+            // Edge pulse (first 100ms) — preserved
             if (bootElapsed < 0.1) {
                 const pulseAlpha = 0.3 * (1 - bootElapsed / 0.1);
                 ctx.strokeStyle = `rgba(0, 255, 255, ${pulseAlpha})`;
                 ctx.lineWidth = 3;
                 ctx.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);
             }
-            // Text display (100ms to 800ms, fade 500ms to 800ms)
-            if (bootElapsed >= 0.1) {
-                let textAlpha = 1;
-                if (bootElapsed >= 0.5) textAlpha = Math.max(0, 1 - (bootElapsed - 0.5) / 0.3);
-                ctx.globalAlpha = textAlpha;
-                ctx.fillStyle = '#0ff';
-                ctx.font = '14px monospace';
-                ctx.textAlign = 'center';
-                ctx.fillText('MOTHERSHIP UPLINK ESTABLISHED', canvas.width / 2, 30);
+
+            // Transmission banner
+            const bannerW = Math.min(380, canvas.width * 0.7);
+            const bannerH = 22;
+            const bx = (canvas.width - bannerW) / 2;
+
+            // Slide animation: y=-20 to y=20
+            let by;
+            if (bootElapsed < 0.2) {
+                const slideT = Math.max(0, (bootElapsed - 0.1) / 0.1);
+                by = -20 + 40 * easeOutCubic(slideT);
+            } else if (bootElapsed >= 0.55) {
+                const slideOutT = (bootElapsed - 0.55) / 0.25;
+                by = 20 - 30 * slideOutT;
+                ctx.globalAlpha = Math.max(0, 1 - slideOutT);
+            } else {
+                by = 20;
             }
+
+            if (bootElapsed >= 0.1) {
+                // Banner background
+                ctx.fillStyle = 'rgba(5, 8, 18, 0.9)';
+                ctx.fillRect(bx, by, bannerW, bannerH);
+                ctx.strokeStyle = 'rgba(0, 255, 255, 0.5)';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(bx, by, bannerW, bannerH);
+
+                // Header notch "UPLINK"
+                if (bootElapsed >= 0.2) {
+                    const uplinkText = 'UPLINK';
+                    const uplinkChars = bootElapsed < 0.25 ? Math.floor(((bootElapsed - 0.2) / 0.05) * uplinkText.length) : uplinkText.length;
+                    ctx.font = 'bold 7px monospace';
+                    ctx.textAlign = 'left';
+                    const hw = ctx.measureText(uplinkText).width + 8;
+                    ctx.fillStyle = 'rgba(5, 8, 18, 0.9)';
+                    ctx.fillRect(bx + 8, by - 4, hw, 8);
+                    ctx.fillStyle = 'rgba(0, 255, 255, 0.9)';
+                    ctx.fillText(uplinkText.substring(0, uplinkChars), bx + 12, by + 3);
+                }
+
+                // Diamond indicator
+                if (bootElapsed >= 0.2) {
+                    ctx.save();
+                    ctx.translate(bx + 12, by + bannerH / 2);
+                    ctx.rotate(Math.PI / 4);
+                    ctx.fillStyle = '#0f0';
+                    ctx.shadowColor = '#0f0'; ctx.shadowBlur = 4;
+                    ctx.fillRect(-2, -2, 4, 4);
+                    ctx.shadowBlur = 0;
+                    ctx.restore();
+                }
+
+                // Main text typewriter
+                if (bootElapsed >= 0.25) {
+                    const mainText = 'MOTHERSHIP UPLINK ESTABLISHED';
+                    const typeProgress = Math.min(1, (bootElapsed - 0.25) / 0.15);
+                    const visChars = Math.floor(typeProgress * mainText.length);
+                    ctx.font = '9px monospace';
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                    ctx.textAlign = 'left';
+                    ctx.fillText(mainText.substring(0, visChars), bx + 24, by + bannerH / 2 + 3);
+                }
+
+                // [SECURED] stamp
+                if (bootElapsed >= 0.40) {
+                    const stampAge = bootElapsed - 0.40;
+                    ctx.font = 'bold 8px monospace';
+                    ctx.fillStyle = stampAge < 0.03 ? '#fff' : '#0f0';
+                    if (stampAge < 0.03) { ctx.shadowColor = '#0f0'; ctx.shadowBlur = 3; }
+                    ctx.textAlign = 'right';
+                    ctx.fillText('[SECURED]', bx + bannerW - 8, by + bannerH / 2 + 3);
+                    ctx.shadowBlur = 0;
+                }
+            }
+
             ctx.restore();
         }
     }
@@ -21970,6 +22547,7 @@ function initBiosBootSequence() {
     info.health = ufo ? ufo.health : CONFIG.UFO_START_HEALTH;
     info.maxHealth = CONFIG.UFO_START_HEALTH;
     info.techCount = techTree.researched.size;
+    info.techResearched = [...techTree.researched];
     info.bioMatter = bioMatter;
     info.droneCount = activeDrones.length;
     info.missileGroupCount = missileGroupCount;
@@ -22004,6 +22582,33 @@ function initBiosBootSequence() {
     addLine('  /dev/ord0      ORDNANCE SUBSYSTEM ..... ' + (info.hasBombs ? 'READY' : 'NOT FOUND'), info.hasBombs ? '#0f0' : '#fa0', false, 'top', t); t += 0.025;
     addLine('  /dev/fleet0    FLEET CONTROL BUS ...... ' + (info.hasDrones ? 'READY' : 'NOT FOUND'), info.hasDrones ? '#0f0' : '#fa0', false, 'top', t); t += 0.025;
     addLine('  /dev/bio0      BIOMATTER CONDUIT ...... READY', '#0f0', false, 'top', t); t += 0.015;
+
+    // Tech device scan lines
+    const techDevices = {
+        pg1: { dev: '/dev/conduit0', name: 'BEAM CONDUIT', color: '#f90' },
+        pg2: { dev: '/dev/nrgeff0', name: 'ENERGY OPTIMIZER', color: '#fa0' },
+        pg3: { dev: '/dev/pwrbcast0', name: 'POWER BROADCAST', color: '#fb0' },
+        pg4: { dev: '/dev/rxamp0', name: 'REACTOR AMPLIFIER', color: '#fc0' },
+        pg5: { dev: '/dev/grid0', name: 'SELF-SUSTAINING GRID', color: '#fd0' },
+        dc1: { dev: '/dev/uplink0', name: 'DRONE UPLINK', color: '#58f' },
+        dc2: { dev: '/dev/hrvcoord0', name: 'HARVESTER COORD', color: '#68f' },
+        dc3: { dev: '/dev/atkcoord0', name: 'ATTACK COORD', color: '#78f' },
+        dc4: { dev: '/dev/fltexp0', name: 'FLEET EXPANSION', color: '#88f' },
+        dc5: { dev: '/dev/swarm0', name: 'SWARM INTELLIGENCE', color: '#99f' },
+        dn1: { dev: '/dev/thrust0', name: 'THRUSTER MOD', color: '#e50' },
+        dn2: { dev: '/dev/armor0', name: 'DRONE ARMOR', color: '#d40' },
+        dn3: { dev: '/dev/shdxfer0', name: 'SHIELD TRANSFER', color: '#c30' },
+        dn4: { dev: '/dev/rslnc0', name: 'FLEET RESILIENCE', color: '#b20' },
+        dn5: { dev: '/dev/swmshld0', name: 'SWARM SHIELD', color: '#a10' },
+    };
+    for (const techId of info.techResearched) {
+        const td = techDevices[techId];
+        if (td) {
+            addLine('  ' + td.dev.padEnd(17) + td.name.padEnd(20) + ' READY', td.color, false, 'top', t);
+            t += 0.015;
+        }
+    }
+
     addLine('', '#aaa', false, 'top', t); t += 0.015;
     addLine('BIOS POST COMPLETE - ALL DEVICES NOMINAL', '#0f0', true, 'top', t); t += 0.015;
     addLine('', '#aaa', false, 'top', t); t += 0.015;
@@ -22035,6 +22640,14 @@ function initBiosBootSequence() {
     }
     if (info.hasMissiles) {
         biosBootState.swarmRows.push({ name: 'SWARM.ORDNANCE', fillProgress: 0, online: false, startTime: 1.50, color: '#f80' });
+    }
+
+    // Tech subsystem swarms
+    if (info.techResearched.some(t => t.startsWith('pg'))) {
+        biosBootState.swarmRows.push({ name: 'SWARM.POWER', fillProgress: 0, online: false, startTime: 1.54, color: '#f90' });
+    }
+    if (info.techResearched.some(t => t.startsWith('dn'))) {
+        biosBootState.swarmRows.push({ name: 'SWARM.SHIELD', fillProgress: 0, online: false, startTime: 1.58, color: '#e50' });
     }
 
     // Phase 4-5 orchestrator lines
@@ -22069,6 +22682,24 @@ function initBiosBootSequence() {
         { name: 'TECH.TREE', status: info.techCount > 0 ? 'OK' : 'SKIP', statusColor: info.techCount > 0 ? '#0f0' : '#ff0', startTime: 2.45 },
         { name: 'BIO.CONDUIT', status: 'OK', statusColor: '#0f0', startTime: 2.50 },
     ];
+
+    // Add tech-specific system checks
+    const techChecks = {
+        pg1: 'BM.CNDUIT', pg2: 'NRG.EFF', pg3: 'PWR.BCAST', pg4: 'RX.AMP', pg5: 'GRID.AUTO',
+        dc1: 'DRN.UPLNK', dc2: 'HRV.COORD', dc3: 'ATK.COORD', dc4: 'FLT.EXPND', dc5: 'SWM.AUTO',
+        dn1: 'THR.BOOST', dn2: 'DRN.ARMR', dn3: 'SHD.XFER', dn4: 'FLT.RSLNC', dn5: 'SWM.SHLD',
+    };
+    let checkTime = 2.52;
+    for (const techId of info.techResearched) {
+        const name = techChecks[techId];
+        if (name) {
+            biosBootState.checkLines.push({
+                name, status: 'OK', statusColor: '#0f0', startTime: checkTime
+            });
+            checkTime += 0.02;
+        }
+    }
+
     biosBootState.checkIndex = 0;
 
     biosBootState.lines = lines;
@@ -22239,12 +22870,15 @@ function renderBiosBootSequence() {
 
     const splitY = Math.floor(canvas.height * 0.55);
     const splitX = Math.floor(canvas.width * 0.55);
+    const info = biosBootState.waveInfo;
+    const hasTopRight = info.techCount > 0;
+    const topSplitX = hasTopRight ? Math.floor(canvas.width * 0.6) : canvas.width;
 
-    // PANE 1 (TOP): POST + Orchestrator text
+    // PANE 1 (TOP-LEFT or FULL): POST + Orchestrator text
     ctx.save();
     const topPaneH = biosBootState.horizontalSplit ? splitY - 2 : canvas.height;
     ctx.beginPath();
-    ctx.rect(0, 0, canvas.width, topPaneH);
+    ctx.rect(0, 0, topSplitX - (hasTopRight ? 2 : 0), topPaneH);
     ctx.clip();
 
     // Render visible text lines (top pane)
@@ -22288,6 +22922,23 @@ function renderBiosBootSequence() {
     }
     ctx.restore();
 
+    // Top-right: Tech network pane
+    if (hasTopRight && e >= 0.5) {
+        if (!biosBootState.soundFlags.topRightSplit) {
+            biosBootState.soundFlags.topRightSplit = true;
+            SFX.biosTmuxCrack();
+        }
+        ctx.fillStyle = 'rgba(0, 255, 0, 0.4)';
+        ctx.fillRect(topSplitX - 1, 0, 2, topPaneH);
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(topSplitX + 1, 0, canvas.width - topSplitX - 1, topPaneH);
+        ctx.clip();
+        renderBIOSTechNetwork(topSplitX + 1, 0, canvas.width - topSplitX - 1, topPaneH);
+        ctx.restore();
+    }
+
     // Horizontal split divider
     if (biosBootState.horizontalSplit) {
         ctx.fillStyle = 'rgba(0, 255, 0, 0.4)';
@@ -22311,7 +22962,7 @@ function renderBiosBootSequence() {
             ctx.beginPath();
             ctx.rect(splitX + 1, splitY + 1, canvas.width - splitX - 1, canvas.height - splitY - 1);
             ctx.clip();
-            renderBIOSDataStream(splitX + 1, splitY + 1, canvas.width - splitX - 1, canvas.height - splitY - 1);
+            renderBIOSDataStreamEnhanced(splitX + 1, splitY + 1, canvas.width - splitX - 1, canvas.height - splitY - 1);
             ctx.restore();
         } else {
             // BOTTOM: Swarm table OR download
@@ -22576,6 +23227,146 @@ function renderBIOSDataStream(px, py, pw, ph) {
         ascii += '|';
         ctx.fillStyle = 'rgba(0, 255, 0, 0.08)';
         ctx.fillText(ascii, px + 48 + 8 * 18, hy);
+    }
+}
+
+function renderBIOSTechNetwork(px, py, pw, ph) {
+    const info = biosBootState.waveInfo;
+    const e = biosBootState.elapsed;
+    if (e < 1.0) return;
+
+    ctx.fillStyle = '#0ff';
+    ctx.font = 'bold 9px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('TECH.NETWORK', px + 8, py + 14);
+
+    ctx.fillStyle = '#444';
+    ctx.font = '7px monospace';
+    const divLen = Math.floor(pw / 5);
+    let divider = '';
+    for (let d = 0; d < divLen; d++) divider += '-';
+    ctx.fillText(divider, px + 8, py + 24);
+
+    const techs = info.techResearched;
+    let lineY = py + 36;
+    const lineH = 11;
+
+    ctx.font = '7px monospace';
+
+    // Central node
+    ctx.fillStyle = '#0ff';
+    ctx.fillText('    [MOTHERSHIP]', px + 8, lineY); lineY += lineH;
+    ctx.fillStyle = '#444';
+    ctx.fillText('     |  |  |', px + 8, lineY); lineY += lineH;
+
+    // Power grid branch
+    const pgNodes = ['pg1','pg2','pg3','pg4','pg5'].filter(t => techs.includes(t));
+    if (pgNodes.length > 0) {
+        ctx.fillStyle = '#f90';
+        ctx.fillText('     +--[PWR.GRID]', px + 8, lineY); lineY += lineH;
+        for (const node of pgNodes) {
+            ctx.fillStyle = '#fa0';
+            ctx.fillText('     |   +--' + node.toUpperCase(), px + 8, lineY); lineY += lineH;
+        }
+    }
+
+    // Drone command branch
+    const dcNodes = ['dc1','dc2','dc3','dc4','dc5'].filter(t => techs.includes(t));
+    if (dcNodes.length > 0) {
+        ctx.fillStyle = '#58f';
+        ctx.fillText('     +--[DRN.CMD]', px + 8, lineY); lineY += lineH;
+        for (const node of dcNodes) {
+            ctx.fillStyle = '#78f';
+            ctx.fillText('     |   +--' + node.toUpperCase(), px + 8, lineY); lineY += lineH;
+        }
+    }
+
+    // Defense network branch
+    const dnNodes = ['dn1','dn2','dn3','dn4','dn5'].filter(t => techs.includes(t));
+    if (dnNodes.length > 0) {
+        ctx.fillStyle = '#e50';
+        ctx.fillText('     +--[DEF.NET]', px + 8, lineY); lineY += lineH;
+        for (const node of dnNodes) {
+            ctx.fillStyle = '#d40';
+            ctx.fillText('     |   +--' + node.toUpperCase(), px + 8, lineY); lineY += lineH;
+        }
+    }
+
+    // Summary
+    lineY += lineH;
+    if (lineY < py + ph - 4) {
+        ctx.fillStyle = '#0f0';
+        ctx.font = 'bold 7px monospace';
+        const total = pgNodes.length + dcNodes.length + dnNodes.length;
+        ctx.fillText('NODES: ' + total + '/15  LINKS: ' + (total * 2) + '  ACTIVE', px + 8, lineY);
+    }
+}
+
+function renderBIOSDataStreamEnhanced(px, py, pw, ph) {
+    const info = biosBootState.waveInfo;
+    const techCount = info.techCount;
+
+    if (techCount === 0) {
+        renderBIOSDataStream(px, py, pw, ph);
+        return;
+    }
+
+    // Header
+    ctx.fillStyle = '#0ff';
+    ctx.font = 'bold 8px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('SUBSYSTEM TELEMETRY', px + 4, py + 12);
+
+    ctx.font = '7px monospace';
+    let lineY = py + 24;
+    const lineH = 10;
+    const now = Date.now();
+
+    // Readout data for each tech
+    const techReadouts = {
+        pg1: { label: 'CONDUIT.FLOW', unit: 'MW', base: 847, color: '#f90' },
+        pg2: { label: 'EFF.RATIO', unit: '%', base: 70, color: '#fa0' },
+        pg3: { label: 'BCAST.RADIUS', unit: 'm', base: 340, color: '#fb0' },
+        pg4: { label: 'RX.OUTPUT', unit: 'GW', base: 12, color: '#fc0' },
+        pg5: { label: 'GRID.REGEN', unit: '/s', base: 21, color: '#fd0' },
+        dc1: { label: 'DRN.SLOTS', unit: '', base: 3, color: '#58f' },
+        dc2: { label: 'HRV.SYNC', unit: '%', base: 99, color: '#68f' },
+        dc3: { label: 'ATK.SYNC', unit: '%', base: 97, color: '#78f' },
+        dc4: { label: 'FLT.NODES', unit: '', base: 15, color: '#88f' },
+        dc5: { label: 'SWM.NEURONS', unit: '', base: 2048, color: '#99f' },
+        dn1: { label: 'THR.MULT', unit: 'x', base: 13, color: '#e50' },
+        dn2: { label: 'ARMOR.INT', unit: '%', base: 80, color: '#d40' },
+        dn3: { label: 'SHD.CHRG', unit: '', base: 1, color: '#c30' },
+        dn4: { label: 'RDPLY.SPD', unit: 'ms', base: 500, color: '#b20' },
+        dn5: { label: 'SWM.FIELD', unit: 'HP', base: 15, color: '#a10' },
+    };
+
+    // Show readouts for researched techs with jittering values
+    for (let i = 0; i < info.techResearched.length && lineY < py + ph - 10; i++) {
+        const techId = info.techResearched[i];
+        const rd = techReadouts[techId];
+        if (!rd) continue;
+
+        const jitter = Math.sin(now / 200 + i * 1.7) * rd.base * 0.03;
+        const value = Math.floor(rd.base + jitter);
+
+        ctx.fillStyle = rd.color;
+        ctx.fillText(rd.label.padEnd(13) + String(value).padStart(5) + rd.unit, px + 4, lineY);
+        lineY += lineH;
+    }
+
+    // Remaining space: flowing hex data background noise
+    lineY += 4;
+    ctx.fillStyle = 'rgba(0, 255, 0, 0.12)';
+    const scrollOffset = Math.floor(now / 50);
+    while (lineY < py + ph - 4) {
+        let hexStr = '';
+        const lineIdx = Math.floor((lineY + scrollOffset) / lineH);
+        for (let h = 0; h < 6; h++) {
+            hexStr += ((now * 3 + lineIdx * 17 + h * 31) % 256).toString(16).padStart(2, '0').toUpperCase() + ' ';
+        }
+        ctx.fillText(hexStr, px + 4, lineY);
+        lineY += lineH;
     }
 }
 
