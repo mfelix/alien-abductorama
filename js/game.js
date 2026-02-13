@@ -2854,6 +2854,114 @@ const SFX = {
         src.connect(bp); bp.connect(g); g.connect(audioCtx.destination);
         src.start(t); src.stop(t + 0.04);
     },
+
+    // NERV-style ascending chord for "ALL SYSTEMS GO" tutorial completion
+    allSystemsGo: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        // Klaxon phase: low warning tone with wobble
+        const klaxon = audioCtx.createOscillator();
+        const klaxonGain = audioCtx.createGain();
+        const lfo = audioCtx.createOscillator();
+        const lfoGain = audioCtx.createGain();
+        klaxon.type = 'square';
+        klaxon.frequency.setValueAtTime(200, t);
+        klaxon.frequency.linearRampToValueAtTime(600, t + 0.5);
+        lfo.frequency.value = 4;
+        lfoGain.gain.value = 10;
+        lfo.connect(lfoGain);
+        lfoGain.connect(klaxon.frequency);
+        klaxonGain.gain.setValueAtTime(0.001, t);
+        klaxonGain.gain.linearRampToValueAtTime(0.12, t + 0.05);
+        klaxonGain.gain.setValueAtTime(0.12, t + 0.3);
+        klaxonGain.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
+        klaxon.connect(klaxonGain);
+        klaxonGain.connect(audioCtx.destination);
+        klaxon.start(t);
+        klaxon.stop(t + 0.55);
+        lfo.start(t);
+        lfo.stop(t + 0.55);
+        // Resolution phase: confident dual-tone chime
+        const chime1 = audioCtx.createOscillator();
+        const chime2 = audioCtx.createOscillator();
+        const chimeGain = audioCtx.createGain();
+        chime1.type = 'sine';
+        chime2.type = 'sine';
+        chime1.frequency.value = 880;
+        chime2.frequency.value = 1320;
+        chimeGain.gain.setValueAtTime(0.001, t + 0.5);
+        chimeGain.gain.linearRampToValueAtTime(0.15, t + 0.55);
+        chimeGain.gain.exponentialRampToValueAtTime(0.001, t + 1.2);
+        chime1.connect(chimeGain);
+        chime2.connect(chimeGain);
+        chimeGain.connect(audioCtx.destination);
+        chime1.start(t + 0.5);
+        chime1.stop(t + 1.2);
+        chime2.start(t + 0.5);
+        chime2.stop(t + 1.2);
+    },
+
+    // Soft rising tone when tutorial hints slide in
+    tutorialHintAppear: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(600, t);
+        osc.frequency.exponentialRampToValueAtTime(900, t + 0.12);
+        g.gain.setValueAtTime(0.001, t);
+        g.gain.linearRampToValueAtTime(0.05, t + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+        osc.connect(g); g.connect(audioCtx.destination);
+        osc.start(t); osc.stop(t + 0.15);
+    },
+
+    // Quantum phase-in sounds for UFO materialization
+    quantumHum: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(60, t);
+        osc.frequency.exponentialRampToValueAtTime(200, t + 0.4);
+        g.gain.setValueAtTime(0.001, t);
+        g.gain.linearRampToValueAtTime(0.1, t + 0.1);
+        g.gain.setValueAtTime(0.1, t + 0.3);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+        osc.connect(g); g.connect(audioCtx.destination);
+        osc.start(t); osc.stop(t + 0.4);
+    },
+
+    phaseLockTone: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(400, t);
+        osc.frequency.exponentialRampToValueAtTime(800, t + 0.4);
+        g.gain.setValueAtTime(0.001, t);
+        g.gain.linearRampToValueAtTime(0.08, t + 0.05);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+        osc.connect(g); g.connect(audioCtx.destination);
+        osc.start(t); osc.stop(t + 0.4);
+    },
+
+    quantumSnap: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(1200, t);
+        osc.frequency.exponentialRampToValueAtTime(600, t + 0.15);
+        g.gain.setValueAtTime(0.15, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+        osc.connect(g); g.connect(audioCtx.destination);
+        osc.start(t); osc.stop(t + 0.15);
+    },
 };
 
 // ============================================
@@ -4660,6 +4768,7 @@ function updateTutorial(dt) {
                 tutorialState.hintVisible = true;
                 tutorialState.hintTimer = 0;
                 triggerTutorialCommander('beamTargets');
+                SFX.tutorialHintAppear && SFX.tutorialHintAppear();
                 // Boot the mission panel now (deferred from initial boot on wave 1)
                 if (wave === 1) {
                     hudBootState.panels.mission.active = true;
@@ -4676,9 +4785,11 @@ function updateTutorial(dt) {
             } else if (tutorialState.phase === 'WARP_JUKE') {
                 tutorialState.hintVisible = true;
                 tutorialState.hintTimer = 0;
+                SFX.tutorialHintAppear && SFX.tutorialHintAppear();
             } else if (tutorialState.phase === 'BOMB') {
                 tutorialState.hintVisible = true;
                 tutorialState.hintTimer = 0;
+                SFX.tutorialHintAppear && SFX.tutorialHintAppear();
                 triggerTutorialCommander('useBombs');
             } else if (tutorialState.phase === 'CELEBRATION') {
                 tutorialState.completionActive = true;
@@ -4701,7 +4812,7 @@ function updateTutorial(dt) {
                         0.5 + Math.random() * 0.3
                     ));
                 }
-                SFX.waveComplete && SFX.waveComplete();
+                SFX.allSystemsGo && SFX.allSystemsGo();
             }
         }
         return;
@@ -4731,6 +4842,7 @@ function updateTutorialMoveBeam(dt) {
     if (!ts.moveCompleted && !ts.hintVisible && !ts.beamHintShown && ts.phaseTimer >= TUTORIAL_CONFIG.MOVE_HINT_DELAY) {
         ts.hintVisible = true;
         ts.hintTimer = 0;
+        SFX.tutorialHintAppear && SFX.tutorialHintAppear();
     }
 
     if (ts.hintVisible) {
