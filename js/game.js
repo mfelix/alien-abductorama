@@ -671,6 +671,75 @@ const SFX = {
         }
     },
 
+    // Movement thruster sound — low warbly drone tied to horizontal velocity
+    moveLoop: null,
+    moveLoopGain: null,
+    moveLoopOsc: null,
+    moveLoopLfo: null,
+
+    startMoveLoop: () => {
+        if (!audioCtx || SFX.moveLoop) return;
+
+        const t = audioCtx.currentTime;
+
+        // Main oscillator — sine wave, low frequency
+        SFX.moveLoopOsc = audioCtx.createOscillator();
+        SFX.moveLoopOsc.type = 'sine';
+        SFX.moveLoopOsc.frequency.setValueAtTime(80, t);
+
+        // LFO for warble
+        SFX.moveLoopLfo = audioCtx.createOscillator();
+        const lfoGain = audioCtx.createGain();
+        SFX.moveLoopLfo.frequency.setValueAtTime(5, t);
+        lfoGain.gain.setValueAtTime(10, t); // Warble depth in Hz
+        SFX.moveLoopLfo.connect(lfoGain);
+        lfoGain.connect(SFX.moveLoopOsc.frequency);
+
+        // Gain — start silent, ramp up when moving
+        SFX.moveLoopGain = audioCtx.createGain();
+        SFX.moveLoopGain.gain.setValueAtTime(0.001, t);
+
+        SFX.moveLoopOsc.connect(SFX.moveLoopGain);
+        SFX.moveLoopGain.connect(audioCtx.destination);
+
+        SFX.moveLoopOsc.start(t);
+        SFX.moveLoopLfo.start(t);
+        SFX.moveLoop = true;
+    },
+
+    updateMoveLoop: (speedRatio) => {
+        // speedRatio: 0 (stopped) to 1 (full speed)
+        if (!audioCtx || !SFX.moveLoop) return;
+
+        const t = audioCtx.currentTime;
+
+        // Pitch: 80Hz at rest → 150Hz at full speed
+        const freq = 80 + 70 * speedRatio;
+        SFX.moveLoopOsc.frequency.setTargetAtTime(freq, t, 0.05);
+
+        // LFO rate: 5Hz slow warble → 8Hz faster warble at speed
+        SFX.moveLoopLfo.frequency.setTargetAtTime(5 + 3 * speedRatio, t, 0.05);
+
+        // Gain: track speed, 0 when stopped → 0.15 at full speed
+        // Use setTargetAtTime for smooth ramping (time constant 0.05s ≈ 50ms)
+        const targetGain = Math.max(0.001, speedRatio * 0.15);
+        SFX.moveLoopGain.gain.setTargetAtTime(targetGain, t, 0.05);
+    },
+
+    stopMoveLoop: () => {
+        if (!SFX.moveLoop) return;
+        try {
+            const t = audioCtx.currentTime;
+            SFX.moveLoopGain.gain.setTargetAtTime(0.001, t, 0.05);
+            SFX.moveLoopOsc.stop(t + 0.3);
+            SFX.moveLoopLfo.stop(t + 0.3);
+        } catch (e) {}
+        SFX.moveLoop = null;
+        SFX.moveLoopOsc = null;
+        SFX.moveLoopLfo = null;
+        SFX.moveLoopGain = null;
+    },
+
     // Charging beam hum - warm electrical hum, distinct from beam loop
     chargingHumLoop: null,
     chargingHumGain: null,
@@ -4719,6 +4788,7 @@ class UFO {
                     }
                     // Stop normal beam loop if it was playing
                     SFX.stopBeamLoop();
+                    SFX.stopMoveLoop();
                     SFX.startChargingHum();
                     this.chargingTarget = snapCoord;
                     this.chargingParticleTimer = 0;
@@ -4843,6 +4913,7 @@ class UFO {
             // Beam deactivated
             if (this.beamActive) {
                 SFX.stopBeamLoop();
+                SFX.stopMoveLoop();
                 // Clear charging target if snap-charging
                 if (this.chargingTarget) {
                     this.chargingTarget.isBeingCharged = false;
@@ -4905,6 +4976,7 @@ class UFO {
         if (this.energy <= 0) {
             if (this.beamActive) {
                 SFX.stopBeamLoop();
+                SFX.stopMoveLoop();
             }
             // Clear charging target if snap-charging
             if (this.chargingTarget) {
@@ -4977,6 +5049,16 @@ class UFO {
             // Reset combo if moving (same as before, but based on velocity)
             if (Math.abs(this.vx) > 10 && combo > 0) {
                 combo = 0;
+            }
+
+            // Update movement sound
+            const maxSpeed = effectiveSpeed;
+            const speedRatio = Math.min(Math.abs(this.vx) / maxSpeed, 1);
+            if (speedRatio > 0.01 && audioCtx) {
+                if (!SFX.moveLoop) SFX.startMoveLoop();
+                SFX.updateMoveLoop(speedRatio);
+            } else if (SFX.moveLoop) {
+                SFX.stopMoveLoop();
             }
 
             // Clamp to screen edges and zero velocity at boundaries
@@ -11259,6 +11341,7 @@ function triggerGameOver() {
 
     // Stop beam sound if active
     SFX.stopBeamLoop();
+    SFX.stopMoveLoop();
 
     // Mark that user has played a game this session
     hasPlayedThisSession = true;
@@ -21077,6 +21160,7 @@ function update(dt) {
     if (waveTimer <= 0) {
         // Clean up tutorial on wave end
         cleanupTutorial();
+        SFX.stopMoveLoop();
 
         // Wave complete - transition to next wave
         // Stop beam sound if beam is active
