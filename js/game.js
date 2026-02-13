@@ -16837,7 +16837,8 @@ function updateHUDBoot(dt) {
     } else if (preBoot.phase === 'logo') {
         preBoot.timer += dt;
         preBoot.logoAlpha = Math.min(1, preBoot.timer / 0.2);
-        if (preBoot.timer >= 0.5) {
+        const logoDuration = wave === 1 ? 1.0 : 0.5;
+        if (preBoot.timer >= logoDuration) {
             preBoot.phase = 'dissolve';
             preBoot.timer = 0;
         }
@@ -16945,35 +16946,57 @@ function generateBootLines() {
     const snap = hudBootState.techSnapshot;
     const lines = hudBootState.bootLines;
 
-    // STATUS panel
-    lines.status = [
-        `>> INIT SYS.STATUS v${snap.wave}.0`,
-        `WAVE ${snap.wave} DEPLOYMENT`,
-        `[OK] SCORE TELEMETRY ONLINE`,
-        `[OK] COMBO TRACKER LINKED`,
-        snap.techResearched.length > 0 ?
-            `[OK] BIO.MATTER MONITOR (${snap.techResearched.length} TECH)` :
-            `[OK] BIO.MATTER MONITOR`,
-        `>> STATUS NOMINAL`
-    ];
-
-    // MISSION panel
-    lines.mission = [
-        `>> INIT MISSION.CTL`,
-        `TARGET QUOTA: ${snap.quotaTarget}`,
-        `[OK] HARVEST SENSORS CALIBRATED`,
-        `[OK] QUOTA TRACKING ACTIVE`,
-        `>> MISSION PARAMETERS SET`
-    ];
-
-    // SYSTEMS panel
-    lines.systems = [
-        `>> INIT SYS.INTEGRITY`,
-        `HULL: ${snap.maxHealth} HP`,
-        snap.hasEnergyCells ? `[OK] REVIVE CELLS: CHARGED` : `[SKIP] NO REVIVE CELLS`,
-        `[OK] SHIELD MONITOR ONLINE`,
-        `>> INTEGRITY CHECK PASS`
-    ];
+    if (snap.wave === 1) {
+        // Wave 1: first activation themed text
+        lines.status = [
+            '>> FIRST ACTIVATION DETECTED',
+            'SCORE MODULE        [########] OK',
+            'INITIALIZING HARVEST PROTOCOLS',
+            '[OK] SENSORS CALIBRATED',
+            '>> MOTHERSHIP UPLINK ESTABLISHED'
+        ];
+        lines.mission = [
+            '>> LOADING MISSION PARAMETERS',
+            'QUOTA.DB: FIRST DEPLOYMENT',
+            `TARGET: ${snap.quotaTarget} SPECIMENS`,
+            '[OK] HARVEST ZONE MAPPED',
+            '>> AWAITING COMMANDER ORDERS'
+        ];
+        lines.systems = [
+            '>> POWER-ON SELF TEST',
+            `HULL: ${snap.maxHealth} HP -- PRISTINE`,
+            'BEAM ARRAY: FULLY CHARGED',
+            'ENERGY CORE: 100%',
+            '[OK] ALL SYSTEMS GREEN',
+            '>> SHIP READY FOR DEPLOYMENT'
+        ];
+    } else {
+        // Non-wave-1: existing generic text
+        lines.status = [
+            `>> INIT SYS.STATUS v${snap.wave}.0`,
+            `WAVE ${snap.wave} DEPLOYMENT`,
+            `[OK] SCORE TELEMETRY ONLINE`,
+            `[OK] COMBO TRACKER LINKED`,
+            snap.techResearched.length > 0 ?
+                `[OK] BIO.MATTER MONITOR (${snap.techResearched.length} TECH)` :
+                `[OK] BIO.MATTER MONITOR`,
+            `>> STATUS NOMINAL`
+        ];
+        lines.mission = [
+            `>> INIT MISSION.CTL`,
+            `TARGET QUOTA: ${snap.quotaTarget}`,
+            `[OK] HARVEST SENSORS CALIBRATED`,
+            `[OK] QUOTA TRACKING ACTIVE`,
+            `>> MISSION PARAMETERS SET`
+        ];
+        lines.systems = [
+            `>> INIT SYS.INTEGRITY`,
+            `HULL: ${snap.maxHealth} HP`,
+            snap.hasEnergyCells ? `[OK] REVIVE CELLS: CHARGED` : `[SKIP] NO REVIVE CELLS`,
+            `[OK] SHIELD MONITOR ONLINE`,
+            `>> INTEGRITY CHECK PASS`
+        ];
+    }
 
     // WEAPONS panel (if active)
     if (hudBootState.panels.weapons.active) {
@@ -17243,7 +17266,7 @@ function renderPanelBootOverlay(zone, h, color, label, panelState, bootLines) {
 }
 
 function renderHUDBootGlobalEffects() {
-    if (hudBootState.phase !== 'booting') return;
+    if (hudBootState.phase !== 'booting' && !(wave === 1 && hudBootState.phase === 'complete')) return;
     const pb = preBootState;
     const totalBootTime = hudBootState.timer;
 
@@ -17549,6 +17572,32 @@ function renderHUDBootGlobalEffects() {
             ctx.shadowBlur = 12;
             ctx.fillText('ALL SYSTEMS NOMINAL', 0, 0);
             ctx.shadowBlur = 0;
+            ctx.restore();
+        }
+    }
+
+    // Wave 1: "MOTHERSHIP UPLINK ESTABLISHED" flash after boot completes
+    if (wave === 1 && hudBootState.phase === 'complete') {
+        const bootElapsed = hudBootState.timer;
+        if (bootElapsed < 0.8) {
+            ctx.save();
+            // Edge pulse (first 100ms)
+            if (bootElapsed < 0.1) {
+                const pulseAlpha = 0.3 * (1 - bootElapsed / 0.1);
+                ctx.strokeStyle = `rgba(0, 255, 255, ${pulseAlpha})`;
+                ctx.lineWidth = 3;
+                ctx.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);
+            }
+            // Text display (100ms to 800ms, fade 500ms to 800ms)
+            if (bootElapsed >= 0.1) {
+                let textAlpha = 1;
+                if (bootElapsed >= 0.5) textAlpha = Math.max(0, 1 - (bootElapsed - 0.5) / 0.3);
+                ctx.globalAlpha = textAlpha;
+                ctx.fillStyle = '#0ff';
+                ctx.font = '14px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText('MOTHERSHIP UPLINK ESTABLISHED', canvas.width / 2, 30);
+            }
             ctx.restore();
         }
     }
