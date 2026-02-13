@@ -13836,6 +13836,14 @@ let preBootState = {
     _declaration: { timer: 0, hexSeeds: [], scanY: -1, accentLen: 0, frameTrace: 0, resolved: 0, resolved2: 0, holdTimer: 0, fadeAlpha: 1 },
 };
 
+// Bayer 4x4 ordered dither matrix for quantum materialization shader
+const BAYER4x4 = [
+    [ 0, 8, 2, 10],
+    [12, 4, 14, 6],
+    [ 3, 11, 1, 9],
+    [15, 7, 13, 5]
+];
+
 // Enhanced DIAG.SYS sparkline data
 let diagEnhancedState = {
     energyRateBuffer: new Float32Array(20),
@@ -18310,6 +18318,114 @@ function renderHUDBootGlobalEffects() {
                 ctx.fillStyle = 'rgba(0, 255, 255, 0.2)';
                 ctx.textAlign = c.tx < centerX ? 'left' : 'right';
                 ctx.fillText(c.text, c.tx, c.ty);
+            }
+        }
+
+        // ===== QUANTUM MATERIALIZATION SHADER =====
+        // Left-to-right sweep that "materializes" the logo from pixelated/dithered noise
+        {
+            const shaderDuration = wave === 1 ? 0.8 : 0.35;
+            const shaderDelay = wave === 1 ? 0.1 : 0.05;
+            const shaderT = Math.max(0, Math.min(1, (pb.timer - shaderDelay) / shaderDuration));
+
+            if (shaderT > 0 && shaderT < 1) {
+                const regionX = Math.max(0, Math.floor(centerX - 220));
+                const regionY = Math.max(0, Math.floor(centerY - 130));
+                const regionW = Math.min(440, canvas.width - regionX);
+                const regionH = Math.min(260, canvas.height - regionY);
+
+                // Sweep position within the region
+                const sweepLocalX = Math.floor(shaderT * regionW);
+
+                // Get image data for the logo region
+                const imgData = ctx.getImageData(regionX, regionY, regionW, regionH);
+                const data = imgData.data;
+
+                const blockSize = 6;
+
+                // Pixelate area AHEAD of sweep (right of sweep front)
+                for (let by = 0; by < regionH; by += blockSize) {
+                    for (let bx = sweepLocalX; bx < regionW; bx += blockSize) {
+                        // Distance from sweep front normalized 0..1
+                        const dist = (bx - sweepLocalX) / (regionW - sweepLocalX + 1);
+
+                        // Bigger blocks farther from the front
+                        const effectiveBlock = Math.max(2, Math.floor(blockSize + dist * 6));
+
+                        // Sample center pixel of block
+                        const sx = Math.min(bx + (effectiveBlock >> 1), regionW - 1);
+                        const sy = Math.min(by + (effectiveBlock >> 1), regionH - 1);
+                        const si = (sy * regionW + sx) * 4;
+                        const sr = data[si], sg = data[si + 1], sb = data[si + 2];
+
+                        // Fill block with sampled color + Bayer dither
+                        const endBx = Math.min(bx + effectiveBlock, regionW);
+                        const endBy = Math.min(by + effectiveBlock, regionH);
+                        for (let py = by; py < endBy; py++) {
+                            for (let px = bx; px < endBx; px++) {
+                                const di = (py * regionW + px) * 4;
+                                const bayerVal = BAYER4x4[py & 3][px & 3] / 16;
+
+                                // Quantize to 8 levels per channel + ordered dither
+                                const quantize = 32;
+                                const dr = Math.floor(sr / quantize) * quantize;
+                                const dg = Math.floor(sg / quantize) * quantize;
+                                const db = Math.floor(sb / quantize) * quantize;
+
+                                data[di]     = Math.min(255, dr + ((sr % quantize) / quantize > bayerVal ? quantize : 0));
+                                data[di + 1] = Math.min(255, dg + ((sg % quantize) / quantize > bayerVal ? quantize : 0));
+                                data[di + 2] = Math.min(255, db + ((sb % quantize) / quantize > bayerVal ? quantize : 0));
+                            }
+                        }
+                    }
+                }
+
+                ctx.putImageData(imgData, regionX, regionY);
+
+                // Screen warp near the sweep front using drawImage strip displacement
+                const warpAmplitude = 5;
+                const warpBand = 80; // pixels around front affected by warp
+                const stripH = 2;
+                const frontX = regionX + sweepLocalX;
+                const warpStart = Math.max(regionY, Math.floor(regionY));
+                const warpEnd = Math.min(regionY + regionH, canvas.height);
+
+                for (let wy = warpStart; wy < warpEnd; wy += stripH) {
+                    const distFromFront = Math.abs(wy - (regionY + regionH * 0.5));
+                    const verticalFalloff = Math.max(0, 1 - distFromFront / (regionH * 0.5));
+                    // Horizontal proximity to sweep front — strongest near the front
+                    const warpShift = Math.sin(wy * 0.08 + now * 0.003) * warpAmplitude * verticalFalloff * (1 - shaderT);
+                    const shift = Math.round(warpShift);
+                    if (shift !== 0) {
+                        const srcX = Math.max(0, frontX - warpBand);
+                        const srcW = Math.min(warpBand * 2, canvas.width - srcX);
+                        const clampedH = Math.min(stripH, canvas.height - wy);
+                        ctx.drawImage(canvas, srcX, wy, srcW, clampedH, srcX + shift, wy, srcW, clampedH);
+                    }
+                }
+
+                // Draw scan front line with glow
+                ctx.save();
+                ctx.globalAlpha = pb.logoAlpha;
+                // Primary bright cyan scan line
+                ctx.strokeStyle = 'rgba(0, 255, 255, 0.9)';
+                ctx.shadowColor = '#0ff';
+                ctx.shadowBlur = 20;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(frontX, regionY);
+                ctx.lineTo(frontX, regionY + regionH);
+                ctx.stroke();
+                // Secondary dimmer ghost line slightly behind
+                ctx.strokeStyle = 'rgba(0, 255, 255, 0.3)';
+                ctx.shadowBlur = 40;
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(frontX - 4, regionY);
+                ctx.lineTo(frontX - 4, regionY + regionH);
+                ctx.stroke();
+                ctx.shadowBlur = 0;
+                ctx.restore();
             }
         }
 
@@ -22869,6 +22985,42 @@ function initBiosBootSequence() {
         }
     }
 
+    // Memory bank diagnostics
+    addLine('', '#aaa', false, 'top', t); t += 0.015;
+    addLine('MEMORY DIAGNOSTICS:', '#fff', true, 'top', t); t += 0.015;
+    addLine('  BANK 0: 0x0000-0x3FFF .... VERIFIED', '#aaa', false, 'top', t); t += 0.012;
+    addLine('  BANK 1: 0x4000-0x7FFF .... VERIFIED', '#aaa', false, 'top', t); t += 0.012;
+    addLine('  BANK 2: 0x8000-0xBFFF .... VERIFIED', '#aaa', false, 'top', t); t += 0.012;
+    addLine('  BANK 3: 0xC000-0xFFFF .... VERIFIED', '#aaa', false, 'top', t); t += 0.012;
+    addLine('  TOTAL: ' + (16384 + info.bioMatter * 16) + ' QB ADDRESSABLE', '#0f0', false, 'top', t); t += 0.015;
+
+    // Energy subsystem
+    addLine('', '#aaa', false, 'top', t); t += 0.015;
+    addLine('ENERGY SUBSYSTEM:', '#fff', true, 'top', t); t += 0.015;
+    addLine('  NRG.CORE: ' + Math.floor(info.health / info.maxHealth * 100) + '% CAPACITY', info.health > info.maxHealth * 0.5 ? '#0f0' : '#f80', false, 'top', t); t += 0.012;
+    addLine('  BIO.STORE: ' + info.bioMatter + ' UNITS BANKED', '#0f0', false, 'top', t); t += 0.012;
+    addLine('  IRQ 7: NRG.INTERRUPT HANDLER .... INSTALLED', '#aaa', false, 'top', t); t += 0.012;
+    addLine('  DMA 2: BIO.CONDUIT XFER CHANNEL . ALLOCATED', '#aaa', false, 'top', t); t += 0.012;
+
+    // Drone bay scan
+    if (info.hasDrones) {
+        addLine('', '#aaa', false, 'top', t); t += 0.015;
+        addLine('DRONE BAY SCAN:', '#fff', true, 'top', t); t += 0.015;
+        addLine('  ACTIVE UNITS: ' + info.droneCount, '#58f', false, 'top', t); t += 0.012;
+        addLine('  I/O PORT 0x3F8: FLEET.BUS ......... READY', '#aaa', false, 'top', t); t += 0.012;
+        addLine('  I/O PORT 0x2F8: COORD.BUS ......... ' + (info.hasCoordinators ? 'READY' : 'EMPTY'), info.hasCoordinators ? '#0f0' : '#888', false, 'top', t); t += 0.012;
+        addLine('  IRQ 5: FLEET.INTERRUPT HANDLER .... INSTALLED', '#aaa', false, 'top', t); t += 0.012;
+    }
+
+    // Weapons subsystem
+    if (info.hasBombs || info.hasMissiles) {
+        addLine('', '#aaa', false, 'top', t); t += 0.015;
+        addLine('ORDNANCE SUBSYSTEM:', '#fff', true, 'top', t); t += 0.015;
+        if (info.hasBombs) { addLine('  BOMB.BAY: LOADED (' + Math.floor(Math.random() * 5 + 3) + ' YIELD)', '#f44', false, 'top', t); t += 0.012; }
+        if (info.hasMissiles) { addLine('  MISSILE.RACK: ' + info.missileGroupCount + ' GROUPS ARMED', '#f80', false, 'top', t); t += 0.012; }
+        addLine('  IRQ 3: ORD.INTERRUPT HANDLER ..... INSTALLED', '#aaa', false, 'top', t); t += 0.012;
+    }
+
     addLine('', '#aaa', false, 'top', t); t += 0.015;
     addLine('BIOS POST COMPLETE - ALL DEVICES NOMINAL', '#0f0', true, 'top', t); t += 0.015;
     addLine('', '#aaa', false, 'top', t); t += 0.015;
@@ -22879,13 +23031,20 @@ function initBiosBootSequence() {
 
     // Phase 2: Orchestrator (0.6-1.0s)
     t = 0.62;
-    addLine('---------------------------------------------', '#444', false, 'top', t); t += 0.025;
+    addLine('═══════════════════════════════════════════════', '#444', false, 'top', t); t += 0.025;
     addLine('ORCHESTRATOR v2.1 ONLINE', '#0ff', true, 'top', t); t += 0.025;
     addLine('  Session: 0x4A7F2B // Wave ' + info.wave, '#888', false, 'top', t); t += 0.025;
     addLine('  Priority: HARVEST + DEFENSE', '#aaa', false, 'top', t); t += 0.025;
     addLine('  Fleet status: ' + info.droneCount + ' UNITS REGISTERED', '#0f0', false, 'top', t); t += 0.025;
     addLine('', '#aaa', false, 'top', t); t += 0.025;
-    addLine('ORCHESTRATOR: Spawning agent swarms...', '#0ff', false, 'top', t);
+    addLine('ORCHESTRATOR: Spawning agent swarms...', '#0ff', false, 'top', t); t += 0.025;
+
+    // Resource allocation table
+    addLine('', '#aaa', false, 'top', t); t += 0.025;
+    addLine('RESOURCE ALLOCATION TABLE:', '#0ff', true, 'top', t); t += 0.025;
+    addLine('  CPU.THREADS: ' + (4 + info.techCount * 2) + ' / 64 ALLOCATED', '#aaa', false, 'top', t); t += 0.015;
+    addLine('  MEM.HEAP: ' + (512 + info.droneCount * 64) + ' MB RESERVED', '#aaa', false, 'top', t); t += 0.015;
+    addLine('  I/O.BANDWIDTH: ' + (info.techCount > 5 ? 'HIGH' : 'STANDARD'), '#aaa', false, 'top', t);
 
     // Phase 3: Swarm spawn (1.0-1.6s) - rows in bottom pane
     biosBootState.swarmRows = [
@@ -23142,14 +23301,14 @@ function renderBiosBootSequence() {
     ctx.clip();
 
     // Render visible text lines (top pane)
-    ctx.font = '9px monospace';
-    const lineH = 12;
+    ctx.font = '11px monospace';
+    const lineH = 15;
     let lineY = 16;
     for (let i = 0; i < biosBootState.lineIndex; i++) {
         const line = biosBootState.lines[i];
         if (line.pane !== 'top') continue;
         ctx.fillStyle = line.color;
-        ctx.font = line.bold ? 'bold 9px monospace' : '9px monospace';
+        ctx.font = line.bold ? 'bold 12px monospace' : '11px monospace';
         ctx.textAlign = 'left';
 
         // Color-code status words
@@ -23177,7 +23336,7 @@ function renderBiosBootSequence() {
     // Blinking cursor
     if (Math.floor(Date.now() / 400) % 2 === 0) {
         ctx.fillStyle = '#0f0';
-        ctx.font = '9px monospace';
+        ctx.font = '11px monospace';
         ctx.fillText('\u2588', 12 + (biosBootState.lineIndex > 0 ? ctx.measureText(biosBootState.lines[Math.min(biosBootState.lineIndex - 1, biosBootState.lines.length - 1)].text).width + 6 : 0), lineY);
     }
     ctx.restore();
@@ -23237,6 +23396,11 @@ function renderBiosBootSequence() {
             }
             ctx.restore();
         }
+    }
+
+    // Tech modals overlay (Windows 1.0 style)
+    if (biosBootState.waveInfo.techCount > 0 && biosBootState.elapsed >= 0.8) {
+        renderBIOSTechModals();
     }
 
     // Center countdown panel
@@ -23305,21 +23469,21 @@ function renderBiosBootSequence() {
 
 function renderBIOSSwarmTable(px, py, pw, ph) {
     ctx.fillStyle = '#0ff';
-    ctx.font = 'bold 9px monospace';
+    ctx.font = 'bold 12px monospace';
     ctx.textAlign = 'left';
     ctx.fillText('AGENT SWARM STATUS', px + 12, py + 14);
     ctx.fillStyle = '#444';
-    ctx.font = '9px monospace';
+    ctx.font = '11px monospace';
     ctx.fillText('----------------------------------------', px + 12, py + 26);
 
     for (let i = 0; i < biosBootState.swarmRows.length; i++) {
         const row = biosBootState.swarmRows[i];
-        const rowY = py + 38 + i * 14;
+        const rowY = py + 38 + i * 17;
         if (biosBootState.elapsed < row.startTime) continue;
 
         // Name
         ctx.fillStyle = '#aaa';
-        ctx.font = '9px monospace';
+        ctx.font = '11px monospace';
         ctx.textAlign = 'left';
         ctx.fillText('  ' + row.name, px + 12, rowY);
 
@@ -23335,28 +23499,28 @@ function renderBIOSSwarmTable(px, py, pw, ph) {
         // Status
         const statusText = row.online ? 'ONLINE' : 'LOADING';
         ctx.fillStyle = row.online ? row.color : '#ff0';
-        ctx.font = row.online ? 'bold 9px monospace' : '9px monospace';
+        ctx.font = row.online ? 'bold 12px monospace' : '11px monospace';
         ctx.fillText(statusText, px + 12 + nameW + barWidth * 6 + 30, rowY);
     }
 
     // All swarms online
     const allOnline = biosBootState.swarmRows.every(r => r.online);
     if (allOnline) {
-        const totalY = py + 38 + biosBootState.swarmRows.length * 14 + 14;
+        const totalY = py + 38 + biosBootState.swarmRows.length * 17 + 14;
         ctx.fillStyle = '#0f0';
-        ctx.font = 'bold 9px monospace';
+        ctx.font = 'bold 12px monospace';
         ctx.fillText('  ALL SWARMS: ONLINE (' + biosBootState.swarmRows.length + ' ACTIVE)', px + 12, totalY);
     }
 }
 
 function renderBIOSDownload(px, py, pw, ph) {
     ctx.fillStyle = '#0ff';
-    ctx.font = 'bold 9px monospace';
+    ctx.font = 'bold 12px monospace';
     ctx.textAlign = 'left';
     ctx.fillText('UPLINK DATA TRANSFER', px + 12, py + 14);
     ctx.fillStyle = '#444';
-    ctx.font = '9px monospace';
-    ctx.fillText('============================================', px + 12, py + 26);
+    ctx.font = '11px monospace';
+    ctx.fillText('╔══════════════════════════════════════════════╗', px + 12, py + 26);
 
     // Progress bar
     const barX = px + 20;
@@ -23386,22 +23550,22 @@ function renderBIOSDownload(px, py, pw, ph) {
 
     // Percentage
     ctx.fillStyle = '#0f0';
-    ctx.font = 'bold 11px monospace';
+    ctx.font = 'bold 13px monospace';
     ctx.textAlign = 'left';
     ctx.fillText(Math.floor(biosBootState.downloadProgress * 100) + '%', barX + barW + 8, barY + 10);
 
     // Speed and received
-    ctx.font = '9px monospace';
+    ctx.font = '11px monospace';
     ctx.fillStyle = '#0ff';
     ctx.fillText('SPEED: ' + biosBootState.downloadSpeed.toFixed(1) + ' TB/s', barX, barY + 24);
     ctx.fillStyle = '#aaa';
     ctx.fillText('RECV: ' + biosBootState.downloadReceived.toFixed(1) + ' / 47.3 TB', barX + 180, barY + 24);
 
     // Hex data stream (decorative)
-    ctx.font = '7px monospace';
+    ctx.font = '9px monospace';
     const now = Date.now();
     for (let row = 0; row < 6; row++) {
-        const hy = barY + 38 + row * 11;
+        const hy = barY + 38 + row * 13;
         if (hy > py + ph - 4) break;
         let hexStr = '';
         for (let h = 0; h < 16; h++) {
@@ -23414,19 +23578,19 @@ function renderBIOSDownload(px, py, pw, ph) {
 
 function renderBIOSSystemCheck(px, py, pw, ph) {
     ctx.fillStyle = '#0ff';
-    ctx.font = 'bold 9px monospace';
+    ctx.font = 'bold 12px monospace';
     ctx.textAlign = 'left';
     ctx.fillText('SYSTEM CHECK', px + 12, py + 14);
 
     for (let i = 0; i < biosBootState.checkLines.length; i++) {
         const cl = biosBootState.checkLines[i];
-        const ly = py + 28 + i * 14;
+        const ly = py + 28 + i * 17;
         if (ly > py + ph - 4) break;
         if (biosBootState.elapsed < cl.startTime) continue;
 
         // Name
         ctx.fillStyle = '#aaa';
-        ctx.font = '9px monospace';
+        ctx.font = '11px monospace';
         const name = '  ' + cl.name + ' ';
 
         // Dots filling
@@ -23439,7 +23603,7 @@ function renderBIOSSystemCheck(px, py, pw, ph) {
         // Status
         if (cl.completed) {
             ctx.fillStyle = cl.statusColor;
-            ctx.font = 'bold 9px monospace';
+            ctx.font = 'bold 12px monospace';
             ctx.fillText(' [' + cl.status + ']', px + 12 + ctx.measureText(name + '.'.repeat(maxDots)).width, ly);
         }
     }
@@ -23447,22 +23611,22 @@ function renderBIOSSystemCheck(px, py, pw, ph) {
     // ALL SYSTEMS NOMINAL
     const allDone = biosBootState.checkLines.every(c => c.completed);
     if (allDone) {
-        const totalY = py + 28 + biosBootState.checkLines.length * 14 + 14;
+        const totalY = py + 28 + biosBootState.checkLines.length * 17 + 14;
         ctx.fillStyle = '#0f0';
-        ctx.font = 'bold 9px monospace';
+        ctx.font = 'bold 12px monospace';
         ctx.fillText('  ALL SYSTEMS NOMINAL', px + 12, totalY);
     }
 }
 
 function renderBIOSDataStream(px, py, pw, ph) {
     // Rapid scrolling hex dump (decorative)
-    ctx.font = '7px monospace';
+    ctx.font = '9px monospace';
     const now = Date.now();
-    const scrollOffset = Math.floor(now / 30) * 11;
-    const visibleLines = Math.floor(ph / 11);
+    const scrollOffset = Math.floor(now / 30) * 13;
+    const visibleLines = Math.floor(ph / 13);
 
     for (let row = 0; row < visibleLines; row++) {
-        const hy = py + 4 + row * 11;
+        const hy = py + 4 + row * 13;
         const lineIdx = Math.floor(scrollOffset / 11) + row;
         // Address column
         ctx.fillStyle = 'rgba(0, 170, 68, 0.3)';
@@ -23496,12 +23660,12 @@ function renderBIOSTechNetwork(px, py, pw, ph) {
     if (e < 1.0) return;
 
     ctx.fillStyle = '#0ff';
-    ctx.font = 'bold 9px monospace';
+    ctx.font = 'bold 12px monospace';
     ctx.textAlign = 'left';
     ctx.fillText('TECH.NETWORK', px + 8, py + 14);
 
     ctx.fillStyle = '#444';
-    ctx.font = '7px monospace';
+    ctx.font = '9px monospace';
     const divLen = Math.floor(pw / 5);
     let divider = '';
     for (let d = 0; d < divLen; d++) divider += '-';
@@ -23509,9 +23673,9 @@ function renderBIOSTechNetwork(px, py, pw, ph) {
 
     const techs = info.techResearched;
     let lineY = py + 36;
-    const lineH = 11;
+    const lineH = 14;
 
-    ctx.font = '7px monospace';
+    ctx.font = '9px monospace';
 
     // Central node
     ctx.fillStyle = '#0ff';
@@ -23556,9 +23720,212 @@ function renderBIOSTechNetwork(px, py, pw, ph) {
     lineY += lineH;
     if (lineY < py + ph - 4) {
         ctx.fillStyle = '#0f0';
-        ctx.font = 'bold 7px monospace';
+        ctx.font = 'bold 9px monospace';
         const total = pgNodes.length + dcNodes.length + dnNodes.length;
         ctx.fillText('NODES: ' + total + '/15  LINKS: ' + (total * 2) + '  ACTIVE', px + 8, lineY);
+    }
+}
+
+function renderBIOSTechModals() {
+    const info = biosBootState.waveInfo;
+    const techs = info.techResearched;
+    if (techs.length === 0) return;
+
+    const e = biosBootState.elapsed;
+    if (e < 0.8) return; // Don't show modals until after POST
+
+    const now = Date.now();
+
+    // Tech modal definitions with ASCII art schematics
+    const techModals = {
+        pg1: { title: 'BEAM CONDUIT', art: [
+            '  \u250C\u2500\u2500\u2500\u2500\u2500\u2510    \u250C\u2500\u2500\u2500\u2500\u2500\u2510',
+            '  \u2502 UFO \u2502\u2500\u2500\u2500\u2192\u2502 DRN \u2502',
+            '  \u2514\u2500\u2500\u252C\u2500\u2500\u2518    \u2514\u2500\u2500\u252C\u2500\u2500\u2518',
+            '     \u2502    NRG    \u2502',
+            '  \u2550\u2550\u2550\u256A\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u256A\u2550\u2550\u2550',
+        ], data: 'FLOW: 847 MW' },
+        pg2: { title: 'ENERGY OPTIMIZER', art: [
+            '  IN \u2500\u2192 [OPTIMIZE] \u2500\u2192 OUT',
+            '  100%    \u2554\u2550\u2550\u2550\u2557     70%',
+            '  \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2551EFF\u2551\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500',
+            '          \u255A\u2550\u2550\u2550\u255D',
+        ], data: 'DRAIN: -30%' },
+        pg3: { title: 'POWER BROADCAST', art: [
+            '       \u250C\u2500\u2500\u2500\u2510',
+            '  ))))\u2500\u2502UFO\u2502\u2500((((',
+            '       \u2514\u2500\u2500\u2500\u2518',
+            '  \u2550\u2550\u2550RADIUS: 340m\u2550\u2550\u2550',
+        ], data: 'RANGE: 340m' },
+        pg4: { title: 'REACTOR AMPLIFIER', art: [
+            '  \u2554\u2550\u2550\u2550\u2557  \u2554\u2550\u2550\u2550\u2557',
+            '  \u2551RX1\u2551\u2500\u2500\u2551RX2\u2551',
+            '  \u255A\u2550\u2564\u2550\u255D  \u255A\u2550\u2564\u2550\u255D',
+            '    \u2514\u2500\u2500\u2500\u2500\u252C\u2500\u2500\u2500\u2518',
+            '      [x2.0]',
+        ], data: 'OUTPUT: x2.0' },
+        pg5: { title: 'SELF-SUSTAIN GRID', art: [
+            '  \u250C\u2500\u252C\u2500\u252C\u2500\u252C\u2500\u252C\u2500\u2510',
+            '  \u2502\u25A0\u2502\u25A0\u2502\u25A0\u2502\u25A0\u2502\u25A0\u2502',
+            '  \u251C\u2500\u253C\u2500\u253C\u2500\u253C\u2500\u253C\u2500\u2524',
+            '  \u2502\u25A0\u2502\u25A0\u2502\u25A0\u2502\u25A0\u2502\u25A0\u2502',
+            '  \u2514\u2500\u2534\u2500\u2534\u2500\u2534\u2500\u2534\u2500\u2518',
+        ], data: 'REGEN: +2.1/s' },
+        dc1: { title: 'DRONE UPLINK', art: [
+            '      [MOTHERSHIP]',
+            '       \u2571    \u2502    \u2572',
+            '     [D1]  [D2]  [D3]',
+            '      \u2502     \u2502     \u2502',
+            '    \u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500',
+        ], data: 'SLOTS: ' + info.droneCount },
+        dc2: { title: 'HARVESTER COORD', art: [
+            '  [M]\u2500\u2500\u252C\u2500\u2500[C.HRV]',
+            '       \u2502',
+            '   \u250C\u2500\u2500\u2500\u253C\u2500\u2500\u2500\u2510',
+            '  [h] [h] [h]',
+        ], data: 'SYNC: 99.2%' },
+        dc3: { title: 'ATTACK COORD', art: [
+            '  [M]\u2500\u2500\u252C\u2500\u2500[C.ATK]',
+            '       \u2502',
+            '   \u250C\u2500\u2500\u2500\u253C\u2500\u2500\u2500\u2510',
+            '  [a] [a] [a]',
+            '   \u2193   \u2193   \u2193',
+        ], data: 'ARMED: YES' },
+        dc4: { title: 'FLEET EXPANSION', art: [
+            '  \u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557',
+            '  \u2551 C1  C2  C3    \u2551',
+            '  \u2551 \u2502   \u2502   \u2502     \u2551',
+            '  \u2551 x5  x5  x5   \u2551',
+            '  \u255A\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255D',
+        ], data: 'CAP: 15 DRN' },
+        dc5: { title: 'SWARM INTEL', art: [
+            '  \u25C6\u2500\u2500\u25C6\u2500\u2500\u25C6\u2500\u2500\u25C6',
+            '  \u2502\u2572 \u2502\u2572 \u2502\u2572 \u2502',
+            '  \u25C6\u2500\u2500\u25C6\u2500\u2500\u25C6\u2500\u2500\u25C6',
+            '  NEURONS: 2048',
+        ], data: 'AUTO: ON' },
+        dn1: { title: 'THRUSTER MOD', art: [
+            '  SPD \u251C\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524',
+            '  1.0x\u2502\u2588\u2588\u2588\u2588\u2591\u2591\u2591\u2591\u25021.3x',
+            '      \u251C\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524',
+            '  \u2550\u2550\u2550BOOST\u2550\u2550\u2550',
+        ], data: 'SPD: 1.3x' },
+        dn2: { title: 'DRONE ARMOR', art: [
+            '    \u2554\u2550\u2550\u2550\u2557',
+            '    \u2551 D \u2551  -40% DMG',
+            '    \u2560\u2550\u2550\u2550\u2563',
+            '    \u2551ARM\u2551',
+            '    \u255A\u2550\u2550\u2550\u255D',
+        ], data: 'DEF: -40%' },
+        dn3: { title: 'SHIELD TRANSFER', art: [
+            '  [UFO]\u2550\u2550\u2550\u2550>[C1]',
+            '     \u2551',
+            '     \u255A\u2550\u2550\u2550\u2550>[C2]',
+            '  SHD.LINK ACTIVE',
+        ], data: 'XFER: ON' },
+        dn4: { title: 'FLEET RESILIENCE', art: [
+            '  RDPLY: \u2588\u2588\u2588\u2588\u2591 -50%',
+            '  SHIELD: \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588 x2',
+            '  \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500',
+            '  RESILIENCE: ACTIVE',
+        ], data: 'RDPLY: -50%' },
+        dn5: { title: 'SWARM SHIELD', art: [
+            '  \u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557',
+            '  \u2551 \u25C6 \u25C6 \u25C6 \u25C6  \u2551',
+            '  \u2551  FIELD:15 \u2551',
+            '  \u255A\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255D',
+        ], data: 'HP: 15/DRN' },
+    };
+
+    // Render cascading windows
+    let baseX = 8;
+    let baseY = 20;
+    const cascadeX = 14;
+    const cascadeY = 18;
+    const modalW = 180;
+
+    for (let i = 0; i < techs.length; i++) {
+        const techId = techs[i];
+        const modal = techModals[techId];
+        if (!modal) continue;
+
+        // Staggered appearance
+        const modalAppearTime = 0.8 + i * 0.12;
+        if (e < modalAppearTime) continue;
+
+        const modalAge = e - modalAppearTime;
+        const modalAlpha = Math.min(1, modalAge / 0.15);
+
+        const mx = baseX + (i % 5) * cascadeX;
+        const my = baseY + (i % 5) * cascadeY;
+        const artLines = modal.art;
+        const modalH = 14 + artLines.length * 10 + 22;
+
+        ctx.save();
+        ctx.globalAlpha = modalAlpha * 0.95;
+
+        // CRT flicker
+        const flicker = 0.92 + Math.sin(now * 0.01 + i * 2.3) * 0.08;
+        ctx.globalAlpha *= flicker;
+
+        // Window background
+        ctx.fillStyle = 'rgba(0, 5, 15, 0.92)';
+        ctx.fillRect(mx, my, modalW, modalH);
+
+        // Window border using canvas strokes (simulating box-drawing)
+        ctx.strokeStyle = 'rgba(0, 255, 0, 0.6)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(mx, my, modalW, modalH);
+        ctx.strokeRect(mx + 1, my + 1, modalW - 2, modalH - 2);
+
+        // Title bar
+        ctx.fillStyle = 'rgba(0, 80, 0, 0.8)';
+        ctx.fillRect(mx + 2, my + 2, modalW - 4, 12);
+
+        // Title text (typewriter effect)
+        const titleChars = Math.min(modal.title.length, Math.floor(modalAge / 0.02));
+        ctx.font = 'bold 8px monospace';
+        ctx.fillStyle = '#fff';
+        ctx.textAlign = 'left';
+        ctx.fillText(' \u25A0 ' + modal.title.substring(0, titleChars), mx + 3, my + 11);
+
+        // Window controls (right side of title bar)
+        ctx.fillStyle = '#888';
+        ctx.fillText('\u2500 \u25A1', mx + modalW - 28, my + 11);
+
+        // Title bar separator
+        ctx.strokeStyle = 'rgba(0, 255, 0, 0.4)';
+        ctx.beginPath();
+        ctx.moveTo(mx + 2, my + 14);
+        ctx.lineTo(mx + modalW - 2, my + 14);
+        ctx.stroke();
+
+        // ASCII art content
+        ctx.font = '7px monospace';
+        for (let lineIdx = 0; lineIdx < artLines.length; lineIdx++) {
+            const lineAppearTime = modalAge - 0.08 - lineIdx * 0.03;
+            if (lineAppearTime < 0) break;
+
+            const lineAlpha = Math.min(1, lineAppearTime / 0.05);
+            // Color based on tech category
+            let lineColor;
+            if (techId.startsWith('pg')) lineColor = 'rgba(255, 153, 0, ' + (lineAlpha * 0.8) + ')';
+            else if (techId.startsWith('dc')) lineColor = 'rgba(85, 136, 255, ' + (lineAlpha * 0.8) + ')';
+            else lineColor = 'rgba(229, 80, 0, ' + (lineAlpha * 0.8) + ')';
+
+            ctx.fillStyle = lineColor;
+            ctx.fillText(artLines[lineIdx], mx + 6, my + 24 + lineIdx * 10);
+        }
+
+        // Data readout at bottom
+        const dataY = my + 24 + artLines.length * 10 + 4;
+        if (modalAge > 0.2) {
+            ctx.font = 'bold 7px monospace';
+            ctx.fillStyle = '#0f0';
+            ctx.fillText(modal.data, mx + 6, dataY);
+        }
+
+        ctx.restore();
     }
 }
 
@@ -23573,13 +23940,13 @@ function renderBIOSDataStreamEnhanced(px, py, pw, ph) {
 
     // Header
     ctx.fillStyle = '#0ff';
-    ctx.font = 'bold 8px monospace';
+    ctx.font = 'bold 11px monospace';
     ctx.textAlign = 'left';
     ctx.fillText('SUBSYSTEM TELEMETRY', px + 4, py + 12);
 
-    ctx.font = '7px monospace';
+    ctx.font = '9px monospace';
     let lineY = py + 24;
-    const lineH = 10;
+    const lineH = 13;
     const now = Date.now();
 
     // Readout data for each tech
