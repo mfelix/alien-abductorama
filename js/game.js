@@ -11761,6 +11761,7 @@ function fireMissileGroup() {
     // Mark group as fired
     group.ready = false;
     group.rechargeTimer = CONFIG.MISSILE_GROUP_RECHARGE_TIME;
+    group.launchFlashTime = Date.now();
 
     const missileCount = CONFIG.MISSILE_GROUP_SIZE;
     const groupLabel = String.fromCharCode(65 + group.index); // A, B, C, D...
@@ -12212,16 +12213,6 @@ function renderMissileCount(startX, startY) {
     ctx.font = 'bold 11px monospace';
     ctx.textAlign = 'center';
     ctx.fillText('X', keyX + keyWidth / 2, headerY + keyHeight / 2 + 3);
-
-    // SALVO RDY text
-    if (allReady) {
-        const pulse = Math.sin(Date.now() / 200) * 0.4 + 0.6;
-        ctx.fillStyle = `rgba(255, 68, 0, ${pulse})`;
-        ctx.font = 'bold 10px monospace';
-        ctx.textAlign = 'right';
-        ctx.fillText('SALVO RDY', startX + panelWidth - panelPadding, headerY + keyHeight / 2 + 4);
-        ctx.textAlign = 'left';
-    }
 
     // Draw groups in up to 3-column grid
     const groupsStartY = headerY + headerHeight + 4;
@@ -14064,14 +14055,23 @@ function getHUDLayout() {
     const centerW = 280;
     const centerX = (canvas.width - centerW) / 2;
 
-    // Compute fleet zone Y: push down when energy graph (NRG.FLOW) is visible
-    let fleetY = 108;
-    if (techFlags.beamConduit) {
-        let graphY = margin + 88 + 8;
-        if (playerInventory.speedBonus > 0) graphY += 22;
-        if (playerInventory.maxEnergyBonus > 0) graphY += 14;
-        fleetY = graphY + 72 + 10; // energy graph height + gap
-    }
+    // Normalized first-row height (matches TECH.SYS, QUOTA, BM.CONDUIT)
+    const topRowH = 72;
+
+    // NRG.FLOW panel: always visible, static height below shield panel
+    const nrgFlowH = 100;
+    const nrgFlowY = margin + topRowH + 8;
+    const fleetY = nrgFlowY + nrgFlowH + 10;
+
+    // Ordnance panel: static height for max capacity (9 bombs + 18 missile groups)
+    const ordWeaponsY = margin + topRowH + 10;
+    const ordPanelH = 230; // header(28) + bombs(80) + missiles(114) + pad(8)
+
+    // OPS.LOG + DIAG.SYS: left side, below ordnance panel
+    // OPS.LOG always right below ordnance; DIAG.SYS tucks under log when unlocked
+    const opsLogH = 100;
+    const opsLogY = ordWeaponsY + ordPanelH + 10;
+    const diagY = opsLogY + opsLogH + 10;
 
     // Bio-matter zone: gap between mission and systems
     const missionEnd = centerX + centerW;
@@ -14080,15 +14080,15 @@ function getHUDLayout() {
     const bioGapW = systemsStart - 4 - bioGapX;
 
     return {
-        statusZone: { x: margin, y: margin, w: leftW, h: 120 },
-        missionZone: { x: centerX, y: margin, w: centerW, h: 72 },
-        bioMatterZone: { x: bioGapX, y: margin, w: bioGapW, h: 72 },
-        systemsZone: { x: canvas.width - rightW - margin, y: margin, w: rightW, h: 90 },
-        weaponsZone: { x: margin, y: 140, w: leftW, h: 200 },
+        statusZone: { x: margin, y: margin, w: leftW, h: topRowH },
+        missionZone: { x: centerX, y: margin, w: centerW, h: topRowH },
+        bioMatterZone: { x: bioGapX, y: margin, w: bioGapW, h: topRowH },
+        systemsZone: { x: canvas.width - rightW - margin, y: margin, w: rightW, h: topRowH },
+        weaponsZone: { x: margin, y: ordWeaponsY, w: leftW, h: ordPanelH },
         fleetZone: { x: canvas.width - rightW - margin, y: fleetY, w: rightW, h: 300 },
         commanderZone: { x: margin, y: canvas.height - 110, w: Math.min(260, canvas.width * 0.22), h: 100 },
-        diagnosticsZone: { x: canvas.width - rightW - margin, y: canvas.height - 290, w: rightW, h: 160 },
-        opsLogZone: { x: canvas.width - rightW - margin, y: canvas.height - 120, w: rightW, h: 100 }
+        diagnosticsZone: { x: margin, y: diagY, w: leftW, h: 160 },
+        opsLogZone: { x: margin, y: opsLogY, w: leftW, h: 100 }
     };
 }
 
@@ -14279,7 +14279,7 @@ function renderHUDFrame() {
         renderStatusZone(layout.statusZone);
     }
     if (booting && hudBootState.panels.status.phase !== 'waiting') {
-        renderPanelBootOverlay(layout.statusZone, 120, '#0ff', 'SYS.STATUS', hudBootState.panels.status, hudBootState.bootLines.status);
+        renderPanelBootOverlay(layout.statusZone, layout.statusZone.h, '#0ff', 'SYS.STATUS', hudBootState.panels.status, hudBootState.bootLines.status);
     }
 
     // Mission zone: deferred on wave 1 until beam tutorial, hidden during boot
@@ -14321,11 +14321,11 @@ function renderHUDFrame() {
         renderSystemsZone(layout.systemsZone);
     }
     if (booting && hudBootState.panels.systems.phase !== 'waiting') {
-        renderPanelBootOverlay(layout.systemsZone, 88, '#f80', 'SYS.INTG', hudBootState.panels.systems, hudBootState.bootLines.systems);
+        renderPanelBootOverlay(layout.systemsZone, layout.systemsZone.h, '#f80', 'SYS.SHIELD', hudBootState.panels.systems, hudBootState.bootLines.systems);
     }
 
-    // Energy graph (below systems zone)
-    if (panelReady('systems') && !booting) {
+    // Energy graph (NRG.FLOW — always visible below shield panel)
+    if (panelReady('systems')) {
         renderEnergyGraph(layout.systemsZone);
     }
 
@@ -14374,27 +14374,7 @@ function renderHUDFrame() {
         ctx.restore();
     }
 
-    // Diagnostics zone: visible after Beam Conduit (pg1) research
-    if (techFlags.beamConduit) {
-        hudAnimState.diagPanelVisible = true;
-    }
-    if (hudAnimState.diagPanelVisible && canvas.height >= 500) {
-        if (hudAnimState.diagPanelSlide < 1) {
-            hudAnimState.diagPanelSlide = Math.min(1, hudAnimState.diagPanelSlide + 0.04);
-        }
-        ctx.save();
-        const diagSlideOffset = (1 - easeOutCubic(hudAnimState.diagPanelSlide)) * layout.diagnosticsZone.w;
-        ctx.translate(diagSlideOffset, 0);
-        if (panelReady('diagnostics')) {
-            renderDiagnosticsZone(layout.diagnosticsZone);
-        }
-        if (booting && hudBootState.panels.diagnostics && hudBootState.panels.diagnostics.active && hudBootState.panels.diagnostics.phase !== 'waiting') {
-            renderPanelBootOverlay(layout.diagnosticsZone, layout.diagnosticsZone.h, '#0af', 'DIAG.SYS', hudBootState.panels.diagnostics, hudBootState.bootLines.diagnostics);
-        }
-        ctx.restore();
-    }
-
-    // OPS.LOG zone: visible after wave 1
+    // OPS.LOG zone: visible after wave 1 — LEFT SIDE, always right below ORD.SYS
     if (wave >= 2) {
         hudAnimState.opsLogPanelVisible = true;
     }
@@ -14403,13 +14383,33 @@ function renderHUDFrame() {
             hudAnimState.opsLogPanelSlide = Math.min(1, hudAnimState.opsLogPanelSlide + 0.04);
         }
         ctx.save();
-        const opsSlideOffset = (1 - easeOutCubic(hudAnimState.opsLogPanelSlide)) * layout.opsLogZone.w;
+        const opsSlideOffset = (1 - easeOutCubic(hudAnimState.opsLogPanelSlide)) * -layout.opsLogZone.w;
         ctx.translate(opsSlideOffset, 0);
         if (panelReady('opslog')) {
             renderOpsLogZone(layout.opsLogZone);
         }
         if (booting && hudBootState.panels.opslog && hudBootState.panels.opslog.active && hudBootState.panels.opslog.phase !== 'waiting') {
             renderPanelBootOverlay(layout.opsLogZone, layout.opsLogZone.h, '#8af', 'OPS.LOG', hudBootState.panels.opslog, hudBootState.bootLines.opslog);
+        }
+        ctx.restore();
+    }
+
+    // Diagnostics zone: visible after Beam Conduit (pg1) research — LEFT SIDE, below OPS.LOG
+    if (techFlags.beamConduit) {
+        hudAnimState.diagPanelVisible = true;
+    }
+    if (hudAnimState.diagPanelVisible && canvas.height >= 500) {
+        if (hudAnimState.diagPanelSlide < 1) {
+            hudAnimState.diagPanelSlide = Math.min(1, hudAnimState.diagPanelSlide + 0.04);
+        }
+        ctx.save();
+        const diagSlideOffset = (1 - easeOutCubic(hudAnimState.diagPanelSlide)) * -layout.diagnosticsZone.w;
+        ctx.translate(diagSlideOffset, 0);
+        if (panelReady('diagnostics')) {
+            renderDiagnosticsZone(layout.diagnosticsZone);
+        }
+        if (booting && hudBootState.panels.diagnostics && hudBootState.panels.diagnostics.active && hudBootState.panels.diagnostics.phase !== 'waiting') {
+            renderPanelBootOverlay(layout.diagnosticsZone, layout.diagnosticsZone.h, '#0af', 'DIAG.SYS', hudBootState.panels.diagnostics, hudBootState.bootLines.diagnostics);
         }
         ctx.restore();
     }
@@ -14479,31 +14479,29 @@ function easeOutCubic(t) {
 // ============================================
 
 function renderStatusZone(zone) {
-    const { x, y, w } = zone;
+    const { x, y, w, h } = zone;
     const pad = 8;
 
-    // Panel
-    renderNGEPanel(x, y, w, 120, { color: '#0ff', cutCorners: ['tl'], label: 'SYS.STATUS' });
+    // Panel — normalized to first-row height
+    renderNGEPanel(x, y, w, h, { color: '#0ff', cutCorners: ['tl'], label: 'SYS.STATUS' });
+    renderNGEScanlines(x, y, w, h, 0.012);
 
-    // Subtle scanlines
-    renderNGEScanlines(x, y, w, 120, 0.012);
-
-    // Score
+    // Score (breathing room below panel header)
     const scoreText = score.toLocaleString();
     ctx.fillStyle = '#0ff';
-    ctx.font = 'bold 30px monospace';
+    ctx.font = 'bold 24px monospace';
     ctx.textAlign = 'left';
-    ctx.fillText(scoreText, x + pad + 4, y + 36);
+    ctx.fillText(scoreText, x + pad + 4, y + 34);
 
     // High score
     ctx.fillStyle = '#445';
-    ctx.font = '11px monospace';
-    ctx.fillText(`HI ${highScore.toLocaleString()}`, x + pad + 4, y + 50);
+    ctx.font = '9px monospace';
+    ctx.fillText(`HI ${highScore.toLocaleString()}`, x + pad + 4, y + 44);
 
     // Wave + Timer line
     ctx.fillStyle = '#fff';
-    ctx.font = 'bold 18px monospace';
-    ctx.fillText(`WAVE ${wave}`, x + pad + 4, y + 70);
+    ctx.font = 'bold 14px monospace';
+    ctx.fillText(`WAVE ${wave}`, x + pad + 4, y + 60);
 
     // Timer
     const displayTime = Math.max(0, waveTimer);
@@ -14514,35 +14512,19 @@ function renderStatusZone(zone) {
     if (waveTimer <= 10 && gameState === 'PLAYING') {
         const pulse = Math.sin(Date.now() / 100) * 0.5 + 0.5;
         ctx.fillStyle = `rgb(255, ${Math.floor(pulse * 80)}, ${Math.floor(pulse * 80)})`;
-        ctx.font = 'bold 18px monospace';
+        ctx.font = 'bold 14px monospace';
     } else {
         ctx.fillStyle = '#8899aa';
-        ctx.font = '16px monospace';
+        ctx.font = '13px monospace';
     }
-    ctx.fillText(timeStr, x + pad + 100, y + 70);
-
-    // Combo
-    if (combo > 0) {
-        const multiplier = CONFIG.COMBO_MULTIPLIERS[Math.min(combo, CONFIG.COMBO_MULTIPLIERS.length - 1)];
-        ctx.shadowColor = '#ff0';
-        ctx.shadowBlur = 6;
-        ctx.fillStyle = '#ff0';
-        ctx.font = 'bold 16px monospace';
-        ctx.fillText(`${combo}x`, x + pad + 4, y + 88);
-        ctx.shadowBlur = 0;
-        ctx.fillStyle = '#aa8800';
-        ctx.font = '11px monospace';
-        ctx.fillText(`(${multiplier}x)`, x + pad + 40, y + 88);
-    }
-
-    // Bio-matter (moved to mission zone)
+    ctx.fillText(timeStr, x + pad + 90, y + 60);
 
     // Blinking status light
     renderNGEBlinkLight(x + w - 12, y + 8, '#0ff', 800);
 
-    // Panel indicators
-    renderNGEIndicator(x + 4, y + 120 - 8, 'diamond', '#0ff', 'steady', { rate: 1200 });
-    renderNGEIndicator(x + w - 8, y + 120 - 8, 'circle', '#0ff', 'reactive', {
+    // Panel indicators (positioned to panel height)
+    renderNGEIndicator(x + 4, y + h - 8, 'diamond', '#0ff', 'steady', { rate: 1200 });
+    renderNGEIndicator(x + w - 8, y + h - 8, 'circle', '#0ff', 'reactive', {
         reactiveValue: waveTimer,
         reactiveThresholds: [
             { threshold: 30, rate: 1500 },
@@ -14550,9 +14532,6 @@ function renderStatusZone(zone) {
             { threshold: 0, rate: 200 }
         ]
     });
-
-    // Active powerups (below status panel)
-    renderPowerupsInStatus(x, y + 120 + 4);
 }
 
 function renderPowerupsInStatus(startX, startY) {
@@ -14948,18 +14927,11 @@ function renderHarvestCounterNGE(x, y, w) {
 }
 
 function renderSystemsZone(zone) {
-    const { x, y, w } = zone;
+    const { x, y, w, h } = zone;
     const pad = 6;
 
-    // Dynamic panel height based on visible content
-    const cellCount = playerInventory.energyCells;
-    let panelH = 48; // minimum: header (22) + shield bar (22) + padding (4)
-    if (cellCount > 0) panelH = 70; // add revive cell row
-    if (playerInventory.speedBonus > 0) panelH += 16;
-    if (playerInventory.maxEnergyBonus > 0) panelH += 14;
-    panelH = Math.max(panelH, 52); // minimum aesthetic height
-
-    renderNGEPanel(x, y, w, panelH, { color: '#f80', cutCorners: ['tr'], label: 'SYS.INTG' });
+    // Fixed height panel — normalized to first-row height
+    renderNGEPanel(x, y, w, h, { color: '#f80', cutCorners: ['tr'], label: 'SYS.SHIELD' });
 
     // Shield bar (segmented)
     const shieldY = y + 22;
@@ -14978,7 +14950,7 @@ function renderSystemsZone(zone) {
     ctx.fillText(`${shieldVal}/${CONFIG.UFO_START_HEALTH}`, x + w - pad, shieldY);
     ctx.textAlign = 'left';
 
-    renderNGEBar(x + pad, shieldY + 6, w - pad * 2, 16, healthPercent, shieldColor, {
+    renderNGEBar(x + pad, shieldY + 6, w - pad * 2, 14, healthPercent, shieldColor, {
         segments: 10,
         pulse: healthPercent < 0.25,
         glow: true
@@ -14986,17 +14958,16 @@ function renderSystemsZone(zone) {
 
     // Status dot
     const shieldStatus = healthPercent > 0.5 ? 'nominal' : healthPercent > 0.25 ? 'caution' : 'critical';
-    renderNGEStatusDot(x + w - pad - 2, shieldY + 14, shieldStatus);
+    renderNGEStatusDot(x + w - pad - 2, shieldY + 12, shieldStatus);
 
-    // Energy Cubes (revive cells)
+    // Revive cells (compact 10px cells)
     const cells = playerInventory.energyCells;
-    const cellY = shieldY + 28;
-
     if (cells > 0) {
-        renderNGELabel(x + pad, cellY + 4, 'REVIVE', '#f55');
-        const cellSize = 14;
-        const cellSpacing = 4;
-        const cellStartX = x + pad + 52;
+        const cellY = shieldY + 24;
+        renderNGELabel(x + pad, cellY + 2, 'REVIVE', '#f55');
+        const cellSize = 10;
+        const cellSpacing = 3;
+        const cellStartX = x + pad + 48;
 
         for (let i = 0; i < cells; i++) {
             const cx = cellStartX + i * (cellSize + cellSpacing);
@@ -15005,7 +14976,7 @@ function renderSystemsZone(zone) {
 
             // Glow
             ctx.fillStyle = `rgba(255, 85, 85, ${pulse * 0.25})`;
-            ctx.fillRect(cx - 2, cy - 2, cellSize + 4, cellSize + 4);
+            ctx.fillRect(cx - 1, cy - 1, cellSize + 2, cellSize + 2);
 
             // Cube body
             ctx.fillStyle = `rgba(255, 85, 85, ${pulse})`;
@@ -15019,7 +14990,7 @@ function renderSystemsZone(zone) {
             const angle = Date.now() / 300 + i;
             ctx.fillStyle = `rgba(255, 200, 200, ${pulse * 0.5})`;
             ctx.beginPath();
-            ctx.arc(cx + cellSize/2 + Math.cos(angle) * 2, cy + cellSize/2 + Math.sin(angle) * 2, 3, 0, Math.PI * 2);
+            ctx.arc(cx + cellSize/2 + Math.cos(angle) * 2, cy + cellSize/2 + Math.sin(angle) * 2, 2, 0, Math.PI * 2);
             ctx.fill();
             ctx.restore();
 
@@ -15030,53 +15001,31 @@ function renderSystemsZone(zone) {
         }
     }
 
-    // Speed indicator (compact)
-    if (playerInventory.speedBonus > 0) {
-        const speedY = cellY + 22;
-        const bonusPercent = Math.round(playerInventory.speedBonus * 100);
-        renderNGELabel(x + pad, speedY, `SPD +${bonusPercent}%`, '#ff0');
-        renderNGEStatusDot(x + w - pad - 2, speedY - 3, 'nominal');
-    }
-
-    // Energy bonus indicator (compact)
-    if (playerInventory.maxEnergyBonus > 0) {
-        const enY = cellY + (playerInventory.speedBonus > 0 ? 36 : 22);
-        renderNGELabel(x + pad, enY, `NRG +${playerInventory.maxEnergyBonus}`, '#7ff');
-        renderNGEStatusDot(x + w - pad - 2, enY - 3, 'nominal');
-    }
+    // Speed/energy indicators moved to NRG.FLOW panel
 
     // Panel indicators
     renderNGEIndicator(x + 4, y + 4, 'square', '#f80', 'steady', { rate: 600 });
     const shldPct = ufo ? ufo.health / CONFIG.UFO_START_HEALTH : finalHealth / CONFIG.UFO_START_HEALTH;
     const sysJColor = shldPct > 0.5 ? '#f80' : (shldPct > 0.25 ? '#fc0' : '#f44');
     const sysJGlow = shldPct < 0.25 ? 8 : 4;
-    renderNGEIndicator(x + 4, y + panelH - 8, 'cross', sysJColor, 'reactive', {
+    renderNGEIndicator(x + 4, y + h - 8, 'cross', sysJColor, 'reactive', {
         reactiveValue: shldPct, reactiveThresholds: [
             { threshold: 0.5, rate: 1000 },
             { threshold: 0.25, rate: 500 },
             { threshold: 0, rate: 150 }
         ], glowIntensity: sysJGlow
     });
-    renderNGEIndicator(x + w - 8, y + panelH - 8, 'diamond', '#f80', 'steady', { rate: 800 });
+    renderNGEIndicator(x + w - 8, y + h - 8, 'diamond', '#f80', 'steady', { rate: 800 });
 }
 
 function renderEnergyGraph(systemsZone) {
-    if (!techFlags.beamConduit) return;
+    const { x, y, w, h } = systemsZone;
 
-    const { x, y, w } = systemsZone;
-
-    // Recompute dynamic panel height (same logic as renderSystemsZone)
-    const cells = playerInventory.energyCells;
-    let sysPanelH = 48;
-    if (cells > 0) sysPanelH = 70;
-    if (playerInventory.speedBonus > 0) sysPanelH += 16;
-    if (playerInventory.maxEnergyBonus > 0) sysPanelH += 14;
-    sysPanelH = Math.max(sysPanelH, 52);
-
-    let graphY = y + sysPanelH + 8; // 8px gap below dynamic panel
+    // Fixed position below shield panel (72px + 8px gap)
+    const graphY = y + h + 8;
 
     const graphW = w;
-    const graphH = 72;
+    const graphH = 100; // Static height — fits graph + upgrade indicators
 
     // Panel
     renderNGEPanel(x, graphY, graphW, graphH, { color: '#f80', cutCorners: ['tr'], alpha: 0.5 });
@@ -15275,40 +15224,78 @@ function renderEnergyGraph(systemsZone) {
         ctx.textAlign = 'left';
         ctx.fillText('MIN', gx + 1, minY - 2);
     }
+
+    // Beam-reactive sinusoidal overlay
+    if (ufo) {
+        const beamIntensity = ufo.beamActive ? 1.0 : 0.3;
+        ctx.save();
+        ctx.strokeStyle = `rgba(0, 255, 255, ${beamIntensity * 0.35})`;
+        ctx.lineWidth = ufo.beamActive ? 2 : 1;
+        ctx.shadowColor = '#0ff';
+        ctx.shadowBlur = ufo.beamActive ? 6 : 0;
+        ctx.beginPath();
+        const freq = ufo.beamActive ? 0.12 : 0.04;
+        const amp = ufo.beamActive ? gh * 0.25 : gh * 0.08;
+        const phase = Date.now() / (ufo.beamActive ? 150 : 800);
+        for (let px = 0; px <= gw; px++) {
+            const sy = gy + gh / 2 + Math.sin(px * freq + phase) * amp;
+            if (px === 0) ctx.moveTo(gx + px, sy);
+            else ctx.lineTo(gx + px, sy);
+        }
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    // Energy augmentation indicators (moved from shield panel)
+    const indicatorBaseY = gy + gh + 14;
+    ctx.textAlign = 'left';
+    let augCount = 0;
+    if (playerInventory.speedBonus > 0) {
+        const bonusPercent = Math.round(playerInventory.speedBonus * 100);
+        renderNGELabel(x + 6, indicatorBaseY + augCount * 12, `SPD.BOOST +${bonusPercent}%`, '#ff0');
+        renderNGEStatusDot(x + graphW - 8, indicatorBaseY + augCount * 12 - 3, 'nominal');
+        augCount++;
+    }
+    if (playerInventory.maxEnergyBonus > 0) {
+        renderNGELabel(x + 6, indicatorBaseY + augCount * 12, `NRG.AUG +${playerInventory.maxEnergyBonus}`, '#7ff');
+        renderNGEStatusDot(x + graphW - 8, indicatorBaseY + augCount * 12 - 3, 'nominal');
+        augCount++;
+    }
+    // Current energy readout
+    if (ufo) {
+        const ePct = ufo.energy / ufo.maxEnergy;
+        const eColor = ePct > 0.25 ? '#f80' : '#f44';
+        renderNGELabel(x + 6, indicatorBaseY + augCount * 12, `NRG ${Math.ceil(ufo.energy)}/${ufo.maxEnergy}`, eColor);
+        augCount++;
+    }
 }
 
 function renderWeaponsZone(zone) {
-    const { x, y, w } = zone;
-    const labelX = x + 6; // Aligned with "O" in ORD.SYS label
-    const gridStartX = labelX + 62; // After label column
+    const { x, y, w, h } = zone;
+    const labelX = x + 6;
+    const gridStartX = labelX + 62;
 
     // Bomb dimensions
     const bombSize = 16;
     const bombSpacing = 6;
+    const bombCols = 3;
 
-    // Missile dimensions for grouped layout (up to 3-column grid)
+    // Missile dimensions for grouped layout (always 3-column grid for max capacity)
     const missileW = 5;
     const missileH = 12;
     const missileSpacing = 2;
     const groupRowH = missileH + 5;
     const groupLabelW = 9;
     const missileColGap = 6;
-    const missileNumCols = missileGroupCount > 6 ? 3 : (missileGroupCount > 3 ? 2 : 1);
-    const missileRowsPerCol = Math.ceil(missileGroupCount / missileNumCols);
 
-    // Fixed 3-column grid for bombs
-    const bombCols = 3;
+    // Static layout: always show all possible slots
+    const maxBombs = CONFIG.BOMB_MAX_COUNT;              // 9
+    const maxMissileGroups = CONFIG.MISSILE_MAX_GROUPS;  // 18
+    const maxMissileCols = 3;
+    const maxMissileRowsPerCol = Math.ceil(maxMissileGroups / maxMissileCols); // 6
 
-    // Calculate panel height dynamically from actual content
-    let panelH = 28; // header (extra space below ORD.SYS)
-    if (playerInventory.maxBombs > 0) {
-        const bombRows = Math.ceil(playerInventory.maxBombs / bombCols);
-        panelH += bombRows * (bombSize + bombSpacing) + 14;
-    }
-    if (missileUnlocked && missileGroupCount > 0) {
-        panelH += missileRowsPerCol * groupRowH + 12;
-    }
-    panelH += 8; // bottom pad
+    // Static panel height
+    const panelH = h;
 
     renderNGEPanel(x, y, w, panelH, { color: '#f44', cutCorners: ['bl'], label: 'ORD.SYS' });
 
@@ -15322,49 +15309,46 @@ function renderWeaponsZone(zone) {
 
     let curY = y + 28;
 
-    // Bombs section
-    if (playerInventory.maxBombs > 0) {
-        const bombCount = playerInventory.bombs;
-        const maxBombs = playerInventory.maxBombs;
-        const rechargeTimers = playerInventory.bombRechargeTimers || [];
+    // === BOMBS SECTION (always show all 9 slots) ===
+    const bombCount = playerInventory.bombs;
+    const ownedBombs = playerInventory.maxBombs;
+    const rechargeTimers = playerInventory.bombRechargeTimers || [];
 
-        // Label aligned with ORD.SYS left margin
-        renderNGELabel(labelX, curY, 'BOMBS', '#f80');
-        // Keyboard shortcuts underneath label
-        ctx.font = '9px monospace';
-        ctx.fillStyle = '#666';
-        ctx.textAlign = 'left';
-        ctx.fillText('Z / B', labelX, curY + 12);
+    renderNGELabel(labelX, curY, 'BOMBS', '#f80');
+    ctx.font = '9px monospace';
+    ctx.fillStyle = '#666';
+    ctx.textAlign = 'left';
+    ctx.fillText('Z / B', labelX, curY + 12);
 
-        // Bomb icons - tops aligned with top of "BOMBS" text
-        for (let i = 0; i < maxBombs; i++) {
-            const col = i % bombCols;
-            const row = Math.floor(i / bombCols);
-            const bx = gridStartX + col * (bombSize + bombSpacing) + bombSize / 2;
-            const by = curY + row * (bombSize + bombSpacing);
-            const filled = i < bombCount;
+    for (let i = 0; i < maxBombs; i++) {
+        const col = i % bombCols;
+        const row = Math.floor(i / bombCols);
+        const bx = gridStartX + col * (bombSize + bombSpacing) + bombSize / 2;
+        const by = curY + row * (bombSize + bombSpacing);
+        const filled = i < bombCount;
+        const owned = i < ownedBombs;
 
-            // Bomb body
-            ctx.fillStyle = filled ? '#444' : '#1a1a1a';
+        if (filled) {
+            // Active bomb
+            ctx.fillStyle = '#444';
             ctx.beginPath();
             ctx.arc(bx, by, bombSize / 2, 0, Math.PI * 2);
             ctx.fill();
-
-            if (filled) {
-                ctx.fillStyle = '#666';
-                ctx.beginPath();
-                ctx.arc(bx - 2, by - 2, bombSize / 4, 0, Math.PI * 2);
-                ctx.fill();
-
-                // Fuse spark
-                const sparkIntensity = Math.sin(Date.now() / 100 + i) * 0.5 + 0.5;
-                ctx.fillStyle = `rgba(255, ${150 + sparkIntensity * 100}, 0, ${0.7 + sparkIntensity * 0.3})`;
-                ctx.beginPath();
-                ctx.arc(bx, by - bombSize / 2 - 2, 2 + sparkIntensity, 0, Math.PI * 2);
-                ctx.fill();
-            }
-
-            // Recharge arc
+            ctx.fillStyle = '#666';
+            ctx.beginPath();
+            ctx.arc(bx - 2, by - 2, bombSize / 4, 0, Math.PI * 2);
+            ctx.fill();
+            const sparkIntensity = Math.sin(Date.now() / 100 + i) * 0.5 + 0.5;
+            ctx.fillStyle = `rgba(255, ${150 + sparkIntensity * 100}, 0, ${0.7 + sparkIntensity * 0.3})`;
+            ctx.beginPath();
+            ctx.arc(bx, by - bombSize / 2 - 2, 2 + sparkIntensity, 0, Math.PI * 2);
+            ctx.fill();
+        } else if (owned) {
+            // Owned but empty (recharging)
+            ctx.fillStyle = '#1a1a1a';
+            ctx.beginPath();
+            ctx.arc(bx, by, bombSize / 2, 0, Math.PI * 2);
+            ctx.fill();
             const missingIndex = i - bombCount;
             if (missingIndex >= 0 && missingIndex < rechargeTimers.length) {
                 const progress = 1 - (rechargeTimers[missingIndex] / CONFIG.BOMB_RECHARGE_TIME);
@@ -15374,45 +15358,44 @@ function renderWeaponsZone(zone) {
                 ctx.arc(bx, by, bombSize / 2 + 3, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress);
                 ctx.stroke();
             }
-        }
-
-        const bombRows = Math.ceil(maxBombs / bombCols);
-        curY += bombRows * (bombSize + bombSpacing) + 14;
-    }
-
-    // Missiles section (grouped layout)
-    if (missileUnlocked && missileGroupCount > 0) {
-        // Label aligned with ORD.SYS left margin
-        renderNGELabel(labelX, curY, 'MISSILES', '#f40');
-        // Keyboard shortcuts underneath label
-        ctx.font = '9px monospace';
-        ctx.fillStyle = '#666';
-        ctx.textAlign = 'left';
-        ctx.fillText('X / M', labelX, curY + 12);
-
-        // SALVO RDY indicator
-        const allGroupsReady = missileGroups.every(g => g.ready);
-        if (allGroupsReady) {
-            const pulse = Math.sin(Date.now() / 200) * 0.4 + 0.6;
-            ctx.fillStyle = `rgba(255, 68, 0, ${pulse})`;
-            ctx.font = 'bold 10px monospace';
-            ctx.textAlign = 'right';
-            ctx.fillText('SALVO RDY', x + w - 8, curY);
+        } else {
+            // Unowned slot — military N/A style
+            ctx.strokeStyle = '#1a1a1a';
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.arc(bx, by, bombSize / 2, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.fillStyle = '#1a1a1a';
+            ctx.font = '5px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('N/A', bx, by + 2);
             ctx.textAlign = 'left';
         }
+    }
 
-        // Up to 3-column grid layout for missile groups - tops aligned with label top
-        const mColW = groupLabelW + CONFIG.MISSILE_GROUP_SIZE * (missileW + missileSpacing);
-        const mGridStartX = gridStartX;
-        const missileTopY = curY - 8; // Align with top of "MISSILES" text
+    const bombRows = Math.ceil(maxBombs / bombCols);
+    curY += bombRows * (bombSize + bombSpacing) + 14;
 
-        for (let gi = 0; gi < missileGroupCount; gi++) {
-            const group = missileGroups[gi];
-            const col = Math.floor(gi / missileRowsPerCol);  // column 0, 1, or 2
-            const row = gi % missileRowsPerCol;               // row within column
-            const colX = mGridStartX + col * (mColW + missileColGap);
-            const rowY = missileTopY + row * groupRowH;
-            const groupLabel = String.fromCharCode(65 + gi);
+    // === MISSILES SECTION (always show all 18 group slots) ===
+    renderNGELabel(labelX, curY, 'MISSILES', '#f40');
+    ctx.font = '9px monospace';
+    ctx.fillStyle = '#666';
+    ctx.textAlign = 'left';
+    ctx.fillText('X / M', labelX, curY + 12);
+
+    const mColW = groupLabelW + CONFIG.MISSILE_GROUP_SIZE * (missileW + missileSpacing);
+    const mGridStartX = gridStartX;
+    const missileTopY = curY - 8;
+
+    for (let gi = 0; gi < maxMissileGroups; gi++) {
+        const group = gi < missileGroupCount ? missileGroups[gi] : null;
+        const col = Math.floor(gi / maxMissileRowsPerCol);
+        const row = gi % maxMissileRowsPerCol;
+        const colX = mGridStartX + col * (mColW + missileColGap);
+        const rowY = missileTopY + row * groupRowH;
+        const groupLabel = String.fromCharCode(65 + gi);
+
+        if (group) {
             const rechargeProgress = group.ready ? 1.0 :
                 1.0 - (group.rechargeTimer / CONFIG.MISSILE_GROUP_RECHARGE_TIME);
 
@@ -15423,7 +15406,7 @@ function renderWeaponsZone(zone) {
             ctx.textAlign = 'left';
             ctx.fillText(groupLabel, colX, rowY + missileH / 2 + 3);
 
-            // Draw 4 missile silhouettes per group
+            // Draw 4 missile silhouettes
             const missilesStartX = colX + groupLabelW;
             for (let mi = 0; mi < CONFIG.MISSILE_GROUP_SIZE; mi++) {
                 const mx = missilesStartX + mi * (missileW + missileSpacing);
@@ -15446,7 +15429,7 @@ function renderWeaponsZone(zone) {
                     ctx.arc(mx + missileW / 2, my + 1, 1, 0, Math.PI * 2);
                     ctx.fill();
                 } else {
-                    // Empty outline
+                    // Recharging outline
                     ctx.strokeStyle = '#333';
                     ctx.lineWidth = 0.8;
                     ctx.strokeRect(mx, my + 2, missileW, missileH - 2);
@@ -15457,16 +15440,13 @@ function renderWeaponsZone(zone) {
                     ctx.closePath();
                     ctx.stroke();
 
-                    // Fill-from-bottom recharge
                     if (rechargeProgress > 0) {
                         const fillH = (missileH - 2) * rechargeProgress;
                         const fillY = my + missileH - fillH;
-
                         let fillColor;
                         if (rechargeProgress < 0.5) fillColor = '#661100';
                         else if (rechargeProgress < 0.9) fillColor = '#cc2200';
                         else fillColor = '#ff4400';
-
                         ctx.save();
                         ctx.beginPath();
                         ctx.rect(mx, fillY, missileW, fillH);
@@ -15480,8 +15460,6 @@ function renderWeaponsZone(zone) {
                         ctx.closePath();
                         ctx.fill();
                         ctx.restore();
-
-                        // Meniscus line
                         ctx.strokeStyle = 'rgba(255, 170, 0, 0.6)';
                         ctx.lineWidth = 1;
                         ctx.beginPath();
@@ -15492,11 +15470,47 @@ function renderWeaponsZone(zone) {
                 }
             }
 
+            // Launch flash overlay (bio-upload inspired)
+            if (group.launchFlashTime > 0) {
+                const flashAge = Date.now() - group.launchFlashTime;
+                if (flashAge < 400) {
+                    const missilesStartX2 = colX + groupLabelW;
+                    const flashPhase = Math.floor(flashAge / 30) % 4;
+                    let flashColor;
+                    switch (flashPhase) {
+                        case 0: flashColor = 'rgba(255, 68, 0, 0.8)'; break;
+                        case 1: flashColor = 'rgba(0, 0, 0, 0.6)'; break;
+                        case 2: flashColor = 'rgba(255, 200, 0, 0.7)'; break;
+                        default: flashColor = 'rgba(255, 68, 0, 0.5)'; break;
+                    }
+                    const flashW = CONFIG.MISSILE_GROUP_SIZE * (missileW + missileSpacing);
+                    ctx.fillStyle = flashColor;
+                    ctx.fillRect(missilesStartX2 - 2, rowY - 2, flashW + 4, missileH + 4);
+                } else {
+                    group.launchFlashTime = 0;
+                }
+            }
+
             // Per-group recharge bar
-            if (!group.ready) {
+            if (!group.ready && group.launchFlashTime === 0) {
+                const missilesStartX2 = colX + groupLabelW;
                 const barY = rowY + missileH + 1;
                 const barW = CONFIG.MISSILE_GROUP_SIZE * (missileW + missileSpacing) - missileSpacing;
-                renderNGEBar(missilesStartX, barY, barW, 2, rechargeProgress, '#f40', { segments: 4 });
+                renderNGEBar(missilesStartX2, barY, barW, 2, rechargeProgress, '#f40', { segments: 4 });
+            }
+        } else {
+            // Unowned group slot — military N/A style
+            ctx.fillStyle = '#222';
+            ctx.font = 'bold 8px monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText(groupLabel, colX, rowY + missileH / 2 + 3);
+
+            const missilesStartX = colX + groupLabelW;
+            for (let mi = 0; mi < CONFIG.MISSILE_GROUP_SIZE; mi++) {
+                const mx = missilesStartX + mi * (missileW + missileSpacing);
+                ctx.strokeStyle = '#1a1a1a';
+                ctx.lineWidth = 0.5;
+                ctx.strokeRect(mx, rowY + 2, missileW, missileH - 2);
             }
         }
     }
@@ -24189,12 +24203,12 @@ function applyShopItemEffect(item) {
         case 'missileSwarm':
             missileUnlocked = true;
             missileGroupCount = 1;
-            missileGroups = [{ ready: true, rechargeTimer: 0, index: 0 }];
+            missileGroups = [{ ready: true, rechargeTimer: 0, index: 0, launchFlashTime: 0 }];
             break;
         case 'missileCapacity':
             if (missileGroupCount < CONFIG.MISSILE_MAX_GROUPS) {
                 missileGroupCount++;
-                missileGroups.push({ ready: true, rechargeTimer: 0, index: missileGroupCount - 1 });
+                missileGroups.push({ ready: true, rechargeTimer: 0, index: missileGroupCount - 1, launchFlashTime: 0 });
             }
             break;
         case 'missileDamage':
