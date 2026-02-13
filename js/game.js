@@ -4790,12 +4790,6 @@ function updateTutorial(dt) {
                     hudBootState.panels.biomatter._bootStartTimer = hudBootState.timer;
                     hudBootState.panels.biomatter._lastDiagLine = -1;
                     SFX.bootPanelStart && SFX.bootPanelStart();
-                    // Re-enter booting phase if boot was complete
-                    if (hudBootState.phase === 'complete') {
-                        hudBootState.phase = 'booting';
-                        const maxDur = Math.max(hudBootState.panels.mission.duration, hudBootState.panels.biomatter.duration);
-                        hudBootState.duration = hudBootState.timer + maxDur + 0.5;
-                    }
                 }
             } else if (tutorialState.phase === 'WARP_JUKE') {
                 tutorialState.hintVisible = true;
@@ -4887,11 +4881,6 @@ function updateTutorialMoveBeam(dt) {
             hudBootState.panels.mission.progress = 0;
             hudBootState.panels.mission.startTime = hudBootState.timer; // start from current time
             hudBootState.panels.mission._lastDiagLine = -1;
-            // Re-enter booting phase if boot was complete
-            if (hudBootState.phase === 'complete') {
-                hudBootState.phase = 'booting';
-                hudBootState.duration = hudBootState.timer + hudBootState.panels.mission.duration + 0.5;
-            }
         }
     }
 
