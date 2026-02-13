@@ -23837,17 +23837,42 @@ function renderBIOSTechModals() {
         ], data: 'HP: 15/DRN' },
     };
 
-    // Render cascading windows
-    let baseX = 8;
-    let baseY = 20;
-    const cascadeX = 14;
-    const cascadeY = 18;
-    const modalW = 180;
+    // Per-modal placement, size, and color scheme — scattered across the full screen
+    // Each entry: [xFrac, yFrac, width, fontSize, artFontSize, borderColor, titleBg, contentColor, dataColor]
+    const modalLayouts = [
+        // Power Grid (pg1-5): warm oranges and ambers, various sizes
+        { id: 'pg1', xF: 0.02, yF: 0.04, w: 200, fs: 9,  afs: 8,  border: 'rgba(255, 160, 0, 0.7)',  titleBg: 'rgba(120, 60, 0, 0.85)',  content: [255, 160, 0],  data: '#ffa000' },
+        { id: 'pg2', xF: 0.55, yF: 0.08, w: 170, fs: 8,  afs: 7,  border: 'rgba(255, 120, 0, 0.6)',  titleBg: 'rgba(100, 50, 0, 0.85)',  content: [255, 120, 0],  data: '#ff8800' },
+        { id: 'pg3', xF: 0.78, yF: 0.52, w: 160, fs: 8,  afs: 7,  border: 'rgba(255, 200, 50, 0.6)', titleBg: 'rgba(110, 80, 0, 0.85)',  content: [255, 200, 50], data: '#ffc832' },
+        { id: 'pg4', xF: 0.12, yF: 0.62, w: 190, fs: 9,  afs: 8,  border: 'rgba(255, 140, 30, 0.65)', titleBg: 'rgba(100, 55, 0, 0.85)', content: [255, 140, 30], data: '#ff8c1e' },
+        { id: 'pg5', xF: 0.38, yF: 0.35, w: 150, fs: 7,  afs: 6,  border: 'rgba(200, 130, 0, 0.55)', titleBg: 'rgba(80, 50, 0, 0.85)',   content: [200, 130, 0],  data: '#c88200' },
+        // Drone Command (dc1-5): cool blues and cyans
+        { id: 'dc1', xF: 0.30, yF: 0.06, w: 210, fs: 9,  afs: 8,  border: 'rgba(50, 140, 255, 0.7)',  titleBg: 'rgba(0, 40, 120, 0.85)',  content: [50, 140, 255],  data: '#338cff' },
+        { id: 'dc2', xF: 0.72, yF: 0.22, w: 175, fs: 8,  afs: 7,  border: 'rgba(80, 180, 255, 0.6)',  titleBg: 'rgba(0, 50, 100, 0.85)',  content: [80, 180, 255],  data: '#50b4ff' },
+        { id: 'dc3', xF: 0.05, yF: 0.38, w: 185, fs: 8,  afs: 7,  border: 'rgba(0, 200, 255, 0.65)',  titleBg: 'rgba(0, 60, 90, 0.85)',   content: [0, 200, 255],   data: '#00c8ff' },
+        { id: 'dc4', xF: 0.50, yF: 0.55, w: 220, fs: 10, afs: 9,  border: 'rgba(60, 120, 255, 0.7)',  titleBg: 'rgba(10, 30, 100, 0.85)', content: [60, 120, 255],  data: '#3c78ff' },
+        { id: 'dc5', xF: 0.82, yF: 0.74, w: 155, fs: 7,  afs: 6,  border: 'rgba(100, 160, 255, 0.55)',titleBg: 'rgba(20, 40, 80, 0.85)',  content: [100, 160, 255], data: '#64a0ff' },
+        // Defense Network (dn1-5): reds, magentas, and crimsons
+        { id: 'dn1', xF: 0.65, yF: 0.38, w: 180, fs: 8,  afs: 7,  border: 'rgba(255, 50, 50, 0.7)',   titleBg: 'rgba(120, 0, 0, 0.85)',   content: [255, 50, 50],   data: '#ff3232' },
+        { id: 'dn2', xF: 0.18, yF: 0.18, w: 165, fs: 8,  afs: 7,  border: 'rgba(255, 80, 120, 0.6)',  titleBg: 'rgba(100, 0, 40, 0.85)',  content: [255, 80, 120],  data: '#ff5078' },
+        { id: 'dn3', xF: 0.42, yF: 0.72, w: 195, fs: 9,  afs: 8,  border: 'rgba(220, 40, 80, 0.65)',  titleBg: 'rgba(90, 0, 30, 0.85)',   content: [220, 40, 80],   data: '#dc2850' },
+        { id: 'dn4', xF: 0.88, yF: 0.10, w: 145, fs: 7,  afs: 6,  border: 'rgba(180, 30, 30, 0.55)',  titleBg: 'rgba(70, 0, 0, 0.85)',    content: [180, 30, 30],   data: '#b41e1e' },
+        { id: 'dn5', xF: 0.25, yF: 0.82, w: 205, fs: 9,  afs: 8,  border: 'rgba(255, 60, 90, 0.7)',   titleBg: 'rgba(110, 0, 30, 0.85)',  content: [255, 60, 90],   data: '#ff3c5a' },
+    ];
+
+    // Build a lookup from tech id to layout
+    const layoutMap = {};
+    for (const lay of modalLayouts) layoutMap[lay.id] = lay;
+
+    const cw = canvas.width;
+    const ch = canvas.height;
 
     for (let i = 0; i < techs.length; i++) {
         const techId = techs[i];
         const modal = techModals[techId];
         if (!modal) continue;
+        const layout = layoutMap[techId];
+        if (!layout) continue;
 
         // Staggered appearance
         const modalAppearTime = 0.8 + i * 0.12;
@@ -23856,10 +23881,14 @@ function renderBIOSTechModals() {
         const modalAge = e - modalAppearTime;
         const modalAlpha = Math.min(1, modalAge / 0.15);
 
-        const mx = baseX + (i % 5) * cascadeX;
-        const my = baseY + (i % 5) * cascadeY;
+        const modalW = layout.w;
         const artLines = modal.art;
-        const modalH = 14 + artLines.length * 10 + 22;
+        const lineH = layout.afs + 3;
+        const modalH = 16 + artLines.length * lineH + 24;
+
+        // Position using fractional screen coordinates, clamped to stay on-screen
+        let mx = Math.min(cw - modalW - 4, Math.max(4, layout.xF * cw));
+        let my = Math.min(ch - modalH - 4, Math.max(4, layout.yF * ch));
 
         ctx.save();
         ctx.globalAlpha = modalAlpha * 0.95;
@@ -23872,56 +23901,51 @@ function renderBIOSTechModals() {
         ctx.fillStyle = 'rgba(0, 5, 15, 0.92)';
         ctx.fillRect(mx, my, modalW, modalH);
 
-        // Window border using canvas strokes (simulating box-drawing)
-        ctx.strokeStyle = 'rgba(0, 255, 0, 0.6)';
+        // Window border — unique color per modal
+        ctx.strokeStyle = layout.border;
         ctx.lineWidth = 1;
         ctx.strokeRect(mx, my, modalW, modalH);
         ctx.strokeRect(mx + 1, my + 1, modalW - 2, modalH - 2);
 
-        // Title bar
-        ctx.fillStyle = 'rgba(0, 80, 0, 0.8)';
-        ctx.fillRect(mx + 2, my + 2, modalW - 4, 12);
+        // Title bar — unique background per modal
+        ctx.fillStyle = layout.titleBg;
+        ctx.fillRect(mx + 2, my + 2, modalW - 4, 13);
 
         // Title text (typewriter effect)
         const titleChars = Math.min(modal.title.length, Math.floor(modalAge / 0.02));
-        ctx.font = 'bold 8px monospace';
+        ctx.font = 'bold ' + layout.fs + 'px monospace';
         ctx.fillStyle = '#fff';
         ctx.textAlign = 'left';
-        ctx.fillText(' \u25A0 ' + modal.title.substring(0, titleChars), mx + 3, my + 11);
+        ctx.fillText(' \u25A0 ' + modal.title.substring(0, titleChars), mx + 3, my + 12);
 
         // Window controls (right side of title bar)
         ctx.fillStyle = '#888';
-        ctx.fillText('\u2500 \u25A1', mx + modalW - 28, my + 11);
+        ctx.fillText('\u2500 \u25A1', mx + modalW - 30, my + 12);
 
-        // Title bar separator
-        ctx.strokeStyle = 'rgba(0, 255, 0, 0.4)';
+        // Title bar separator — matches border color
+        ctx.strokeStyle = layout.border.replace(/[\d.]+\)$/, '0.4)');
         ctx.beginPath();
-        ctx.moveTo(mx + 2, my + 14);
-        ctx.lineTo(mx + modalW - 2, my + 14);
+        ctx.moveTo(mx + 2, my + 15);
+        ctx.lineTo(mx + modalW - 2, my + 15);
         ctx.stroke();
 
-        // ASCII art content
-        ctx.font = '7px monospace';
+        // ASCII art content — unique color per modal
+        ctx.font = layout.afs + 'px monospace';
+        const [cr, cg, cb] = layout.content;
         for (let lineIdx = 0; lineIdx < artLines.length; lineIdx++) {
             const lineAppearTime = modalAge - 0.08 - lineIdx * 0.03;
             if (lineAppearTime < 0) break;
 
             const lineAlpha = Math.min(1, lineAppearTime / 0.05);
-            // Color based on tech category
-            let lineColor;
-            if (techId.startsWith('pg')) lineColor = 'rgba(255, 153, 0, ' + (lineAlpha * 0.8) + ')';
-            else if (techId.startsWith('dc')) lineColor = 'rgba(85, 136, 255, ' + (lineAlpha * 0.8) + ')';
-            else lineColor = 'rgba(229, 80, 0, ' + (lineAlpha * 0.8) + ')';
-
-            ctx.fillStyle = lineColor;
-            ctx.fillText(artLines[lineIdx], mx + 6, my + 24 + lineIdx * 10);
+            ctx.fillStyle = 'rgba(' + cr + ', ' + cg + ', ' + cb + ', ' + (lineAlpha * 0.85) + ')';
+            ctx.fillText(artLines[lineIdx], mx + 6, my + 26 + lineIdx * lineH);
         }
 
-        // Data readout at bottom
-        const dataY = my + 24 + artLines.length * 10 + 4;
+        // Data readout at bottom — unique accent color per modal
+        const dataY = my + 26 + artLines.length * lineH + 5;
         if (modalAge > 0.2) {
-            ctx.font = 'bold 7px monospace';
-            ctx.fillStyle = '#0f0';
+            ctx.font = 'bold ' + layout.fs + 'px monospace';
+            ctx.fillStyle = layout.data;
             ctx.fillText(modal.data, mx + 6, dataY);
         }
 
