@@ -1390,9 +1390,9 @@ const SFX = {
             const freq = 400 + remaining * 100;
             playTone(freq, 0.08, 'triangle', 0.1);
         } else {
-            // Final resolving tone — lower octave + brief harmonic
-            playTone(400, 0.15, 'triangle', 0.12);
-            playTone(200, 0.2, 'sine', 0.06);
+            // V→I cadence: G4 + G3 (dominant) resolves to shop's C4 (tonic)
+            playTone(392, 0.15, 'triangle', 0.12);
+            playTone(196, 0.2, 'sine', 0.06);
         }
     },
 
@@ -21627,6 +21627,219 @@ function renderFeedbackTabContent() {
     }
 }
 
+// ============================================
+// WAVE SUMMARY HUD HELPERS
+// ============================================
+
+function renderHexDecodeText(text, centerX, y, fontSize, progress, opts = {}) {
+    const unresolvedColor = opts.unresolvedColor || 'rgba(0, 255, 255, 0.6)';
+    const resolvedColor = opts.resolvedColor || '#fff';
+    const glowColor = opts.glowColor || '#0ff';
+    const glowBlur = opts.glowBlur || 8;
+    const flashDuration = opts.flashDuration || 0.05;
+    const HEX = '0123456789ABCDEF';
+    const now = Date.now();
+
+    ctx.font = `bold ${fontSize}px monospace`;
+    const fullWidth = ctx.measureText(text).width;
+    let charX = centerX - fullWidth / 2;
+
+    for (let i = 0; i < text.length; i++) {
+        const charResolveT = i / text.length;
+        const isResolved = progress >= charResolveT;
+
+        if (isResolved) {
+            const timeSinceResolve = progress - charResolveT;
+            if (timeSinceResolve < flashDuration) {
+                ctx.fillStyle = '#fff';
+                ctx.shadowColor = '#fff';
+                ctx.shadowBlur = 4;
+            } else {
+                ctx.fillStyle = resolvedColor;
+                ctx.shadowColor = glowColor;
+                ctx.shadowBlur = glowBlur;
+            }
+        } else {
+            if (text[i] !== ' ') {
+                ctx.fillStyle = unresolvedColor;
+            } else {
+                ctx.fillStyle = 'transparent';
+            }
+            ctx.shadowBlur = 0;
+        }
+
+        const ch = isResolved ? text[i] : (text[i] === ' ' ? ' ' : HEX[((i * 7 + 13) & 0xFF + Math.floor(now / 30)) % 16]);
+        ctx.textAlign = 'left';
+        ctx.fillText(ch, charX, y);
+        charX += ctx.measureText(ch).width;
+    }
+    ctx.shadowBlur = 0;
+}
+
+function renderDotLeader(x1, x2, y, color = 'rgba(0, 255, 255, 0.15)') {
+    ctx.save();
+    ctx.font = '9px monospace';
+    ctx.fillStyle = color;
+    ctx.textAlign = 'left';
+    const dotW = ctx.measureText('.').width + 1;
+    for (let dx = x1; dx < x2; dx += dotW) {
+        ctx.fillText('.', dx, y);
+    }
+    ctx.restore();
+}
+
+function renderSystemCheckLine(x, y, width, label, earned, detail, age, opts = {}) {
+    const alpha = Math.min(1, age / 0.2);
+    const slideX = (1 - easeOutCubic(Math.min(1, age / 0.2))) * 12;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(-slideX, 0);
+
+    // Diamond indicator
+    const diamondColor = earned ? '#0f0' : '#445';
+    renderNGEIndicator(x, y - 3, 'diamond', diamondColor, 'steady', { rate: 99999 });
+
+    // >> prefix
+    ctx.font = '9px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(0, 255, 255, 0.5)';
+    ctx.fillText('>>', x + 8, y);
+
+    // Label
+    ctx.fillStyle = earned ? '#0f0' : '#445';
+    ctx.fillText(label, x + 24, y);
+
+    // Stamp
+    const stamp = earned ? '[OK]' : '[SKIP]';
+    const stampWidth = ctx.measureText(stamp).width;
+    const stampX = x + width - stampWidth - (detail ? ctx.measureText(`(${detail})`).width + 8 : 0);
+
+    // Dot leader between label end and stamp
+    const labelEndX = x + 24 + ctx.measureText(label).width + 4;
+    renderDotLeader(labelEndX, stampX - 4, y);
+
+    // Green glow on earned stamp
+    if (earned && age < 0.5) {
+        ctx.shadowColor = '#0f0';
+        ctx.shadowBlur = 4 * (1 - age / 0.5);
+    }
+    ctx.fillStyle = earned ? '#0f0' : '#445';
+    ctx.fillText(stamp, stampX, y);
+    ctx.shadowBlur = 0;
+
+    // Detail text
+    if (detail) {
+        ctx.font = '7px monospace';
+        ctx.fillStyle = '#666';
+        ctx.fillText(`(${detail})`, stampX + stampWidth + 4, y);
+    }
+
+    ctx.restore();
+}
+
+function renderCornerBrackets(px, py, pw, ph, offset = 8, armLen = 20, alpha = 1) {
+    if (alpha <= 0) return;
+    ctx.save();
+    ctx.strokeStyle = `rgba(0, 255, 255, ${0.5 * alpha})`;
+    ctx.lineWidth = 1.5;
+
+    const ox = px - offset, oy = py - offset;
+    const ow = pw + offset * 2, oh = ph + offset * 2;
+
+    // Top-left
+    ctx.beginPath(); ctx.moveTo(ox, oy + armLen); ctx.lineTo(ox, oy); ctx.lineTo(ox + armLen, oy); ctx.stroke();
+    // Top-right
+    ctx.beginPath(); ctx.moveTo(ox + ow - armLen, oy); ctx.lineTo(ox + ow, oy); ctx.lineTo(ox + ow, oy + armLen); ctx.stroke();
+    // Bottom-left
+    ctx.beginPath(); ctx.moveTo(ox, oy + oh - armLen); ctx.lineTo(ox, oy + oh); ctx.lineTo(ox + armLen, oy + oh); ctx.stroke();
+    // Bottom-right
+    ctx.beginPath(); ctx.moveTo(ox + ow - armLen, oy + oh); ctx.lineTo(ox + ow, oy + oh); ctx.lineTo(ox + ow, oy + oh - armLen); ctx.stroke();
+
+    ctx.restore();
+}
+
+function renderPanelBorderTrace(px, py, pw, ph, progress, color = '#0ff', cutCorners = []) {
+    if (progress <= 0) return;
+    const cut = 10;
+
+    // Build ordered vertices following the panel path (clockwise from top-left)
+    const verts = [];
+    if (cutCorners.includes('tl')) {
+        verts.push([px + cut, py], [px + pw - (cutCorners.includes('tr') ? cut : 0), py]);
+    } else {
+        verts.push([px, py], [px + pw - (cutCorners.includes('tr') ? cut : 0), py]);
+    }
+    if (cutCorners.includes('tr')) {
+        verts.push([px + pw, py + cut]);
+    }
+    verts.push([px + pw, py + ph - (cutCorners.includes('br') ? cut : 0)]);
+    if (cutCorners.includes('br')) {
+        verts.push([px + pw - cut, py + ph]);
+    }
+    verts.push([px + (cutCorners.includes('bl') ? cut : 0), py + ph]);
+    if (cutCorners.includes('bl')) {
+        verts.push([px, py + ph - cut]);
+    }
+    verts.push([px, py + (cutCorners.includes('tl') ? cut : 0)]);
+    if (cutCorners.includes('tl')) {
+        verts.push([px + cut, py]);
+    } else {
+        verts.push([px, py]);
+    }
+
+    // Calculate total perimeter and segment lengths
+    let totalLen = 0;
+    const segLens = [];
+    for (let i = 1; i < verts.length; i++) {
+        const dx = verts[i][0] - verts[i - 1][0];
+        const dy = verts[i][1] - verts[i - 1][1];
+        const len = Math.sqrt(dx * dx + dy * dy);
+        segLens.push(len);
+        totalLen += len;
+    }
+
+    // Find dot position along path
+    const traceLen = progress * totalLen;
+    let accumulated = 0;
+    let dotX = verts[0][0], dotY = verts[0][1];
+
+    // Draw the traced portion of the border
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(verts[0][0], verts[0][1]);
+
+    for (let i = 0; i < segLens.length; i++) {
+        const nextAccum = accumulated + segLens[i];
+        if (traceLen >= nextAccum) {
+            ctx.lineTo(verts[i + 1][0], verts[i + 1][1]);
+            dotX = verts[i + 1][0];
+            dotY = verts[i + 1][1];
+        } else {
+            const t = (traceLen - accumulated) / segLens[i];
+            dotX = verts[i][0] + (verts[i + 1][0] - verts[i][0]) * t;
+            dotY = verts[i][1] + (verts[i + 1][1] - verts[i][1]) * t;
+            ctx.lineTo(dotX, dotY);
+            break;
+        }
+        accumulated = nextAccum;
+    }
+    ctx.stroke();
+
+    // Glowing dot at trace head
+    ctx.beginPath();
+    ctx.arc(dotX, dotY, 3, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff';
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 10;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    ctx.restore();
+}
+
 function renderRainbowBouncyText(text, centerX, baselineY, fontSize) {
     const phase = (Date.now() / 1000) * 3;
     ctx.save();
@@ -21886,13 +22099,14 @@ function renderFeedbackScreen() {
 // ============================================
 
 const WAVE_SUMMARY_TIMING = {
-    title: 0.5,
-    targetPer: 0.3,
-    points: 1.2,
-    bonusPer: 0.4,
-    bucks: 0.8,
-    bioDelay: 0.3,
-    totals: 0.5,
+    borderTrace: 0.35,
+    title: 0.50,
+    targetPer: 0.25,
+    points: 1.0,
+    bonusPer: 0.35,
+    bucks: 0.7,
+    bioDelay: 0.25,
+    totals: 0.3,
     autoContinue: 4.0
 };
 
@@ -22050,6 +22264,7 @@ function startWaveSummary(completedWave) {
 
     const targetsDuration = TARGET_TYPES.length * WAVE_SUMMARY_TIMING.targetPer;
     const bonusesDuration = waveSummary.bonuses.length * WAVE_SUMMARY_TIMING.bonusPer;
+    const borderTraceEnd = WAVE_SUMMARY_TIMING.borderTrace;
     const titleEnd = WAVE_SUMMARY_TIMING.title;
     const targetsEnd = titleEnd + targetsDuration;
     const pointsEnd = targetsEnd + WAVE_SUMMARY_TIMING.points;
@@ -22082,7 +22297,14 @@ function startWaveSummary(completedWave) {
         pointsFinishTime: -1,
         bucksFinishTime: -1,
         completionSoundPlayed: false,
-        timings: { titleEnd, targetsEnd, pointsEnd, bonusesEnd, bucksEnd, bioEnd, totalsEnd }
+        // HUD redesign animation state
+        borderTraceProgress: 0,
+        hexDecodeProgress: 0,
+        typewriterChars: 0,
+        panelFillAlpha: 0,
+        labelTypewriterChars: 0,
+        bracketAlpha: 0,
+        timings: { borderTraceEnd, titleEnd, targetsEnd, pointsEnd, bonusesEnd, bucksEnd, bioEnd, totalsEnd }
     };
 }
 
@@ -22112,6 +22334,13 @@ function finishWaveSummaryAnimations() {
     waveSummaryState.completionSoundPlayed = true;
     waveSummaryState.complete = true;
     waveSummaryState.postCompleteTimer = 0;
+    // HUD redesign skip-to-end
+    waveSummaryState.borderTraceProgress = 1;
+    waveSummaryState.hexDecodeProgress = 1;
+    waveSummaryState.typewriterChars = 999;
+    waveSummaryState.panelFillAlpha = 0.88;
+    waveSummaryState.labelTypewriterChars = 999;
+    waveSummaryState.bracketAlpha = 1;
     finalizeWaveSummary();
 }
 
@@ -22146,6 +22375,22 @@ function updateWaveSummary(dt) {
     waveSummaryState.elapsed += dt;
     waveSummaryState.pointsTickCooldown = Math.max(0, waveSummaryState.pointsTickCooldown - dt);
     waveSummaryState.bucksTickCooldown = Math.max(0, waveSummaryState.bucksTickCooldown - dt);
+
+    // HUD redesign: border trace, brackets, panel fill, hex-decode, typewriter
+    if (waveSummaryState.elapsed <= WAVE_SUMMARY_TIMING.borderTrace) {
+        waveSummaryState.borderTraceProgress = Math.min(1, waveSummaryState.elapsed / WAVE_SUMMARY_TIMING.borderTrace);
+    } else {
+        waveSummaryState.borderTraceProgress = 1;
+    }
+    waveSummaryState.bracketAlpha = Math.min(1, waveSummaryState.elapsed / 0.15);
+    if (waveSummaryState.elapsed >= 0.10) {
+        waveSummaryState.panelFillAlpha = Math.min(0.88, ((waveSummaryState.elapsed - 0.10) / 0.20) * 0.88);
+    }
+    waveSummaryState.labelTypewriterChars = Math.min(12, Math.floor(waveSummaryState.elapsed * 25));
+    waveSummaryState.hexDecodeProgress = Math.min(1, waveSummaryState.elapsed / 0.40);
+    if (waveSummaryState.elapsed >= 0.35) {
+        waveSummaryState.typewriterChars = Math.min(28, Math.floor((waveSummaryState.elapsed - 0.35) * 25));
+    }
 
     // Update commander typewriter during wave summary
     updateCommanderTypewriter(dt);
@@ -22262,28 +22507,43 @@ function updateWaveSummary(dt) {
 
 function renderTargetRow(counts, totals, startX, y, iconSize, spacing, revealCount) {
     ctx.textAlign = 'center';
+    const TYPE_ABBR = ['HMN', 'COW', 'SHP', 'CAT', 'DOG', 'TNK'];
+    const HEX = '0123456789ABCDEF';
     const visibleCount = Math.min(TARGET_TYPES.length, revealCount);
-    // Compute fractional reveal for smooth pop-in animation
     const elapsed = waveSummaryState ? waveSummaryState.elapsed : 999;
     const titleEnd = waveSummaryState ? waveSummaryState.timings.titleEnd : 0;
+    const now = Date.now();
+
     for (let i = 0; i < visibleCount; i++) {
         const type = TARGET_TYPES[i];
         const x = startX + i * spacing;
         const count = counts[type] || 0;
-        const total = totals ? (totals[type] || 0) : 0;
+        const spawned = totals ? (totals[type] || 0) : 0;
 
-        // Per-target pop-in: compute how long since this target was revealed
+        // Per-target pop-in timing
         const revealTime = titleEnd + i * WAVE_SUMMARY_TIMING.targetPer;
         const timeSinceReveal = Math.max(0, elapsed - revealTime);
         const popDuration = 0.15;
         const popProgress = Math.min(1, timeSinceReveal / popDuration);
-        // Overshoot easing for a satisfying pop: goes slightly above 1.0 then settles
         const overshoot = popProgress < 1 ? 1 + 0.15 * Math.sin(popProgress * Math.PI) : 1;
         const scaleAnim = popProgress * overshoot;
-        const alphaAnim = Math.min(1, popProgress * 2); // Fade in quickly
+        const alphaAnim = Math.min(1, popProgress * 2);
+
+        // Diamond status color
+        let statusColor;
+        if (spawned === 0) statusColor = '#445';
+        else if (count === 0) statusColor = '#f44';
+        else if (count >= spawned) statusColor = '#0f0';
+        else statusColor = '#0ff';
 
         ctx.save();
         ctx.globalAlpha = alphaAnim;
+
+        // Diamond indicator above icon
+        renderNGEIndicator(x, y - iconSize / 2 - 6, 'diamond', statusColor, 'steady', { rate: 99999 });
+
+        // Icon with scale pop
+        ctx.save();
         ctx.translate(x, y);
         ctx.scale(scaleAnim, scaleAnim);
 
@@ -22311,11 +22571,39 @@ function renderTargetRow(counts, totals, startX, y, iconSize, spacing, revealCou
                 ctx.fill();
             }
         }
+        ctx.restore();
 
-        ctx.fillStyle = count > 0 ? '#0f0' : '#555';
-        ctx.font = 'bold 16px monospace';
-        const label = totals ? `${count}/${total}` : count.toString();
-        ctx.fillText(label, 0, iconSize / 2 + 18);
+        // Count text with mini hex-decode
+        const label = totals ? `${count}/${spawned}` : count.toString();
+        const countY = y + iconSize / 2 + 14;
+        ctx.font = 'bold 11px monospace';
+        ctx.textAlign = 'center';
+
+        if (timeSinceReveal < 0.10 && timeSinceReveal > 0) {
+            // Hex-decode scramble phase
+            let scrambled = '';
+            for (let c = 0; c < label.length; c++) {
+                scrambled += label[c] === '/' ? '/' : HEX[((c * 7 + i * 13) + Math.floor(now / 30)) % 16];
+            }
+            ctx.fillStyle = 'rgba(0, 255, 255, 0.6)';
+            ctx.fillText(scrambled, x, countY);
+        } else if (timeSinceReveal >= 0.10 && timeSinceReveal < 0.15) {
+            // White flash on resolve
+            ctx.fillStyle = '#fff';
+            ctx.shadowColor = '#fff';
+            ctx.shadowBlur = 4;
+            ctx.fillText(label, x, countY);
+            ctx.shadowBlur = 0;
+        } else {
+            // Settled — color matches diamond status
+            ctx.fillStyle = statusColor;
+            ctx.fillText(label, x, countY);
+        }
+
+        // Type abbreviation label
+        ctx.font = '7px monospace';
+        ctx.fillStyle = '#445';
+        ctx.fillText(TYPE_ABBR[i], x, countY + 11);
 
         ctx.restore();
     }
@@ -22598,7 +22886,7 @@ function renderWaveSummary() {
     ctx.globalCompositeOperation = 'source-over';
     ctx.shadowBlur = 0;
 
-    // Render the game scene frozen (dimmed)
+    // A. Frozen game scene + overlay
     renderBackground();
     for (const target of targets) {
         target.render();
@@ -22613,291 +22901,433 @@ function renderWaveSummary() {
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
     ctx.shadowBlur = 0;
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    const panelWidth = Math.min(760, canvas.width * 0.88);
-    const panelHeight = Math.min(620, canvas.height * 0.88);
-    const panelX = (canvas.width - panelWidth) / 2;
-    const panelY = (canvas.height - panelHeight) / 2;
-    const padding = 30;
+    // B. Panel dimensions
+    const panelW = Math.min(680, canvas.width * 0.82);
+    const panelH = Math.min(560, canvas.height * 0.85);
+    const panelX = (canvas.width - panelW) / 2;
+    const panelY = (canvas.height - panelH) / 2;
+    const contentLeft = panelX + 20;
+    const contentRight = panelX + panelW - 20;
+    const contentWidth = panelW - 40;
+    const centerX = panelX + panelW / 2;
+    const st = waveSummaryState;
+    const elapsed = st.elapsed;
 
-    ctx.fillStyle = 'rgba(15, 15, 40, 0.95)';
-    ctx.beginPath();
-    ctx.roundRect(panelX, panelY, panelWidth, panelHeight, 18);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(0, 255, 255, 0.3)';
-    ctx.lineWidth = 2;
-    ctx.stroke();
+    // C. Corner L-brackets
+    renderCornerBrackets(panelX, panelY, panelW, panelH, 8, 20, st.bracketAlpha);
 
-    let cursorY = panelY + padding;
+    // D. Panel rendering
+    if (st.borderTraceProgress < 1) {
+        // Trace animation + fading fill
+        if (st.panelFillAlpha > 0) {
+            renderNGEPanel(panelX, panelY, panelW, panelH, { color: '#0ff', alpha: st.panelFillAlpha, cutCorners: ['tl', 'br'] });
+        }
+        renderPanelBorderTrace(panelX, panelY, panelW, panelH, st.borderTraceProgress, '#0ff', ['tl', 'br']);
+    } else {
+        renderNGEPanel(panelX, panelY, panelW, panelH, { color: '#0ff', alpha: 0.88, cutCorners: ['tl', 'br'] });
+    }
 
-    // Title
-    renderRainbowBouncyText(`WAVE ${waveSummary.wave} COMPLETE!`, panelX + panelWidth / 2, cursorY + 10, 38);
-    cursorY += 50;
+    // WAV.ANALYSIS label (8px, manual typewriter)
+    if (st.labelTypewriterChars > 0) {
+        ctx.save();
+        ctx.font = 'bold 8px monospace';
+        ctx.fillStyle = '#0ff';
+        ctx.textAlign = 'left';
+        ctx.fillText('WAV.ANALYSIS'.substring(0, st.labelTypewriterChars), panelX + 10, panelY + 10);
+        ctx.restore();
+    }
 
-    // Targets beamed (wave/total)
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 20px monospace';
-    ctx.textAlign = 'left';
-    ctx.fillText('TARGETS BEAMED (WAVE/TOTAL)', panelX + padding, cursorY);
-    cursorY += 22;
+    let cursorY = panelY + 16;
 
-    const iconSpacing = (panelWidth - padding * 2) / TARGET_TYPES.length;
-    const iconStartX = panelX + padding + iconSpacing / 2;
-    renderTargetRow(waveSummary.targets, waveSummary.cumulativeTargets, iconStartX, cursorY + 16, 54, iconSpacing, waveSummaryState.targetsRevealed);
-    cursorY += 82;
+    // E. Section A: HEADER
+    cursorY += 14;
+    ctx.save();
+    ctx.textAlign = 'center';
+    renderHexDecodeText('WAVE ' + waveSummary.wave, centerX, cursorY, 16, st.hexDecodeProgress);
+    ctx.restore();
+    ctx.shadowBlur = 0;
+    cursorY += 14;
 
-    // Divider
+    // Typewriter subheader
+    if (st.typewriterChars > 0) {
+        ctx.save();
+        ctx.font = '8px monospace';
+        ctx.fillStyle = 'rgba(0, 255, 255, 0.7)';
+        ctx.textAlign = 'center';
+        ctx.fillText('>> MISSION DEBRIEF INITIATED'.substring(0, st.typewriterChars), centerX, cursorY);
+        ctx.restore();
+    }
     cursorY += 10;
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+
+    // F. Divider
+    ctx.strokeStyle = 'rgba(0, 255, 255, 0.15)';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(panelX + padding, cursorY);
-    ctx.lineTo(panelX + panelWidth - padding, cursorY);
+    ctx.moveTo(contentLeft, cursorY);
+    ctx.lineTo(contentRight, cursorY);
     ctx.stroke();
-    cursorY += 18;
+    cursorY += 8;
 
-    // Wave points
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 20px monospace';
-    ctx.textAlign = 'left';
-    ctx.fillText('WAVE POINTS', panelX + padding, cursorY);
-    ctx.textAlign = 'right';
-    const pointsValue = waveSummaryState.pointsStarted ? waveSummaryState.pointsCount.current : 0;
-    // Pop effect when points count finishes
-    if (waveSummaryState.pointsFinished && waveSummaryState.pointsFinishTime >= 0) {
-        const popAge = waveSummaryState.elapsed - waveSummaryState.pointsFinishTime;
-        const popScale = popAge < 0.2 ? 1 + 0.15 * Math.sin(Math.min(1, popAge / 0.2) * Math.PI) : 1;
-        const popGlow = popAge < 0.3 ? (1 - popAge / 0.3) * 0.6 : 0;
+    // G. Section B: TGT.TELEMETRY
+    if (elapsed >= 0.50) {
+        const sectionAge = elapsed - 0.50;
+        const sectionAlpha = Math.min(1, sectionAge / 0.15);
         ctx.save();
-        const textX = panelX + panelWidth - padding;
-        ctx.translate(textX, cursorY);
-        ctx.scale(popScale, popScale);
-        ctx.shadowColor = 'rgba(255, 255, 0, ' + popGlow + ')';
-        ctx.shadowBlur = 15;
-        ctx.fillStyle = '#ff0';
-        ctx.fillText(pointsValue.toLocaleString(), 0, 0);
-        ctx.restore();
-    } else {
-        ctx.fillStyle = '#ff0';
-        ctx.fillText(pointsValue.toLocaleString(), panelX + panelWidth - padding, cursorY);
-    }
-    cursorY += 24;
-
-    if (waveSummary.bonusPoints > 0 && waveSummaryState.pointsStarted) {
-        ctx.fillStyle = '#aaa';
-        ctx.font = 'bold 16px monospace';
+        ctx.globalAlpha = sectionAlpha;
+        ctx.font = 'bold 9px monospace';
+        ctx.fillStyle = 'rgba(0, 255, 255, 0.6)';
         ctx.textAlign = 'left';
-        ctx.fillText('BONUS POINTS', panelX + padding, cursorY);
-        ctx.textAlign = 'right';
-        ctx.fillStyle = '#0f0';
-        ctx.fillText(`+${waveSummary.bonusPoints.toLocaleString()}`, panelX + panelWidth - padding, cursorY);
-        cursorY += 24;
+        ctx.fillText('TGT.TELEMETRY', contentLeft, cursorY);
+        ctx.restore();
     }
+    cursorY += 12;
 
-    // Bonuses
-    ctx.fillStyle = '#aaa';
-    ctx.textAlign = 'left';
-    ctx.font = 'bold 18px monospace';
-    ctx.fillText('BONUSES', panelX + padding, cursorY);
-    cursorY += 22;
+    // Target row
+    const iconSize = 40;
+    const iconSpacing = contentWidth / TARGET_TYPES.length;
+    const iconStartX = contentLeft + iconSpacing / 2;
+    renderTargetRow(waveSummary.targets, waveSummary.targetsSpawned, iconStartX, cursorY + iconSize / 2, iconSize, iconSpacing, st.targetsRevealed);
+    cursorY += iconSize + 28;
 
-    ctx.font = 'bold 16px monospace';
-    for (let i = 0; i < waveSummary.bonuses.length; i++) {
-        if (waveSummaryState.bonusesRevealed <= i) break;
-        const bonus = waveSummary.bonuses[i];
+    // H. Divider
+    ctx.strokeStyle = 'rgba(0, 255, 255, 0.15)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(contentLeft, cursorY);
+    ctx.lineTo(contentRight, cursorY);
+    ctx.stroke();
+    cursorY += 8;
 
-        // Per-bonus fade-in and slide-in from left
-        const bonusRevealTime = waveSummaryState.timings.pointsEnd + i * WAVE_SUMMARY_TIMING.bonusPer;
-        const bonusAge = Math.max(0, waveSummaryState.elapsed - bonusRevealTime);
-        const bonusFadeDur = 0.2;
-        const bonusAlpha = Math.min(1, bonusAge / bonusFadeDur);
-        const bonusSlide = (1 - bonusAlpha) * 15; // Slide in from left
-
+    // I. Section C: PTS.CALC
+    if (elapsed >= st.timings.targetsEnd) {
+        const ptsSectionAge = elapsed - st.timings.targetsEnd;
+        const ptsSectionAlpha = Math.min(1, ptsSectionAge / 0.15);
         ctx.save();
-        ctx.globalAlpha = bonusAlpha;
-        ctx.translate(-bonusSlide, 0);
-
-        ctx.fillStyle = bonus.earned ? '#0f0' : '#555';
+        ctx.globalAlpha = ptsSectionAlpha;
+        ctx.font = 'bold 9px monospace';
+        ctx.fillStyle = 'rgba(0, 255, 255, 0.6)';
         ctx.textAlign = 'left';
-        ctx.fillText(bonus.label, panelX + padding, cursorY);
-        ctx.fillStyle = bonus.earned ? '#fff' : '#444';
-        ctx.font = '14px monospace';
-        ctx.fillText(`(${bonus.detail})`, panelX + padding + 210, cursorY);
-        ctx.font = 'bold 18px monospace';
-        ctx.textAlign = 'right';
-        // Glow on earned bonuses for emphasis
-        if (bonus.earned && bonusAge < 0.4) {
-            ctx.shadowColor = 'rgba(255, 255, 0, ' + (0.5 * (1 - bonusAge / 0.4)) + ')';
-            ctx.shadowBlur = 10;
-        }
-        ctx.fillStyle = bonus.earned ? '#ff0' : '#444';
-        ctx.fillText(bonus.earned ? '+25%' : '--', panelX + panelWidth - padding, cursorY);
-        ctx.shadowBlur = 0;
-
+        ctx.fillText('PTS.CALC', contentLeft, cursorY);
         ctx.restore();
-        cursorY += 22;
     }
-    cursorY += 10;
+    cursorY += 14;
 
-    // UFO Bucks calculation
-    if (waveSummaryState.bucksStarted) {
-        // Divider
-        cursorY += 6;
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-        ctx.beginPath();
-        ctx.moveTo(panelX + padding, cursorY);
-        ctx.lineTo(panelX + panelWidth - padding, cursorY);
-        ctx.stroke();
-        cursorY += 18;
-        // Fade-in for UFO Bucks section header
-        const bucksAge = Math.max(0, waveSummaryState.elapsed - waveSummaryState.timings.bonusesEnd);
-        const bucksSectionAlpha = Math.min(1, bucksAge / 0.2);
-        ctx.save();
-        ctx.globalAlpha = bucksSectionAlpha;
-        ctx.fillStyle = '#fff';
-        ctx.font = 'bold 18px monospace';
-        ctx.textAlign = 'left';
-        ctx.fillText('UFO BUCKS', panelX + padding, cursorY);
-        ctx.restore();
-        cursorY += 22;
-
-        ctx.font = '16px monospace';
+    // WAV.POINTS row
+    const pointsValue = st.pointsStarted ? st.pointsCount.current : 0;
+    if (st.pointsStarted || elapsed >= st.timings.targetsEnd) {
+        ctx.font = '9px monospace';
         ctx.fillStyle = '#aaa';
         ctx.textAlign = 'left';
-        ctx.fillText('BASE', panelX + padding, cursorY);
-        ctx.textAlign = 'right';
-        ctx.fillStyle = '#fff';
-        ctx.fillText(waveSummary.baseUfoBucks.toString(), panelX + panelWidth - padding, cursorY);
-        cursorY += 20;
+        ctx.fillText('WAV.POINTS', contentLeft, cursorY);
 
-        ctx.fillStyle = '#aaa';
-        ctx.textAlign = 'left';
-        ctx.fillText('BONUS', panelX + padding, cursorY);
+        // Points value with count-up glow and pop
         ctx.textAlign = 'right';
-        ctx.fillStyle = '#fff';
-        ctx.fillText(waveSummary.bonusUfoBucks.toString(), panelX + panelWidth - padding, cursorY);
-        cursorY += 20;
-
-        ctx.font = 'bold 18px monospace';
-        ctx.fillStyle = '#ff0';
-        ctx.textAlign = 'left';
-        ctx.fillText('TOTAL', panelX + padding, cursorY);
-        ctx.textAlign = 'right';
-        // Pop effect when bucks count finishes
-        if (waveSummaryState.bucksFinished && waveSummaryState.bucksFinishTime >= 0) {
-            const bPopAge = waveSummaryState.elapsed - waveSummaryState.bucksFinishTime;
-            const bPopScale = bPopAge < 0.2 ? 1 + 0.15 * Math.sin(Math.min(1, bPopAge / 0.2) * Math.PI) : 1;
-            const bPopGlow = bPopAge < 0.3 ? (1 - bPopAge / 0.3) * 0.6 : 0;
+        ctx.font = 'bold 14px monospace';
+        if (st.pointsFinished && st.pointsFinishTime >= 0) {
+            const popAge = elapsed - st.pointsFinishTime;
+            const popScale = popAge < 0.2 ? 1 + 0.12 * Math.sin(Math.min(1, popAge / 0.2) * Math.PI) : 1;
+            const popGlow = popAge < 0.3 ? (1 - popAge / 0.3) : 0;
             ctx.save();
-            const bTextX = panelX + panelWidth - padding;
-            ctx.translate(bTextX, cursorY);
-            ctx.scale(bPopScale, bPopScale);
-            ctx.shadowColor = 'rgba(255, 255, 0, ' + bPopGlow + ')';
+            ctx.translate(contentRight, cursorY);
+            ctx.scale(popScale, popScale);
+            ctx.shadowColor = 'rgba(255, 204, 0, ' + popGlow + ')';
             ctx.shadowBlur = 15;
-            ctx.fillText(waveSummary.ufoBucksAfter.toString(), 0, 0);
+            ctx.fillStyle = '#fc0';
+            ctx.fillText(pointsValue.toLocaleString(), 0, 0);
             ctx.restore();
+            ctx.shadowBlur = 0;
+        } else if (st.pointsStarted && !st.pointsFinished) {
+            // Animated glow during count-up
+            const glowPhase = Math.sin(elapsed * Math.PI * 8) * 0.5 + 0.5;
+            ctx.shadowColor = '#fc0';
+            ctx.shadowBlur = 2 + glowPhase * 4;
+            ctx.fillStyle = '#fc0';
+            ctx.fillText(pointsValue.toLocaleString(), contentRight, cursorY);
+            ctx.shadowBlur = 0;
         } else {
-            ctx.fillText(waveSummary.ufoBucksAfter.toString(), panelX + panelWidth - padding, cursorY);
+            ctx.fillStyle = '#fc0';
+            ctx.fillText('0', contentRight, cursorY);
         }
-        cursorY += 22;
+        cursorY += 6;
+
+        // Segmented bar
+        const barMax = Math.max(waveSummary.wavePoints, 5000);
+        const barPercent = waveSummary.wavePoints > 0 ? pointsValue / barMax : 0;
+        renderNGEBar(contentLeft, cursorY, contentWidth, 3, barPercent, '#fc0', { segments: 10 });
+        cursorY += 10;
+
+        // BONUS.PTS row (only if > 0, appears after points finish)
+        if (waveSummary.bonusPoints > 0 && st.pointsFinished) {
+            const bonusPtsAge = Math.max(0, elapsed - st.pointsFinishTime);
+            const bonusPtsAlpha = Math.min(1, bonusPtsAge / 0.15);
+            ctx.save();
+            ctx.globalAlpha = bonusPtsAlpha;
+            ctx.font = '9px monospace';
+            ctx.fillStyle = '#666';
+            ctx.textAlign = 'left';
+            ctx.fillText('BONUS.PTS', contentLeft, cursorY);
+            ctx.textAlign = 'right';
+            ctx.font = '11px monospace';
+            ctx.fillStyle = '#0f0';
+            ctx.fillText('+' + waveSummary.bonusPoints.toLocaleString(), contentRight, cursorY);
+            ctx.restore();
+            cursorY += 14;
+        }
+
+        // Bonus system check lines
+        for (let i = 0; i < waveSummary.bonuses.length; i++) {
+            if (st.bonusesRevealed <= i) break;
+            const bonus = waveSummary.bonuses[i];
+            const bonusRevealTime = st.timings.pointsEnd + i * WAVE_SUMMARY_TIMING.bonusPer;
+            const bonusAge = Math.max(0, elapsed - bonusRevealTime);
+            const dotLabel = bonus.label.replace(/\s+/g, '.');
+            renderSystemCheckLine(contentLeft, cursorY, contentWidth, dotLabel, bonus.earned, bonus.detail, bonusAge);
+            cursorY += 14;
+        }
+
+        // Bonus multiplier summary
+        const earnedCount = waveSummary.bonuses.filter(b => b.earned).length;
+        if (earnedCount > 0 && st.bonusesRevealed >= waveSummary.bonuses.length) {
+            const lastBonusTime = st.timings.pointsEnd + (waveSummary.bonuses.length - 1) * WAVE_SUMMARY_TIMING.bonusPer;
+            const multAge = Math.max(0, elapsed - lastBonusTime - 0.2);
+            const multAlpha = Math.min(1, multAge / 0.15);
+            if (multAlpha > 0) {
+                ctx.save();
+                ctx.globalAlpha = multAlpha;
+                ctx.font = 'bold 9px monospace';
+                ctx.fillStyle = '#fc0';
+                ctx.textAlign = 'left';
+                ctx.fillText('BONUS MULT: +' + (earnedCount * 25) + '%', contentLeft, cursorY);
+                ctx.restore();
+                cursorY += 14;
+            }
+        }
+
+        // CRED.CALC sub-section
+        if (st.bucksStarted) {
+            // Dashed divider
+            cursorY += 4;
+            ctx.save();
+            ctx.strokeStyle = 'rgba(0, 255, 255, 0.1)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath();
+            ctx.moveTo(contentLeft, cursorY);
+            ctx.lineTo(contentRight, cursorY);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.restore();
+            cursorY += 8;
+
+            // CRED.CALC micro-label
+            ctx.font = '7px monospace';
+            ctx.fillStyle = 'rgba(0, 255, 255, 0.4)';
+            ctx.textAlign = 'left';
+            ctx.fillText('CRED.CALC', contentLeft, cursorY);
+            cursorY += 10;
+
+            // BASE.CRED row
+            ctx.font = '9px monospace';
+            ctx.fillStyle = '#aaa';
+            ctx.textAlign = 'left';
+            ctx.fillText('BASE.CRED', contentLeft, cursorY);
+            ctx.textAlign = 'right';
+            ctx.fillStyle = '#fff';
+            ctx.fillText(waveSummary.baseUfoBucks.toString(), contentRight, cursorY);
+            cursorY += 12;
+
+            // BONUS.CRED row
+            ctx.fillStyle = '#aaa';
+            ctx.textAlign = 'left';
+            ctx.fillText('BONUS.CRED', contentLeft, cursorY);
+            ctx.textAlign = 'right';
+            ctx.fillStyle = '#0f0';
+            ctx.fillText('+' + waveSummary.bonusUfoBucks.toString(), contentRight, cursorY);
+            cursorY += 8;
+
+            // Thin divider
+            ctx.strokeStyle = 'rgba(0, 255, 255, 0.15)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(contentLeft, cursorY);
+            ctx.lineTo(contentLeft + contentWidth * 0.5, cursorY);
+            ctx.stroke();
+            cursorY += 10;
+
+            // TOTAL.CRED with diamond + count-up + pop
+            const bucksValue = st.bucksStarted ? st.bucksCount.current : 0;
+            renderNGEIndicator(contentLeft, cursorY - 3, 'diamond', '#fc0', 'steady', { rate: 99999 });
+            ctx.font = 'bold 11px monospace';
+            ctx.fillStyle = '#fc0';
+            ctx.textAlign = 'left';
+            ctx.fillText('TOTAL.CRED', contentLeft + 10, cursorY);
+            ctx.textAlign = 'right';
+
+            if (st.bucksFinished && st.bucksFinishTime >= 0) {
+                const bPopAge = elapsed - st.bucksFinishTime;
+                const bPopScale = bPopAge < 0.2 ? 1 + 0.12 * Math.sin(Math.min(1, bPopAge / 0.2) * Math.PI) : 1;
+                const bPopGlow = bPopAge < 0.3 ? (1 - bPopAge / 0.3) : 0;
+                ctx.save();
+                ctx.translate(contentRight, cursorY);
+                ctx.scale(bPopScale, bPopScale);
+                ctx.shadowColor = 'rgba(255, 204, 0, ' + bPopGlow + ')';
+                ctx.shadowBlur = 15;
+                ctx.fillText(bucksValue.toString(), 0, 0);
+                ctx.restore();
+                ctx.shadowBlur = 0;
+            } else if (st.bucksStarted && !st.bucksFinished) {
+                const glowPhase = Math.sin(elapsed * Math.PI * 8) * 0.5 + 0.5;
+                ctx.shadowColor = '#fc0';
+                ctx.shadowBlur = 2 + glowPhase * 4;
+                ctx.fillText(bucksValue.toString(), contentRight, cursorY);
+                ctx.shadowBlur = 0;
+            } else {
+                ctx.fillText('0', contentRight, cursorY);
+            }
+            cursorY += 14;
+        }
     }
 
-    // === BIO MATTER section ===
-    if (waveSummaryState.elapsed >= waveSummaryState.timings.bioEnd && (waveSummary.droneHarvests > 0 || waveSummary.bioMatterEarned > 0 || waveSummary.lostDeliveries > 0)) {
-        // Fade-in for bio matter section
-        const bioAge = Math.max(0, waveSummaryState.elapsed - waveSummaryState.timings.bioEnd);
+    // J. Divider before bio/footer
+    if (elapsed >= st.timings.bucksEnd) {
+        cursorY += 2;
+        ctx.strokeStyle = 'rgba(0, 255, 255, 0.15)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(contentLeft, cursorY);
+        ctx.lineTo(contentRight, cursorY);
+        ctx.stroke();
+        cursorY += 8;
+    }
+
+    // K. Section D: BIO.STATUS (conditional)
+    if (elapsed >= st.timings.bioEnd && (waveSummary.droneHarvests > 0 || waveSummary.bioMatterEarned > 0 || waveSummary.lostDeliveries > 0)) {
+        const bioAge = Math.max(0, elapsed - st.timings.bioEnd);
         const bioAlpha = Math.min(1, bioAge / 0.25);
         ctx.save();
         ctx.globalAlpha = bioAlpha;
 
-        // Divider
-        cursorY += 14;
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-        ctx.beginPath();
-        ctx.moveTo(panelX + padding, cursorY);
-        ctx.lineTo(panelX + panelWidth - padding, cursorY);
-        ctx.stroke();
-        cursorY += 18;
-        ctx.fillStyle = '#fff';
-        ctx.font = 'bold 18px monospace';
+        // Section label
+        ctx.font = 'bold 9px monospace';
+        ctx.fillStyle = 'rgba(0, 255, 0, 0.6)';
         ctx.textAlign = 'left';
-        ctx.fillText('BIO MATTER', panelX + padding, cursorY);
-        cursorY += 22;
+        ctx.fillText('BIO.STATUS', contentLeft, cursorY);
+        cursorY += 14;
 
-        ctx.font = '16px monospace';
+        ctx.font = '9px monospace';
+        // BM.DELIVERED
         if (waveSummary.droneHarvests > 0) {
+            renderNGEIndicator(contentLeft, cursorY - 3, 'diamond', '#0f0', 'steady', { rate: 99999 });
             ctx.fillStyle = '#aaa';
             ctx.textAlign = 'left';
-            ctx.fillText('BM DELIVERED', panelX + padding, cursorY);
+            ctx.fillText('BM.DELIVERED', contentLeft + 10, cursorY);
             ctx.textAlign = 'right';
-            ctx.fillStyle = '#fff';
-            ctx.fillText(waveSummary.droneHarvests.toString(), panelX + panelWidth - padding, cursorY);
-            cursorY += 20;
+            ctx.fillStyle = '#0f0';
+            ctx.fillText(waveSummary.droneHarvests.toString(), contentRight, cursorY);
+            cursorY += 12;
         }
+
+        // BM.LOST
         if (waveSummary.lostDeliveries > 0) {
+            renderNGEIndicator(contentLeft, cursorY - 3, 'diamond', '#f44', 'steady', { rate: 99999 });
             ctx.fillStyle = '#aaa';
             ctx.textAlign = 'left';
-            ctx.fillText('BM LOST', panelX + padding, cursorY);
+            ctx.fillText('BM.LOST', contentLeft + 10, cursorY);
             ctx.textAlign = 'right';
-            ctx.fillStyle = '#fff';
-            ctx.fillText(waveSummary.lostDeliveries.toString(), panelX + panelWidth - padding, cursorY);
-            cursorY += 20;
+            ctx.fillStyle = '#f44';
+            ctx.fillText(waveSummary.lostDeliveries.toString(), contentRight, cursorY);
+            cursorY += 12;
         }
+
+        // BM.EARNED
         if (waveSummary.bioMatterEarned > 0) {
-            ctx.font = 'bold 18px monospace';
+            renderNGEIndicator(contentLeft, cursorY - 3, 'diamond', '#0f0', 'steady', { rate: 99999 });
+            if (bioAge < 0.5) {
+                ctx.shadowColor = '#0f0';
+                ctx.shadowBlur = 4 * (1 - bioAge / 0.5);
+            }
+            ctx.font = 'bold 9px monospace';
             ctx.fillStyle = '#0f0';
             ctx.textAlign = 'left';
-            ctx.fillText('EARNED', panelX + padding, cursorY);
+            ctx.fillText('BM.EARNED', contentLeft + 10, cursorY);
             ctx.textAlign = 'right';
-            ctx.fillText(`+${waveSummary.bioMatterEarned}`, panelX + panelWidth - padding, cursorY);
-            ctx.font = '16px monospace';
-            cursorY += 20;
+            ctx.fillText('+' + waveSummary.bioMatterEarned, contentRight, cursorY);
+            ctx.shadowBlur = 0;
+            cursorY += 12;
         }
-        cursorY += 10;
+
         ctx.restore();
+
+        // L. Footer divider
+        cursorY += 2;
+        ctx.strokeStyle = 'rgba(0, 255, 255, 0.15)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(contentLeft, cursorY);
+        ctx.lineTo(contentRight, cursorY);
+        ctx.stroke();
+        cursorY += 8;
     }
 
-    if (waveSummaryState.elapsed >= waveSummaryState.timings.totalsEnd) {
-        // Fade-in for totals section
-        const scoreAge = Math.max(0, waveSummaryState.elapsed - waveSummaryState.timings.totalsEnd);
+    // M. CUMU.SCORE
+    if (elapsed >= st.timings.totalsEnd) {
+        const scoreAge = Math.max(0, elapsed - st.timings.totalsEnd);
         const scoreAlpha = Math.min(1, scoreAge / 0.25);
         ctx.save();
         ctx.globalAlpha = scoreAlpha;
 
-        // === CUMULATIVE SCORE ===
-        ctx.fillStyle = '#bbb';
-        ctx.font = 'bold 16px monospace';
+        renderNGEIndicator(contentLeft, cursorY - 3, 'diamond', '#0ff', 'steady', { rate: 99999 });
+        ctx.font = 'bold 9px monospace';
+        ctx.fillStyle = '#aaa';
         ctx.textAlign = 'left';
-        ctx.fillText('CUMULATIVE SCORE', panelX + padding, cursorY);
+        ctx.fillText('CUMU.SCORE', contentLeft + 10, cursorY);
+
         ctx.textAlign = 'right';
+        ctx.font = 'bold 14px monospace';
         if (scoreAge < 0.4) {
             ctx.shadowColor = 'rgba(255, 255, 255, ' + (0.4 * (1 - scoreAge / 0.4)) + ')';
             ctx.shadowBlur = 12;
         }
         ctx.fillStyle = '#fff';
-        ctx.fillText(waveSummary.cumulativeScore.toLocaleString(), panelX + panelWidth - padding, cursorY);
+        ctx.fillText(waveSummary.cumulativeScore.toLocaleString(), contentRight, cursorY);
         ctx.shadowBlur = 0;
 
         ctx.restore();
     }
 
-    if (waveSummaryState.complete) {
-        const remaining = Math.max(0, Math.ceil(WAVE_SUMMARY_TIMING.autoContinue - waveSummaryState.postCompleteTimer));
-        // Pulsing countdown text
-        const pulse = 0.6 + 0.4 * Math.sin(waveSummaryState.postCompleteTimer * Math.PI * 2);
-        ctx.fillStyle = `rgba(255, 255, 255, ${pulse})`;
-        ctx.font = 'bold 20px monospace';
-        ctx.textAlign = 'center';
-        // Subtle scale bounce on each new second
-        const secondFrac = waveSummaryState.postCompleteTimer % 1;
-        const countScale = secondFrac < 0.1 ? 1 + 0.08 * (1 - secondFrac / 0.1) : 1;
+    // N. Countdown (inside panel, bottom-right)
+    if (st.complete) {
+        const remaining = Math.max(0, Math.ceil(WAVE_SUMMARY_TIMING.autoContinue - st.postCompleteTimer));
+        const pulse = 0.4 + 0.4 * Math.sin(st.postCompleteTimer * Math.PI * 4);
+        const secondFrac = st.postCompleteTimer % 1;
+        const countScale = secondFrac < 0.1 ? 1 + 0.06 * (1 - secondFrac / 0.1) : 1;
+        const flashAlpha = secondFrac < 0.05 ? 1 - secondFrac / 0.05 : 0;
+
         ctx.save();
-        ctx.translate(panelX + panelWidth / 2, panelY + panelHeight + 30);
+        const countX = contentRight;
+        const countY = panelY + panelH - 12;
+        ctx.translate(countX, countY);
         ctx.scale(countScale, countScale);
-        ctx.fillText(`CONTINUING IN ${remaining}...`, 0, 0);
+        ctx.font = 'bold 9px monospace';
+        ctx.textAlign = 'right';
+        if (flashAlpha > 0) {
+            ctx.shadowColor = 'rgba(255, 255, 255, ' + flashAlpha + ')';
+            ctx.shadowBlur = 6;
+        }
+        ctx.fillStyle = 'rgba(0, 255, 255, ' + pulse + ')';
+        ctx.fillText('>> SHOP.INTERFACE IN ' + remaining + '...', 0, 0);
+        ctx.shadowBlur = 0;
         ctx.restore();
+    }
+
+    // O. CRT Scanlines
+    const scanOffset = (hudAnimState && hudAnimState.scanlineOffset) ? hudAnimState.scanlineOffset : 0;
+    ctx.fillStyle = 'rgba(0, 255, 255, 0.06)';
+    for (let sy = scanOffset % 3; sy < canvas.height; sy += 3) {
+        ctx.fillRect(0, sy, canvas.width, 1);
     }
 
     ctx.restore();
