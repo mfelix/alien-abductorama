@@ -14070,8 +14070,8 @@ function getHUDLayout() {
 
     return {
         statusZone: { x: margin, y: margin, w: leftW, h: 120 },
-        missionZone: { x: centerX, y: margin, w: centerW, h: 100 },
-        bioMatterZone: { x: bioGapX, y: margin, w: bioGapW, h: 100 },
+        missionZone: { x: centerX, y: margin, w: centerW, h: 72 },
+        bioMatterZone: { x: bioGapX, y: margin, w: bioGapW, h: 72 },
         systemsZone: { x: canvas.width - rightW - margin, y: margin, w: rightW, h: 90 },
         weaponsZone: { x: margin, y: 140, w: leftW, h: 200 },
         fleetZone: { x: canvas.width - rightW - margin, y: fleetY, w: rightW, h: 300 },
@@ -14277,7 +14277,7 @@ function renderHUDFrame() {
         renderMissionZone(layout.missionZone);
     }
     if (missionVisible && booting && hudBootState.panels.mission.phase !== 'waiting') {
-        renderPanelBootOverlay(layout.missionZone, 110, '#0a0', 'MISSION.CTL', hudBootState.panels.mission, hudBootState.bootLines.mission);
+        renderPanelBootOverlay(layout.missionZone, layout.missionZone.h, '#0a0', 'MISSION.CTL', hudBootState.panels.mission, hudBootState.bootLines.mission);
     }
 
     // Tech readout chips in top-center gap
