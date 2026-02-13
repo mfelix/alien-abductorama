@@ -2450,7 +2450,410 @@ const SFX = {
         mg.gain.exponentialRampToValueAtTime(0.001, chimeStart + 0.305);
         main.connect(mg); mg.connect(audioCtx.destination);
         main.start(chimeStart); main.stop(chimeStart + 0.305);
-    }
+    },
+
+    // ===== BIOS PRE-BOOT SOUNDS =====
+
+    // S1: POST Beep - single sharp square wave
+    biosPostBeep: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.type = 'square';
+        osc.frequency.value = 1000 * (0.95 + Math.random() * 0.1);
+        g.gain.setValueAtTime(0.001, t);
+        g.gain.linearRampToValueAtTime(0.10, t + 0.002);
+        g.gain.setValueAtTime(0.10, t + 0.042);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.062);
+        osc.connect(g); g.connect(audioCtx.destination);
+        osc.start(t); osc.stop(t + 0.062);
+    },
+
+    // S2: HDD Click - bandpass filtered noise burst
+    biosHDDClick: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const bufLen = Math.floor(audioCtx.sampleRate * 0.012);
+        const buf = audioCtx.createBuffer(1, bufLen, audioCtx.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < bufLen; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / bufLen);
+        const src = audioCtx.createBufferSource();
+        src.buffer = buf;
+        const bp = audioCtx.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.frequency.value = 2500 + (Math.random() - 0.5) * 600;
+        bp.Q.value = 8;
+        const g = audioCtx.createGain();
+        g.gain.setValueAtTime(0.06, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.012);
+        src.connect(bp); bp.connect(g); g.connect(audioCtx.destination);
+        src.start(t); src.stop(t + 0.012);
+    },
+
+    // S3: Device Detection Chirp - frequency sweep
+    biosDetectionChirp: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.type = 'square';
+        const startFreq = 700 + Math.random() * 200;
+        osc.frequency.setValueAtTime(startFreq, t);
+        osc.frequency.exponentialRampToValueAtTime(startFreq * 2, t + 0.03);
+        g.gain.setValueAtTime(0.001, t);
+        g.gain.linearRampToValueAtTime(0.05, t + 0.002);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
+        osc.connect(g); g.connect(audioCtx.destination);
+        osc.start(t); osc.stop(t + 0.03);
+    },
+
+    // S4: Floppy Seek - bandpass noise with frequency sweep
+    biosFloppySeek: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const bufLen = Math.floor(audioCtx.sampleRate * 0.025);
+        const buf = audioCtx.createBuffer(1, bufLen, audioCtx.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < bufLen; i++) data[i] = (Math.random() * 2 - 1);
+        const src = audioCtx.createBufferSource();
+        src.buffer = buf;
+        const bp = audioCtx.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.frequency.setValueAtTime(800, t);
+        bp.frequency.exponentialRampToValueAtTime(1200, t + 0.025);
+        bp.Q.value = 3;
+        const g = audioCtx.createGain();
+        g.gain.setValueAtTime(0.04, t);
+        g.gain.setValueAtTime(0.04, t + 0.015);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.025);
+        src.connect(bp); bp.connect(g); g.connect(audioCtx.destination);
+        src.start(t); src.stop(t + 0.025);
+    },
+
+    // S5: System Root Hum - rising sawtooth through lowpass
+    biosSystemHum: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const lp = audioCtx.createBiquadFilter();
+        const g = audioCtx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(60, t);
+        osc.frequency.linearRampToValueAtTime(120, t + 0.35);
+        lp.type = 'lowpass';
+        lp.frequency.value = 400;
+        g.gain.setValueAtTime(0.001, t);
+        g.gain.linearRampToValueAtTime(0.06, t + 0.05);
+        g.gain.setValueAtTime(0.06, t + 0.25);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+        osc.connect(lp); lp.connect(g); g.connect(audioCtx.destination);
+        osc.start(t); osc.stop(t + 0.35);
+    },
+
+    // S6: Data Burst - bandpass noise at random center freq
+    biosDataBurst: (freqHint) => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const bufLen = Math.floor(audioCtx.sampleRate * 0.02);
+        const buf = audioCtx.createBuffer(1, bufLen, audioCtx.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < bufLen; i++) data[i] = (Math.random() * 2 - 1);
+        const src = audioCtx.createBufferSource();
+        src.buffer = buf;
+        const bp = audioCtx.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.frequency.value = freqHint || (400 + Math.random() * 800);
+        bp.Q.value = 5;
+        const g = audioCtx.createGain();
+        g.gain.setValueAtTime(0.04, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.018);
+        src.connect(bp); bp.connect(g); g.connect(audioCtx.destination);
+        src.start(t); src.stop(t + 0.02);
+    },
+
+    // S7: Orchestrator Confirmation - 440Hz square blip
+    biosOrchestratorConfirm: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.type = 'square';
+        osc.frequency.value = 440;
+        g.gain.setValueAtTime(0.001, t);
+        g.gain.linearRampToValueAtTime(0.08, t + 0.002);
+        g.gain.setValueAtTime(0.08, t + 0.027);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.042);
+        osc.connect(g); g.connect(audioCtx.destination);
+        osc.start(t); osc.stop(t + 0.042);
+    },
+
+    // S8: Swarm Agent Two-Tone Blip
+    biosSwarmBlip: (pitchOffset) => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const baseFreq = 600 + (pitchOffset || 0) * 50;
+        for (let i = 0; i < 2; i++) {
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            osc.type = 'square';
+            osc.frequency.value = baseFreq + i * 300;
+            const start = t + i * 0.04;
+            g.gain.setValueAtTime(0.001, start);
+            g.gain.linearRampToValueAtTime(0.06, start + 0.001);
+            g.gain.setValueAtTime(0.06, start + 0.016);
+            g.gain.exponentialRampToValueAtTime(0.001, start + 0.02);
+            osc.connect(g); g.connect(audioCtx.destination);
+            osc.start(start); osc.stop(start + 0.02);
+        }
+    },
+
+    // S9: Tmux Split Crack - sharp bandpass noise
+    biosTmuxCrack: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const bufLen = Math.floor(audioCtx.sampleRate * 0.015);
+        const buf = audioCtx.createBuffer(1, bufLen, audioCtx.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < bufLen; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / bufLen);
+        const src = audioCtx.createBufferSource();
+        src.buffer = buf;
+        const bp = audioCtx.createBiquadFilter();
+        bp.type = 'bandpass'; bp.frequency.value = 1500; bp.Q.value = 2;
+        const g = audioCtx.createGain();
+        g.gain.setValueAtTime(0.10, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.012);
+        src.connect(bp); bp.connect(g); g.connect(audioCtx.destination);
+        src.start(t); src.stop(t + 0.015);
+    },
+
+    // S10: Agent Counter Buzz - rapid high square ticks
+    biosAgentTick: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.type = 'square';
+        osc.frequency.value = 1200;
+        g.gain.setValueAtTime(0.03, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.008);
+        osc.connect(g); g.connect(audioCtx.destination);
+        osc.start(t); osc.stop(t + 0.008);
+    },
+
+    // S11: Modem Handshake Sweep - two crossing frequency sweeps
+    biosModemHandshake: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        // Sweep 1: sawtooth 300->2400Hz
+        const osc1 = audioCtx.createOscillator();
+        const g1 = audioCtx.createGain();
+        const bp1 = audioCtx.createBiquadFilter();
+        osc1.type = 'sawtooth';
+        osc1.frequency.setValueAtTime(300, t);
+        osc1.frequency.exponentialRampToValueAtTime(2400, t + 0.2);
+        bp1.type = 'bandpass'; bp1.frequency.value = 1000; bp1.Q.value = 1;
+        g1.gain.setValueAtTime(0.05, t);
+        g1.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+        osc1.connect(bp1); bp1.connect(g1); g1.connect(audioCtx.destination);
+        osc1.start(t); osc1.stop(t + 0.2);
+        // Sweep 2: square 1200->400->1800Hz (30ms delayed)
+        const osc2 = audioCtx.createOscillator();
+        const g2 = audioCtx.createGain();
+        osc2.type = 'square';
+        osc2.frequency.setValueAtTime(1200, t + 0.03);
+        osc2.frequency.exponentialRampToValueAtTime(400, t + 0.15);
+        osc2.frequency.exponentialRampToValueAtTime(1800, t + 0.28);
+        g2.gain.setValueAtTime(0.001, t + 0.03);
+        g2.gain.linearRampToValueAtTime(0.04, t + 0.035);
+        g2.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+        osc2.connect(g2); g2.connect(audioCtx.destination);
+        osc2.start(t + 0.03); osc2.stop(t + 0.28);
+    },
+
+    // S12: Data Transfer Click - highpass filtered noise
+    biosDataClick: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const bufLen = Math.floor(audioCtx.sampleRate * 0.008);
+        const buf = audioCtx.createBuffer(1, bufLen, audioCtx.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < bufLen; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / bufLen);
+        const src = audioCtx.createBufferSource();
+        src.buffer = buf;
+        const hp = audioCtx.createBiquadFilter();
+        hp.type = 'highpass'; hp.frequency.value = 3000;
+        const g = audioCtx.createGain();
+        g.gain.setValueAtTime(0.03, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.006);
+        src.connect(hp); hp.connect(g); g.connect(audioCtx.destination);
+        src.start(t); src.stop(t + 0.008);
+    },
+
+    // S13: Download Complete Trio - three ascending square tones
+    biosDownloadComplete: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const freqs = [400, 600, 800];
+        for (let i = 0; i < 3; i++) {
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            osc.type = 'square';
+            osc.frequency.value = freqs[i];
+            const start = t + i * 0.02;
+            g.gain.setValueAtTime(0.001, start);
+            g.gain.linearRampToValueAtTime(0.06, start + 0.002);
+            g.gain.setValueAtTime(0.06, start + 0.022);
+            g.gain.exponentialRampToValueAtTime(0.001, start + 0.032);
+            osc.connect(g); g.connect(audioCtx.destination);
+            osc.start(start); osc.stop(start + 0.032);
+        }
+    },
+
+    // S14: System Check Beep - ascending pitch per line
+    biosCheckBeep: (lineIndex) => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.type = 'square';
+        osc.frequency.value = 300 + (lineIndex || 0) * 100;
+        g.gain.setValueAtTime(0.001, t);
+        g.gain.linearRampToValueAtTime(0.07, t + 0.001);
+        g.gain.setValueAtTime(0.07, t + 0.026);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.036);
+        osc.connect(g); g.connect(audioCtx.destination);
+        osc.start(t); osc.stop(t + 0.036);
+    },
+
+    // S14 variant: [SKIP] beep - lower, duller
+    biosCheckSkip: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.type = 'square';
+        osc.frequency.value = 200;
+        g.gain.setValueAtTime(0.001, t);
+        g.gain.linearRampToValueAtTime(0.05, t + 0.001);
+        g.gain.setValueAtTime(0.05, t + 0.035);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+        osc.connect(g); g.connect(audioCtx.destination);
+        osc.start(t); osc.stop(t + 0.05);
+    },
+
+    // S15: System Check Pass Chord - 1000Hz + 1500Hz
+    biosPassChord: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        for (const freq of [1000, 1500]) {
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            osc.type = 'square';
+            osc.frequency.value = freq;
+            g.gain.setValueAtTime(0.001, t);
+            g.gain.linearRampToValueAtTime(0.08, t + 0.002);
+            g.gain.setValueAtTime(0.08, t + 0.052);
+            g.gain.exponentialRampToValueAtTime(0.001, t + 0.082);
+            osc.connect(g); g.connect(audioCtx.destination);
+            osc.start(t); osc.stop(t + 0.082);
+        }
+    },
+
+    // S16: Countdown Bass Throb - deep sawtooth through lowpass
+    biosCountdownThrob: (number) => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        // number: 3, 2, or 1 - gets lower, louder, shorter
+        const freq = number === 3 ? 50 : number === 2 ? 45 : 40;
+        const gain = number === 3 ? 0.15 : number === 2 ? 0.18 : 0.22;
+        const dur = number === 3 ? 0.12 : number === 2 ? 0.10 : 0.08;
+        const osc = audioCtx.createOscillator();
+        const lp = audioCtx.createBiquadFilter();
+        const g = audioCtx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.value = freq;
+        lp.type = 'lowpass'; lp.frequency.value = 150;
+        g.gain.setValueAtTime(0.001, t);
+        g.gain.linearRampToValueAtTime(gain, t + 0.005);
+        g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+        osc.connect(lp); lp.connect(g); g.connect(audioCtx.destination);
+        osc.start(t); osc.stop(t + dur);
+    },
+
+    // S17: Launch Burst - noise + sine sweep + sub-impact
+    biosLaunchBurst: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        // Layer 1: White noise burst
+        const bufLen = Math.floor(audioCtx.sampleRate * 0.08);
+        const buf = audioCtx.createBuffer(1, bufLen, audioCtx.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < bufLen; i++) data[i] = (Math.random() * 2 - 1);
+        const src = audioCtx.createBufferSource();
+        src.buffer = buf;
+        const g1 = audioCtx.createGain();
+        g1.gain.setValueAtTime(0.25, t);
+        g1.gain.exponentialRampToValueAtTime(0.01, t + 0.08);
+        src.connect(g1); g1.connect(audioCtx.destination);
+        src.start(t); src.stop(t + 0.08);
+        // Layer 2: Rising sine sweep
+        const sweep = audioCtx.createOscillator();
+        const g2 = audioCtx.createGain();
+        sweep.type = 'sine';
+        sweep.frequency.setValueAtTime(100, t);
+        sweep.frequency.exponentialRampToValueAtTime(2000, t + 0.08);
+        g2.gain.setValueAtTime(0.15, t);
+        g2.gain.exponentialRampToValueAtTime(0.01, t + 0.08);
+        sweep.connect(g2); g2.connect(audioCtx.destination);
+        sweep.start(t); sweep.stop(t + 0.08);
+        // Layer 3: Sub-impact
+        const sub = audioCtx.createOscillator();
+        const g3 = audioCtx.createGain();
+        sub.type = 'sine';
+        sub.frequency.value = 40;
+        g3.gain.setValueAtTime(0.20, t);
+        g3.gain.exponentialRampToValueAtTime(0.01, t + 0.1);
+        sub.connect(g3); g3.connect(audioCtx.destination);
+        sub.start(t); sub.stop(t + 0.1);
+    },
+
+    // ===== BIO-MATTER UPLOAD SOUNDS =====
+
+    // Bio upload row appearing - ascending blip
+    bioUploadBlip: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(1800, t);
+        osc.frequency.exponentialRampToValueAtTime(2200, t + 0.03);
+        g.gain.setValueAtTime(0.001, t);
+        g.gain.linearRampToValueAtTime(0.04, t + 0.002);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
+        osc.connect(g); g.connect(audioCtx.destination);
+        osc.start(t); osc.stop(t + 0.03);
+    },
+
+    // Bio upload completion burst
+    bioUploadComplete: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const bufLen = Math.floor(audioCtx.sampleRate * 0.04);
+        const buf = audioCtx.createBuffer(1, bufLen, audioCtx.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < bufLen; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / bufLen);
+        const src = audioCtx.createBufferSource();
+        src.buffer = buf;
+        const bp = audioCtx.createBiquadFilter();
+        bp.type = 'bandpass'; bp.frequency.value = 2000; bp.Q.value = 3;
+        const g = audioCtx.createGain();
+        g.gain.setValueAtTime(0.06, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+        src.connect(bp); bp.connect(g); g.connect(audioCtx.destination);
+        src.start(t); src.stop(t + 0.04);
+    },
 };
 
 // ============================================
@@ -3761,6 +4164,12 @@ class Target {
                     bioUploadState.flashAlpha = 1.0;
                     bioUploadState.bitRate += 10;
                     SFX.bioMatterBlip();
+                    // Spawn upload rows for bio-matter panel
+                    for (let _br = 0; _br < bmEarned; _br++) {
+                        bioUploadRows.push({ spawnTime: Date.now() + _br * 50, progress: 0, phase: 'uploading', flashStartTime: 0 });
+                        bioUploadState.bitRateSamples.push(Date.now() + _br * 50);
+                    }
+                    SFX.bioUploadBlip();
                 }
 
                 // Track quota progress
@@ -8881,6 +9290,12 @@ class HarvesterDrone {
                     bioUploadState.flashAlpha = 1.0;
                     bioUploadState.bitRate += 10;
                     SFX.bioMatterBlip();
+                    // Spawn upload rows for bio-matter panel
+                    for (let _br = 0; _br < bmEarned; _br++) {
+                        bioUploadRows.push({ spawnTime: Date.now() + _br * 50, progress: 0, phase: 'uploading', flashStartTime: 0 });
+                        bioUploadState.bitRateSamples.push(Date.now() + _br * 50);
+                    }
+                    SFX.bioUploadBlip();
                     if (ufo) { ufo.health = Math.min(CONFIG.UFO_START_HEALTH, ufo.health + CONFIG.HEAL_PER_ABDUCTION); }
                     if (score > highScore) { highScore = score; localStorage.setItem('alienAbductoramaHighScore', highScore); }
                     SFX.droneOrbReceive && SFX.droneOrbReceive();
@@ -10194,6 +10609,12 @@ class HarvesterCoordinator extends Coordinator {
                 waveStats.bioMatterEarned += bmToSend;
                 waveStats.droneHarvests++;
                 createFloatingText(this.x, this.y - 40, `+${bmToSend} BM`, '#4f4', { fontSize: 18 });
+                // Spawn upload rows for bio-matter panel
+                for (let _br = 0; _br < bmToSend; _br++) {
+                    bioUploadRows.push({ spawnTime: Date.now() + _br * 50, progress: 0, phase: 'uploading', flashStartTime: 0 });
+                    bioUploadState.bitRateSamples.push(Date.now() + _br * 50);
+                }
+                SFX.bioUploadBlip();
                 // Spawn pulse orb traveling from coordinator to UFO (sound plays on arrival)
                 if (ufo) {
                     this.spawnBmPulse(this.x, this.y - this.height / 2, ufo.x, ufo.y + ufo.height / 2, 'coord-to-ufo');
@@ -12371,6 +12792,7 @@ function startGame() {
     };
     techTreeAnimState = {
         dashOffset: 0, researchGlowPhase: 0, nodeAppearAnims: {},
+        visible: false, appearProgress: 0, appearStartTime: 0,
     };
     preBootState = {
         phase: 'inactive', timer: 0, crtProgress: 0,
@@ -12381,6 +12803,28 @@ function startGame() {
         energyRateBuffer: new Float32Array(20),
         energyRateWriteIdx: 0, energyRateSampleTimer: 0,
     };
+    biosBootState = {
+        active: false, startTime: 0, elapsed: 0,
+        lines: [], lineIndex: 0,
+        horizontalSplit: false, verticalSplit: false,
+        splitHProgress: 0, splitVProgress: 0,
+        phase: 'inactive',
+        downloadProgress: 0, downloadSpeed: 0, downloadReceived: 0,
+        checkLines: [], checkIndex: 0,
+        countdownValue: 3,
+        swarmRows: [], swarmIndex: 0,
+        flashPhase: 0, flashActive: false,
+        centerPanelAlpha: 0,
+        soundFlags: {},
+        waveInfo: {
+            wave: 0, tankCount: 0, heavyTankCount: 0,
+            hasBombs: false, hasMissiles: false, hasDrones: false,
+            hasCoordinators: false, health: 0, maxHealth: 0,
+            techCount: 0, bioMatter: 0, droneCount: 0,
+            missileGroupCount: 0, threatLevel: 'MODERATE'
+        }
+    };
+    bioUploadRows = [];
 
     techTree = {
         researched: new Set(),
@@ -13038,6 +13482,9 @@ let techTreeAnimState = {
     dashOffset: 0,           // Animated dash offset for connections
     researchGlowPhase: 0,   // Sine phase for researching node glow
     nodeAppearAnims: {},     // {nodeId: {startTime, progress}}
+    visible: false,          // tracks current visibility
+    appearProgress: 0,       // 0..1, drives appear animation
+    appearStartTime: 0,      // Date.now() when appear began
 };
 
 // Enhanced boot sequence
@@ -13058,6 +13505,73 @@ let diagEnhancedState = {
     energyRateWriteIdx: 0,
     energyRateSampleTimer: 0,
 };
+
+// BIOS boot sequence state (Pre-Boot sequence during WAVE_TRANSITION)
+let biosBootState = {
+    active: false,
+    startTime: 0,           // Date.now() when sequence began
+    elapsed: 0,             // seconds elapsed
+
+    // Text buffer (all panes)
+    lines: [],              // { text, color, bold, pane, time }
+    lineIndex: 0,           // next line to reveal
+
+    // Pane splits
+    horizontalSplit: false,  // true after t=1.0s
+    verticalSplit: false,    // true after t=2.0s
+    splitHProgress: 0,       // 0..1, horizontal split line draw
+    splitVProgress: 0,       // 0..1, vertical split line draw
+
+    // Phase tracking
+    phase: 'inactive',       // 'inactive'|'post'|'orchestrator'|'swarm'|'uplink'|'check'|'countdown'|'launch'
+
+    // Download progress
+    downloadProgress: 0,     // 0..1
+    downloadSpeed: 0,        // displayed speed
+    downloadReceived: 0,     // displayed received
+
+    // System check
+    checkLines: [],          // { name, dotsProgress, status, statusColor, startTime }
+    checkIndex: 0,
+
+    // Countdown
+    countdownValue: 3,       // 3, 2, 1, "LAUNCH"
+
+    // Swarm table
+    swarmRows: [],           // { name, fillProgress, online, startTime, color }
+    swarmIndex: 0,
+
+    // Launch flash
+    flashPhase: 0,           // 0..3 strobe cycle index
+    flashActive: false,
+
+    // Center panel
+    centerPanelAlpha: 0,     // fade-in for countdown panel
+
+    // Sound flags (prevent double-triggering)
+    soundFlags: {},
+
+    // Snapshot of game state at transition start
+    waveInfo: {
+        wave: 0,
+        tankCount: 0,
+        heavyTankCount: 0,
+        hasBombs: false,
+        hasMissiles: false,
+        hasDrones: false,
+        hasCoordinators: false,
+        health: 0,
+        maxHealth: 0,
+        techCount: 0,
+        bioMatter: 0,
+        droneCount: 0,
+        missileGroupCount: 0,
+        threatLevel: 'MODERATE'
+    }
+};
+
+// Bio-matter upload rows for the new BIO-MATTER panel
+let bioUploadRows = [];  // { spawnTime, progress, phase, flashStartTime }
 
 let hudBootState = {
     phase: 'idle',       // 'idle' | 'booting' | 'complete'
@@ -13273,9 +13787,16 @@ function getHUDLayout() {
         fleetY = graphY + 72 + 10; // energy graph height + gap
     }
 
+    // Bio-matter zone: gap between mission and systems
+    const missionEnd = centerX + centerW;
+    const systemsStart = canvas.width - rightW - margin;
+    const bioGapX = missionEnd + 4;
+    const bioGapW = systemsStart - 4 - bioGapX;
+
     return {
         statusZone: { x: margin, y: margin, w: leftW, h: 120 },
         missionZone: { x: centerX, y: 4, w: centerW, h: 110 },
+        bioMatterZone: { x: bioGapX, y: 4, w: bioGapW, h: 110 },
         systemsZone: { x: canvas.width - rightW - margin, y: margin, w: rightW, h: 90 },
         weaponsZone: { x: margin, y: 140, w: leftW, h: 200 },
         fleetZone: { x: canvas.width - rightW - margin, y: fleetY, w: rightW, h: 300 },
@@ -13487,6 +14008,11 @@ function renderHUDFrame() {
     // Tech readout chips in top-center gap
     if (!booting) {
         renderTechChips(layout);
+    }
+
+    // Bio-matter upload panel (right gap between mission and systems)
+    if (!booting && layout.bioMatterZone.w >= 120) {
+        renderBioMatterPanel(layout.bioMatterZone);
     }
 
     // Systems zone
@@ -13943,66 +14469,208 @@ function renderMissionZone(zone) {
     renderNGEIndicator(x + 4, y + 110 - 6, 'circle', '#0a0', 'steady', { rate: 900 });
     renderNGEIndicator(x + 12, y + 110 - 6, 'circle', '#0a0', 'steady', { rate: 900, phaseOffset: 450 });
     renderNGEIndicator(x + w - 8, y + 110 - 6, 'diamond', '#0a0', 'steady', { rate: 1100 });
+}
 
-    // B.MTR display (moved from status zone)
-    if (bioMatter > 0 || (techTree.activeResearch || techTree.researched.size > 0)) {
-        const bmtrY = y + 82;
+function renderBioMatterPanel(zone) {
+    const { x, y, w, h } = zone;
 
-        // Label and value
-        ctx.fillStyle = '#0a0';
-        ctx.font = 'bold 9px monospace';
-        ctx.textAlign = 'left';
-        ctx.fillText('B.MTR:', x + 6, bmtrY + 10);
+    // Hide if gap too small
+    if (w < 120) return;
 
-        ctx.fillStyle = '#0f0';
+    // Compact mode flag
+    const compact = w < 200;
+
+    // Panel
+    renderNGEPanel(x, y, w, h, {
+        color: '#0f0',
+        cutCorners: [],
+        alpha: 0.55,
+        label: compact ? 'BIO' : 'BIO-MATTER'
+    });
+
+    // Header area (top 22px)
+    // Value display
+    const labelW = compact ? 30 : 80;
+    const valX = x + 6 + labelW;
+    if (bioMatter > 0) {
+        ctx.fillStyle = '#0ff';
         ctx.font = 'bold 14px monospace';
-        ctx.fillText(bioMatter.toString(), x + 50, bmtrY + 10);
-
-        // Upload conduit visualization
-        const conduitX = x + 80;
-        const conduitW = w - 86;
-        const conduitH = 12;
-        const conduitY = bmtrY + 1;
-
-        // Conduit background
-        ctx.fillStyle = 'rgba(0, 40, 0, 0.3)';
-        ctx.fillRect(conduitX, conduitY, conduitW, conduitH);
-        ctx.strokeStyle = 'rgba(0, 170, 68, 0.5)';
-        ctx.lineWidth = 0.5;
-        ctx.strokeRect(conduitX, conduitY, conduitW, conduitH);
-
-        // Collection flash
-        if (bioUploadState.flashAlpha > 0) {
-            ctx.fillStyle = `rgba(0, 255, 0, ${bioUploadState.flashAlpha * 0.15})`;
-            ctx.fillRect(conduitX, conduitY, conduitW, conduitH);
-        }
-
-        // Scrolling binary data stream
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(conduitX + 1, conduitY + 1, conduitW - 2, conduitH - 2);
-        ctx.clip();
-        ctx.font = '7px monospace';
         ctx.textAlign = 'left';
-        const charW = 8;
-        const offset = bioUploadState.streamOffset % charW;
-        const numChars = Math.ceil(conduitW / charW) + 2;
-        for (let i = 0; i < numChars; i++) {
-            const cx = conduitX + 1 + i * charW - offset;
-            const charIdx = Math.floor((cx + bioUploadState.streamOffset) / charW);
-            const bit = ((charIdx * 7 + 13) % 3 === 0) ? '1' : '0';
-            const alpha = 0.2 + 0.4 * ((charIdx % 5) / 5);
-            ctx.fillStyle = `rgba(0, 255, 0, ${alpha})`;
-            ctx.fillText(bit, cx, conduitY + 10);
-        }
-        ctx.restore();
+        ctx.shadowColor = '#0ff';
+        ctx.shadowBlur = 4;
+        ctx.fillText(bioMatter.toString(), valX, y + 12);
+        ctx.shadowBlur = 0;
+    } else {
+        ctx.fillStyle = 'rgba(0, 255, 0, 0.4)';
+        ctx.font = 'bold 14px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText('0', valX, y + 12);
+    }
 
-        // Bit rate display
-        ctx.fillStyle = '#0a0';
+    // Blink lights in header
+    renderNGEBlinkLight(x + w - 18, y + 6, '#0f0', 500);
+    renderNGEBlinkLight(x + w - 10, y + 6, '#0f0', 500);
+
+    // Stream area
+    const streamX = x + 4;
+    const streamY = y + 24;
+    const streamW = w - 8;
+    const streamH = 80;
+    const hasActiveRows = bioUploadRows.some(r => r.phase !== 'done');
+
+    // Stream border
+    ctx.fillStyle = 'rgba(0, 20, 0, 0.25)';
+    ctx.fillRect(streamX, streamY, streamW, streamH);
+    ctx.strokeStyle = hasActiveRows ? 'rgba(0, 255, 0, 0.6)' : 'rgba(0, 170, 68, 0.4)';
+    ctx.lineWidth = hasActiveRows ? 1 : 0.5;
+    ctx.strokeRect(streamX, streamY, streamW, streamH);
+
+    // Clip to stream area
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(streamX, streamY, streamW, streamH);
+    ctx.clip();
+
+    // Render upload rows or idle state
+    const activeRows = bioUploadRows.filter(r => r.phase !== 'done');
+    if (activeRows.length === 0) {
+        // IDLE STATE
+        // Background binary noise
+        const now = Date.now();
         ctx.font = '6px monospace';
         ctx.textAlign = 'left';
-        const rateText = bioUploadState.bitRate > 0 ? `${Math.round(bioUploadState.bitRate)} b/s` : 'IDLE';
-        ctx.fillText('\u2191 ' + rateText, conduitX, bmtrY + 22);
+        for (let i = 0; i < 20; i++) {
+            const seed = i * 37;
+            const bx = streamX + ((seed * 13 + now * 0.015) % streamW);
+            const by = streamY + 4 + (seed * 7) % (streamH - 8);
+            ctx.fillStyle = 'rgba(0, 255, 0, 0.06)';
+            ctx.fillText(seed % 2 === 0 ? '0' : '1', bx, by);
+        }
+
+        // "AWAITING UPLOAD" text
+        const blinkOn = Math.floor(now / 2000) % 2 === 0;
+        if (blinkOn) {
+            ctx.fillStyle = 'rgba(0, 170, 68, 0.3)';
+            ctx.font = '7px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('AWAITING UPLOAD', streamX + streamW / 2, streamY + streamH / 2 + 3);
+        }
+    } else {
+        // ACTIVE STATE - render rows
+        const rowH = 14;
+        const rowGap = 2;
+        const maxVisible = Math.floor(streamH / (rowH + rowGap));
+        const visibleRows = activeRows.slice(0, compact ? 2 : maxVisible);
+
+        for (let i = 0; i < visibleRows.length; i++) {
+            const row = visibleRows[i];
+            const rowY = streamY + i * (rowH + rowGap);
+            const rowW = streamW;
+            const rowX = streamX;
+            const age = (Date.now() - row.spawnTime) / 1000;
+
+            if (row.phase === 'flash') {
+                // COMPLETION FLASH
+                const flashAge = Date.now() - row.flashStartTime;
+                if (flashAge > 300) {
+                    // Collapse phase
+                    const collapseProgress = Math.min(1, (flashAge - 200) / 100);
+                    const currentH = rowH * (1 - collapseProgress * collapseProgress * collapseProgress);
+                    if (currentH < 1) { row.phase = 'done'; continue; }
+                    ctx.fillStyle = 'rgba(0, 255, 0, 0.2)';
+                    ctx.fillRect(rowX, rowY, rowW, currentH);
+                } else {
+                    // Strobe
+                    const flashPhase = Math.floor(flashAge / 25) % 4;
+                    let bg, fg;
+                    switch (flashPhase) {
+                        case 0: bg = '#0f0'; fg = '#000'; break;
+                        case 1: bg = '#000'; fg = '#0f0'; break;
+                        case 2: bg = '#0ff'; fg = '#000'; break;
+                        default: bg = '#000'; fg = '#fff'; break;
+                    }
+                    ctx.fillStyle = bg;
+                    ctx.fillRect(rowX, rowY, rowW, rowH);
+                    ctx.fillStyle = fg;
+                    ctx.font = 'bold 7px monospace';
+                    ctx.textAlign = 'left';
+                    ctx.fillText('UPLOAD COMPLETE', rowX + 4, rowY + 10);
+                }
+                continue;
+            }
+
+            // Calculate progress
+            const uploadDuration = 1.5; // seconds
+            const t = Math.min(1, age / uploadDuration);
+            let progress;
+            if (t < 0.3) progress = easeOutCubic(t / 0.3) * 0.3;
+            else if (t < 0.9) progress = 0.3 + (t - 0.3) / 0.6 * 0.6;
+            else progress = 0.9 + easeOutCubic((t - 0.9) / 0.1) * 0.1;
+            row.progress = progress;
+
+            // Check for completion
+            if (progress >= 1 && row.phase === 'uploading') {
+                row.phase = 'flash';
+                row.flashStartTime = Date.now();
+                SFX.bioUploadComplete();
+                continue;
+            }
+
+            // Chevron
+            ctx.fillStyle = 'rgba(0, 255, 0, 0.7)';
+            ctx.font = 'bold 7px monospace';
+            ctx.textAlign = 'left';
+            const chevOffset = (Date.now() / 200) % 14;
+            ctx.fillText('>>', rowX + 2 - chevOffset % 7, rowY + 10);
+
+            if (!compact) {
+                // Binary stream
+                ctx.font = '7px monospace';
+                const binOffset = Math.floor(Date.now() / 80);
+                for (let b = 0; b < 8; b++) {
+                    const bit = ((binOffset + b + i * 7) * 13) % 2;
+                    const alpha = 0.3 + 0.5 * (((binOffset + b) % 5) / 5);
+                    ctx.fillStyle = `rgba(0, 255, 0, ${alpha})`;
+                    ctx.fillText(bit.toString(), rowX + 18 + b * 6, rowY + 10);
+                }
+            }
+
+            // Progress bar
+            const barX = compact ? rowX + 18 : rowX + 70;
+            const barW = compact ? rowW - 52 : rowW - 104;
+            const barColor = progress > 0.9 ? '#0ff' : '#0f0';
+            renderNGEBar(barX, rowY + 3, barW, 8, progress, barColor, { segments: 8 });
+
+            // Percentage
+            const pctText = progress >= 1 ? 'XFER' : `${Math.floor(progress * 100)}%`;
+            ctx.fillStyle = progress >= 1 ? '#0ff' : '#0f0';
+            ctx.font = 'bold 7px monospace';
+            ctx.textAlign = 'right';
+            ctx.fillText(pctText, rowX + rowW - 2, rowY + 10);
+        }
+    }
+
+    ctx.restore(); // end stream clip
+
+    // Footer
+    const footerY = y + h - 6;
+    ctx.font = '7px monospace';
+    ctx.textAlign = 'left';
+    if (hasActiveRows) {
+        ctx.fillStyle = '#0f0';
+        ctx.font = 'bold 7px monospace';
+        ctx.fillText('ACTIVE', x + 6, footerY);
+        ctx.font = '7px monospace';
+        ctx.textAlign = 'right';
+        const rate = bioUploadState.bitRate > 0 ? `${Math.round(bioUploadState.bitRate)} b/s` : '0 b/s';
+        ctx.fillText('RATE: ' + rate, x + w - 6, footerY);
+        // Fast blink indicator
+        renderNGEBlinkLight(x + w - 6, footerY - 8, '#0f0', 200);
+    } else {
+        ctx.fillStyle = 'rgba(0, 170, 68, 0.4)';
+        ctx.fillText('IDLE', x + 6, footerY);
+        ctx.textAlign = 'right';
+        ctx.fillText('0 b/s', x + w - 6, footerY);
     }
 }
 
@@ -15158,21 +15826,21 @@ function renderOpsLogZone(zone) {
 
 // Tech readout chip definitions
 const TECH_CHIP_DEFS = [
-    { id: 'pg1', text: 'PG1 CONDUIT', width: 58, track: 'powerGrid' },
-    { id: 'pg2', text: 'PG2 EFFIC', width: 44, track: 'powerGrid' },
-    { id: 'pg3', text: 'PG3 BCAST', width: 44, track: 'powerGrid' },
-    { id: 'pg4', text: 'PG4 REACT', width: 44, track: 'powerGrid' },
-    { id: 'pg5', text: 'PG5 S.GRID', width: 52, track: 'powerGrid' },
-    { id: 'dc1', text: 'DC1 UPLINK', width: 52, track: 'droneCommand' },
-    { id: 'dc2', text: 'DC2 H.CORD', width: 52, track: 'droneCommand' },
-    { id: 'dc3', text: 'DC3 A.CORD', width: 52, track: 'droneCommand' },
-    { id: 'dc4', text: 'DC4 EXPND', width: 44, track: 'droneCommand' },
-    { id: 'dc5', text: 'DC5 SWARM', width: 44, track: 'droneCommand' },
-    { id: 'dn1', text: 'DN1 THRST', width: 44, track: 'defenseNetwork' },
-    { id: 'dn2', text: 'DN2 ARMOR', width: 44, track: 'defenseNetwork' },
-    { id: 'dn3', text: 'DN3 SHLD.T', width: 52, track: 'defenseNetwork' },
-    { id: 'dn4', text: 'DN4 RESIL', width: 44, track: 'defenseNetwork' },
-    { id: 'dn5', text: 'DN5 S.SHLD', width: 52, track: 'defenseNetwork' }
+    { id: 'pg1', text: 'PG1 COND', width: 44, track: 'powerGrid' },
+    { id: 'pg2', text: 'PG2 EFFC', width: 44, track: 'powerGrid' },
+    { id: 'pg3', text: 'PG3 BCST', width: 44, track: 'powerGrid' },
+    { id: 'pg4', text: 'PG4 REAC', width: 44, track: 'powerGrid' },
+    { id: 'pg5', text: 'PG5 SGRD', width: 44, track: 'powerGrid' },
+    { id: 'dc1', text: 'DC1 UPLK', width: 44, track: 'droneCommand' },
+    { id: 'dc2', text: 'DC2 HCRD', width: 44, track: 'droneCommand' },
+    { id: 'dc3', text: 'DC3 ACRD', width: 44, track: 'droneCommand' },
+    { id: 'dc4', text: 'DC4 EXPD', width: 44, track: 'droneCommand' },
+    { id: 'dc5', text: 'DC5 SWRM', width: 44, track: 'droneCommand' },
+    { id: 'dn1', text: 'DN1 THRS', width: 44, track: 'defenseNetwork' },
+    { id: 'dn2', text: 'DN2 ARMR', width: 44, track: 'defenseNetwork' },
+    { id: 'dn3', text: 'DN3 SHLT', width: 44, track: 'defenseNetwork' },
+    { id: 'dn4', text: 'DN4 RESI', width: 44, track: 'defenseNetwork' },
+    { id: 'dn5', text: 'DN5 SSHD', width: 44, track: 'defenseNetwork' }
 ];
 
 const TRACK_COLORS = {
@@ -15186,6 +15854,23 @@ function renderTechChips(layout) {
 }
 
 function renderTechTree(layout) {
+    // Conditional visibility: hide until first tech interaction AND wave >= 2
+    const shouldShowTree = (techTree.researched.size > 0 || techTree.activeResearch || techTree.queue.length > 0) && wave >= 2;
+    if (!shouldShowTree && !techTreeAnimState.visible) return;
+    if (shouldShowTree && !techTreeAnimState.visible) {
+        techTreeAnimState.visible = true;
+        techTreeAnimState.appearStartTime = Date.now();
+    }
+    const appearProgress = techTreeAnimState.visible
+        ? Math.min(1, (Date.now() - techTreeAnimState.appearStartTime) / 600)
+        : 1;
+
+    // During appear animation, modulate alpha
+    if (appearProgress < 1) {
+        ctx.save();
+        ctx.globalAlpha = easeOutCubic(appearProgress);
+    }
+
     const statusEnd = layout.statusZone.x + layout.statusZone.w;
     const missionStart = layout.missionZone.x;
     const gapStartX = statusEnd + 6;
@@ -15333,6 +16018,28 @@ function renderTechTree(layout) {
                 ctx.restore();
             }
 
+            // Blinking indicator lights for researched nodes
+            if (isResearched) {
+                const blinkRate = 600 + n * 200; // tier 1=600ms, tier 5=1400ms
+                const trackColor = color;
+                for (let li = 0; li < 2; li++) {
+                    const ly = ny + 5 + li * 6;
+                    const lx = nx + nodeW - 5;
+                    const phaseOff = li * 300;
+                    const isLightOn = Math.floor((Date.now() + phaseOff) / blinkRate) % 2 === 0;
+                    if (isLightOn) {
+                        ctx.fillStyle = trackColor;
+                        ctx.shadowColor = trackColor;
+                        ctx.shadowBlur = 2;
+                        ctx.fillRect(lx, ly, 2, 2);
+                        ctx.shadowBlur = 0;
+                    } else {
+                        ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
+                        ctx.fillRect(lx, ly, 2, 2);
+                    }
+                }
+            }
+
             // Node text
             const textAlpha = isResearched ? 0.8 : (isResearching ? 0.6 : 0.2);
             const fontSize = isMicro ? 6 : 7;
@@ -15417,6 +16124,11 @@ function renderTechTree(layout) {
             ctx.textAlign = 'right';
             ctx.fillText(`${qNode.researchTime}s`, gapStartX + gapW - 4, qY + 11);
         }
+    }
+
+    // Close appear animation alpha wrapper
+    if (appearProgress < 1) {
+        ctx.restore();
     }
 }
 
@@ -15568,13 +16280,20 @@ function updateHUDAnimations(dt) {
         }
     }
 
-    // Bio upload conduit animation
+    // Bio upload conduit animation + upload row management
     if (gameState === 'PLAYING') {
-        const speed = bioUploadState.flashAlpha > 0 ? 90 : 30;
-        bioUploadState.streamOffset += dt * speed;
-        bioUploadState.flashAlpha = Math.max(0, bioUploadState.flashAlpha - dt * 10);
-        bioUploadState.bitRate *= Math.pow(0.5, dt / 1.5);
-        if (bioUploadState.bitRate < 0.1) bioUploadState.bitRate = 0;
+        const hasActiveUploads = bioUploadRows.some(r => r.phase !== 'done');
+        bioUploadState.streamOffset += dt * (hasActiveUploads ? 120 : 15);
+        bioUploadState.flashAlpha = Math.max(0, bioUploadState.flashAlpha - dt * 3);
+
+        // Bit rate calculation from recent samples
+        const nowMs = Date.now();
+        bioUploadState.bitRateSamples = bioUploadState.bitRateSamples.filter(t => nowMs - t < 3000);
+        bioUploadState.bitRate = bioUploadState.bitRateSamples.length / 3;
+
+        // Prune completed upload rows
+        bioUploadRows = bioUploadRows.filter(r => r.phase !== 'done');
+        if (bioUploadRows.length > 20) bioUploadRows = bioUploadRows.slice(-20);
     }
 
     // Update boot sequence
@@ -16259,51 +16978,165 @@ function renderHUDBootGlobalEffects() {
         ctx.save();
         ctx.globalAlpha = pb.logoAlpha;
 
-        // Hexagonal grid behind text (very faint)
-        ctx.strokeStyle = 'rgba(0, 255, 255, 0.04)';
+        const now = Date.now();
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+
+        // Enhanced hex grid with radiating pulse (280x180)
+        ctx.strokeStyle = 'rgba(0, 255, 255, 0.03)';
         ctx.lineWidth = 0.5;
-        const gridCX = canvas.width / 2;
-        const gridCY = canvas.height / 2;
-        for (let gx = gridCX - 100; gx < gridCX + 100; gx += 24) {
-            for (let gy = gridCY - 60; gy < gridCY + 60; gy += 21) {
-                const offsetX = (Math.floor(gy / 21) % 2) * 12;
-                renderHexagon(gx + offsetX, gy, 10);
+        const pulseRadius = ((now % 1200) / 1200) * 160;
+        for (let gx = centerX - 140; gx < centerX + 140; gx += 28) {
+            for (let gy = centerY - 90; gy < centerY + 90; gy += 24) {
+                const offsetX = (Math.floor((gy - centerY + 90) / 24) % 2) * 14;
+                const hx = gx + offsetX;
+                const hy = gy;
+                const dist = Math.sqrt((hx - centerX) ** 2 + (hy - centerY) ** 2);
+                let alpha = 0.03;
+                if (Math.abs(dist - pulseRadius) < 15) {
+                    alpha = 0.08 * (1 - Math.abs(dist - pulseRadius) / 15);
+                }
+                ctx.strokeStyle = `rgba(0, 255, 255, ${alpha})`;
+                renderHexagon(hx, hy, 12);
                 ctx.stroke();
             }
         }
 
-        // Main title
-        ctx.fillStyle = '#0ff';
-        ctx.font = 'bold 24px monospace';
-        ctx.textAlign = 'center';
-        ctx.shadowColor = '#0ff';
-        ctx.shadowBlur = 8;
-        ctx.fillText('ALIEN QUANTUM OS', canvas.width / 2, canvas.height / 2 - 20);
+        // Scanning line
+        const areaY = centerY - 130;
+        const scanY = areaY + ((now / 1000 * 40) % 260);
+        ctx.strokeStyle = 'rgba(0, 255, 255, 0.15)';
+        ctx.shadowColor = 'rgba(0, 255, 255, 0.3)';
+        ctx.shadowBlur = 3;
+        ctx.beginPath();
+        ctx.moveTo(centerX - 220, scanY);
+        ctx.lineTo(centerX + 220, scanY);
+        ctx.stroke();
         ctx.shadowBlur = 0;
 
-        // Version
-        ctx.fillStyle = 'rgba(0, 255, 255, 0.6)';
-        ctx.font = '9px monospace';
-        ctx.fillText('v7.3.1 // QUANTUM ENTANGLEMENT CORE', canvas.width / 2, canvas.height / 2 + 10);
+        // Title: "ALIEN QUANTUM OS" - 32px with double glow
+        const hueShift = Math.sin(now / 3000) * 15;
+        const h = 180 + hueShift;
+        const titleColor = `hsl(${h}, 100%, 50%)`;
 
-        // Initializing text
-        const dots = '.'.repeat(1 + Math.floor(Date.now() / 200) % 3);
+        ctx.textAlign = 'center';
+        // Wide soft glow pass
+        ctx.fillStyle = titleColor;
+        ctx.font = 'bold 32px monospace';
+        ctx.shadowColor = '#0ff';
+        ctx.shadowBlur = 16;
+        ctx.globalAlpha = pb.logoAlpha * 0.4;
+        ctx.fillText('ALIEN QUANTUM OS', centerX, centerY - 20);
+        // Tight bright glow pass
+        ctx.globalAlpha = pb.logoAlpha;
+        ctx.shadowBlur = 6;
+        ctx.fillText('ALIEN QUANTUM OS', centerX, centerY - 20);
+        ctx.shadowBlur = 0;
+
+        // Version text
+        ctx.fillStyle = 'rgba(0, 255, 255, 0.7)';
+        ctx.font = '10px monospace';
+        const vBlink = Math.floor(now / 1200) % 2 === 0;
+        const vPrefix = vBlink ? 'v7.3.1' : '      ';
+        ctx.fillText(vPrefix + ' // QUANTUM ENTANGLEMENT CORE', centerX, centerY + 16);
+
+        // Loading bar (sweeping pulse)
+        const barY = centerY + 38;
+        const barW = 200;
+        const barX = centerX - barW / 2;
+        ctx.fillStyle = 'rgba(0, 255, 255, 0.08)';
+        ctx.fillRect(barX, barY, barW, 4);
+        ctx.strokeStyle = 'rgba(0, 255, 255, 0.2)';
+        ctx.lineWidth = 0.5;
+        ctx.strokeRect(barX, barY, barW, 4);
+        // Sweep pulse
+        const sweepPos = ((now % 800) / 800) * (barW + 40) - 20;
+        const grad = ctx.createLinearGradient(barX + sweepPos - 20, 0, barX + sweepPos + 20, 0);
+        grad.addColorStop(0, 'rgba(0, 255, 255, 0)');
+        grad.addColorStop(0.5, 'rgba(0, 255, 255, 0.8)');
+        grad.addColorStop(1, 'rgba(0, 255, 255, 0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(barX, barY, barW, 4);
+
+        // Loading label typewriter
+        const loadText = 'QUANTUM CORE INITIALIZING';
+        const charsPer = Math.floor(now / 20) % (loadText.length + 25);
+        const visibleChars = Math.min(loadText.length, charsPer);
+        ctx.fillStyle = 'rgba(0, 255, 255, 0.35)';
+        ctx.font = '7px monospace';
+        ctx.fillText(loadText.substring(0, visibleChars), centerX, barY + 14);
+
+        // Initializing text (cycling dots)
+        const dots = '.'.repeat(1 + Math.floor(now / 200) % 3);
         ctx.fillStyle = 'rgba(0, 255, 255, 0.4)';
-        ctx.fillText('[ INITIALIZING' + dots + ' ]', canvas.width / 2, canvas.height / 2 + 30);
+        ctx.font = '9px monospace';
+        ctx.fillText('[ INITIALIZING' + dots + ' ]', centerX, centerY + 62);
 
-        // Orbiting dots
-        const orbitT = Date.now() / 3000 * Math.PI * 2;
+        // Inner orbit ring: 3 dots, clockwise
+        const orbitT = now / 3000 * Math.PI * 2;
         for (let i = 0; i < 3; i++) {
             const angle = orbitT + i * (Math.PI * 2 / 3);
-            const dx = Math.cos(angle) * 90;
-            const dy = Math.sin(angle) * 50;
+            const dx = Math.cos(angle) * 80;
+            const dy = Math.sin(angle) * 45;
+            // Trail
+            for (let tr = 1; tr <= 3; tr++) {
+                const trAngle = angle - tr * 0.1;
+                const trx = Math.cos(trAngle) * 80;
+                const trY = Math.sin(trAngle) * 45;
+                ctx.fillStyle = `rgba(0, 255, 255, ${0.4 / tr})`;
+                ctx.beginPath();
+                ctx.arc(centerX + trx, centerY + trY, 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            // Main dot
             ctx.fillStyle = '#0ff';
             ctx.shadowColor = '#0ff';
-            ctx.shadowBlur = 4;
+            ctx.shadowBlur = 5;
             ctx.beginPath();
-            ctx.arc(canvas.width / 2 + dx, canvas.height / 2 + dy, 1.5, 0, Math.PI * 2);
+            ctx.arc(centerX + dx, centerY + dy, 2, 0, Math.PI * 2);
             ctx.fill();
             ctx.shadowBlur = 0;
+        }
+
+        // Outer orbit ring: 2 dots, counter-clockwise
+        const outerT = -(now / 5000 * Math.PI * 2);
+        for (let i = 0; i < 2; i++) {
+            const angle = outerT + i * Math.PI;
+            const dx = Math.cos(angle) * 140;
+            const dy = Math.sin(angle) * 70;
+            for (let tr = 1; tr <= 3; tr++) {
+                const trAngle = angle + tr * 0.08;
+                const trx = Math.cos(trAngle) * 140;
+                const trY = Math.sin(trAngle) * 70;
+                ctx.fillStyle = `rgba(0, 255, 255, ${0.3 / tr})`;
+                ctx.beginPath();
+                ctx.arc(centerX + trx, centerY + trY, 1.5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.fillStyle = 'rgba(0, 255, 255, 0.6)';
+            ctx.shadowColor = '#0ff';
+            ctx.shadowBlur = 3;
+            ctx.beginPath();
+            ctx.arc(centerX + dx, centerY + dy, 1.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        }
+
+        // Corner data readouts
+        const corners = [
+            { tx: centerX - 200, ty: centerY - 115, text: 'SYS.BOOT//INIT', rate: 1700 },
+            { tx: centerX + 200, ty: centerY - 115, text: 'MEM.CHK OK', rate: 2100 },
+            { tx: centerX - 200, ty: centerY + 120, text: 'CORE.FREQ 4.7THz', rate: 1900 },
+            { tx: centerX + 200, ty: centerY + 120, text: 'UPLINK.STATUS: PENDING', rate: 2300 }
+        ];
+        ctx.font = '6px monospace';
+        for (const c of corners) {
+            const cBlink = Math.floor(now / c.rate) % 2 === 0;
+            if (cBlink) {
+                ctx.fillStyle = 'rgba(0, 255, 255, 0.2)';
+                ctx.textAlign = c.tx < centerX ? 'left' : 'right';
+                ctx.fillText(c.text, c.tx, c.ty);
+            }
         }
 
         ctx.restore();
@@ -20336,6 +21169,631 @@ function renderWaveSummary() {
 // WAVE TRANSITION
 // ============================================
 
+function initBiosBootSequence() {
+    const info = biosBootState.waveInfo;
+    // Snapshot game state
+    info.wave = wave;
+    const tankCount = Math.floor(CONFIG.TANKS_BASE + (wave - 1) * CONFIG.TANKS_INCREMENT);
+    let heavyCount = wave >= 5 ? (wave === 5 ? 1 : 2) : 0;
+    if (wave > 15) heavyCount += Math.floor((wave - 15) / 3);
+    info.tankCount = tankCount;
+    info.heavyTankCount = heavyCount;
+    info.hasBombs = playerInventory.maxBombs > 0;
+    info.hasMissiles = missileUnlocked;
+    info.hasDrones = harvesterUnlocked || battleDroneUnlocked;
+    info.hasCoordinators = activeCoordinators.length > 0;
+    info.health = ufo ? ufo.health : CONFIG.UFO_START_HEALTH;
+    info.maxHealth = CONFIG.UFO_START_HEALTH;
+    info.techCount = techTree.researched.size;
+    info.bioMatter = bioMatter;
+    info.droneCount = activeDrones.length;
+    info.missileGroupCount = missileGroupCount;
+
+    // Threat level
+    if (wave >= 10) info.threatLevel = 'CRITICAL';
+    else if (wave >= 7) info.threatLevel = 'HIGH';
+    else if (wave >= 4) info.threatLevel = 'ELEVATED';
+    else info.threatLevel = 'MODERATE';
+
+    // Generate BIOS text lines
+    const lines = [];
+    const addLine = (text, color, bold, pane, time) => {
+        lines.push({ text, color: color || '#aaa', bold: bold || false, pane: pane || 'top', time });
+    };
+
+    // Phase 1: POST (0.0-0.6s)
+    let t = 0;
+    addLine('XENOTECH SYSTEMS BIOS v4.2.0', '#fff', true, 'top', t); t += 0.04;
+    addLine('Copyright (C) 2847 Xenotech Galactic Industries', '#888', false, 'top', t); t += 0.04;
+    addLine('', '#aaa', false, 'top', t); t += 0.04;
+    addLine('QUANTUM PROCESSOR: ZX-9000 @ 4.7 THz ..... DETECTED', '#aaa', false, 'top', t); t += 0.025;
+    addLine('NEURAL CORE:      NC-MK7 x16 PARALLEL ... ONLINE', '#aaa', false, 'top', t); t += 0.025;
+    addLine('ANTIMATTER CACHE:  ' + (2048 + info.techCount * 256) + ' PB ............... OK', '#aaa', false, 'top', t); t += 0.025;
+    addLine('QUANTUM RAM TEST:  ' + (16384 + info.bioMatter * 16) + ' QB .............. PASS', '#aaa', false, 'top', t); t += 0.025;
+    addLine('', '#aaa', false, 'top', t); t += 0.025;
+    addLine('SCANNING DEVICES:', '#fff', true, 'top', t); t += 0.025;
+    addLine('  /dev/beam0     TRACTOR BEAM ARRAY ..... READY', '#aaa', false, 'top', t); t += 0.025;
+    addLine('  /dev/shield0   DEFLECTOR GRID ......... READY', '#aaa', false, 'top', t); t += 0.025;
+    addLine('  /dev/nav0      NAVIGATION MATRIX ...... READY', '#aaa', false, 'top', t); t += 0.025;
+    addLine('  /dev/warp0     SUBSPACE DRIVE ......... STANDBY', '#ff0', false, 'top', t); t += 0.025;
+    addLine('  /dev/ord0      ORDNANCE SUBSYSTEM ..... ' + (info.hasBombs ? 'READY' : 'NOT FOUND'), info.hasBombs ? '#0f0' : '#fa0', false, 'top', t); t += 0.025;
+    addLine('  /dev/fleet0    FLEET CONTROL BUS ...... ' + (info.hasDrones ? 'READY' : 'NOT FOUND'), info.hasDrones ? '#0f0' : '#fa0', false, 'top', t); t += 0.025;
+    addLine('  /dev/bio0      BIOMATTER CONDUIT ...... READY', '#0f0', false, 'top', t); t += 0.015;
+    addLine('', '#aaa', false, 'top', t); t += 0.015;
+    addLine('BIOS POST COMPLETE - ALL DEVICES NOMINAL', '#0f0', true, 'top', t); t += 0.015;
+    addLine('', '#aaa', false, 'top', t); t += 0.015;
+    addLine('Searching for system root...', '#aaa', false, 'top', t); t += 0.015;
+    addLine('FOUND: SYSTEM ROOT AI v4.2.0 at /sys/root', '#fff', false, 'top', t); t += 0.015;
+    addLine('Loading SYSTEM ROOT AI...', '#aaa', false, 'top', t); t += 0.015;
+    addLine('ROOT AI LOADED [################] 100%', '#0f0', false, 'top', t); t += 0.015;
+
+    // Phase 2: Orchestrator (0.6-1.0s)
+    t = 0.62;
+    addLine('---------------------------------------------', '#444', false, 'top', t); t += 0.025;
+    addLine('ORCHESTRATOR v2.1 ONLINE', '#0ff', true, 'top', t); t += 0.025;
+    addLine('  Session: 0x4A7F2B // Wave ' + info.wave, '#888', false, 'top', t); t += 0.025;
+    addLine('  Priority: HARVEST + DEFENSE', '#aaa', false, 'top', t); t += 0.025;
+    addLine('  Fleet status: ' + info.droneCount + ' UNITS REGISTERED', '#0f0', false, 'top', t); t += 0.025;
+    addLine('', '#aaa', false, 'top', t); t += 0.025;
+    addLine('ORCHESTRATOR: Spawning agent swarms...', '#0ff', false, 'top', t);
+
+    // Phase 3: Swarm spawn (1.0-1.6s) - rows in bottom pane
+    biosBootState.swarmRows = [
+        { name: 'SWARM.TACTICAL', fillProgress: 0, online: false, startTime: 1.10, color: '#0f0' },
+        { name: 'SWARM.HARVEST', fillProgress: 0, online: false, startTime: 1.18, color: '#0f0' },
+        { name: 'SWARM.DEFENSE', fillProgress: 0, online: false, startTime: 1.26, color: '#0f0' },
+        { name: 'SWARM.RECON', fillProgress: 0, online: false, startTime: 1.34, color: '#0f0' },
+        { name: 'SWARM.LOGISTICS', fillProgress: 0, online: false, startTime: 1.42, color: '#0f0' },
+    ];
+    if (info.hasCoordinators) {
+        biosBootState.swarmRows.push({ name: 'SWARM.COORD', fillProgress: 0, online: false, startTime: 1.50, color: '#0ff' });
+    }
+    if (info.hasMissiles) {
+        biosBootState.swarmRows.push({ name: 'SWARM.ORDNANCE', fillProgress: 0, online: false, startTime: 1.50, color: '#f80' });
+    }
+
+    // Phase 4-5 orchestrator lines
+    t = 1.62;
+    addLine('', '#aaa', false, 'top', t); t += 0.025;
+    addLine('ORCHESTRATOR: Initiating mothership uplink...', '#0ff', false, 'top', t); t += 0.025;
+    addLine('$ uplink --sync --priority=CRITICAL', '#fff', true, 'top', t); t += 0.025;
+
+    t = 1.86;
+    addLine('UPLINK ESTABLISHED // LATENCY: 0.3ns', '#0f0', false, 'top', t); t += 0.025;
+    addLine('DOWNLOADING WAVE ' + info.wave + ' TACTICAL DATA...', '#aaa', false, 'top', t);
+
+    t = 2.02;
+    addLine('UPLINK COMPLETE - 47.3 TB SYNCED', '#0f0', true, 'top', t); t += 0.025;
+    addLine('INTEL: ' + info.tankCount + ' HOSTILES INBOUND', '#f44', false, 'top', t); t += 0.025;
+    if (info.heavyTankCount > 0) {
+        addLine('WARNING: ' + info.heavyTankCount + ' HEAVY ARMOR UNITS DETECTED', '#f44', true, 'top', t); t += 0.025;
+    }
+    addLine('THREAT LEVEL: ' + info.threatLevel, info.threatLevel === 'CRITICAL' ? '#f44' : info.threatLevel === 'HIGH' ? '#f80' : '#ff0', true, 'top', t); t += 0.025;
+    addLine('ORCHESTRATOR: Data integrated. Running checks...', '#0ff', false, 'top', t);
+
+    // Phase 5: System check lines
+    biosBootState.checkLines = [
+        { name: 'ORD.SYS', status: info.hasBombs || info.hasMissiles ? 'OK' : 'PARTIAL', statusColor: info.hasBombs || info.hasMissiles ? '#0f0' : '#ff0', startTime: 2.05 },
+        { name: 'NRG.FLOW', status: 'OK', statusColor: '#0f0', startTime: 2.10 },
+        { name: 'FLEET.CMD', status: info.hasDrones ? 'OK' : 'SKIP', statusColor: info.hasDrones ? '#0f0' : '#ff0', startTime: 2.15 },
+        { name: 'SHLD.INTG', status: info.health < info.maxHealth * 0.25 ? 'CRIT' : info.health < info.maxHealth * 0.5 ? 'WARN' : 'OK', statusColor: info.health < info.maxHealth * 0.25 ? '#f44' : info.health < info.maxHealth * 0.5 ? '#ff0' : '#0f0', startTime: 2.20 },
+        { name: 'DIAG.SYS', status: 'OK', statusColor: '#0f0', startTime: 2.25 },
+        { name: 'BEAM.ARRAY', status: 'OK', statusColor: '#0f0', startTime: 2.30 },
+        { name: 'COMMS.SYS', status: 'OK', statusColor: '#0f0', startTime: 2.35 },
+        { name: 'OPS.LOG', status: 'OK', statusColor: '#0f0', startTime: 2.40 },
+        { name: 'TECH.TREE', status: info.techCount > 0 ? 'OK' : 'SKIP', statusColor: info.techCount > 0 ? '#0f0' : '#ff0', startTime: 2.45 },
+        { name: 'BIO.CONDUIT', status: 'OK', statusColor: '#0f0', startTime: 2.50 },
+    ];
+    biosBootState.checkIndex = 0;
+
+    biosBootState.lines = lines;
+    biosBootState.lineIndex = 0;
+    biosBootState.active = true;
+    biosBootState.startTime = Date.now();
+    biosBootState.elapsed = 0;
+    biosBootState.phase = 'post';
+    biosBootState.horizontalSplit = false;
+    biosBootState.verticalSplit = false;
+    biosBootState.splitHProgress = 0;
+    biosBootState.splitVProgress = 0;
+    biosBootState.downloadProgress = 0;
+    biosBootState.downloadSpeed = 0;
+    biosBootState.downloadReceived = 0;
+    biosBootState.countdownValue = 3;
+    biosBootState.flashPhase = 0;
+    biosBootState.flashActive = false;
+    biosBootState.centerPanelAlpha = 0;
+    biosBootState.soundFlags = {};
+}
+
+function updateBiosBootSequence(dt) {
+    if (!biosBootState.active) return;
+    biosBootState.elapsed += dt;
+    const e = biosBootState.elapsed;
+
+    // Phase transitions
+    if (e < 0.6) biosBootState.phase = 'post';
+    else if (e < 1.0) biosBootState.phase = 'orchestrator';
+    else if (e < 1.6) {
+        biosBootState.phase = 'swarm';
+        if (!biosBootState.horizontalSplit) {
+            biosBootState.horizontalSplit = true;
+            SFX.biosTmuxCrack();
+        }
+    } else if (e < 2.0) biosBootState.phase = 'uplink';
+    else if (e < 2.6) {
+        biosBootState.phase = 'check';
+        if (!biosBootState.verticalSplit) {
+            biosBootState.verticalSplit = true;
+            SFX.biosTmuxCrack();
+        }
+    } else {
+        biosBootState.phase = 'countdown';
+    }
+
+    // Advance line index based on elapsed time
+    while (biosBootState.lineIndex < biosBootState.lines.length &&
+           biosBootState.lines[biosBootState.lineIndex].time <= e) {
+        const line = biosBootState.lines[biosBootState.lineIndex];
+        // Trigger HDD click for POST lines
+        if (e < 0.6 && biosBootState.lineIndex % 2 === 0) SFX.biosHDDClick();
+        // Trigger detection chirps for device lines
+        if (line.text.includes('READY') || line.text.includes('ONLINE') || line.text.includes('DETECTED')) {
+            SFX.biosDetectionChirp();
+        }
+        biosBootState.lineIndex++;
+    }
+
+    // Sound triggers (one-shot per phase)
+    if (e >= 0.0 && !biosBootState.soundFlags.postBeep) {
+        biosBootState.soundFlags.postBeep = true;
+        SFX.biosPostBeep();
+    }
+    if (e >= 0.6 && !biosBootState.soundFlags.systemHum) {
+        biosBootState.soundFlags.systemHum = true;
+        SFX.biosSystemHum();
+    }
+    if (e >= 0.95 && !biosBootState.soundFlags.orchConfirm) {
+        biosBootState.soundFlags.orchConfirm = true;
+        SFX.biosOrchestratorConfirm();
+    }
+    if (e >= 1.6 && !biosBootState.soundFlags.modem) {
+        biosBootState.soundFlags.modem = true;
+        SFX.biosModemHandshake();
+    }
+    if (e >= 1.9 && !biosBootState.soundFlags.downloadDone) {
+        biosBootState.soundFlags.downloadDone = true;
+        SFX.biosDownloadComplete();
+    }
+    if (e >= 2.55 && !biosBootState.soundFlags.passChord) {
+        biosBootState.soundFlags.passChord = true;
+        SFX.biosPassChord();
+    }
+
+    // Update swarm rows
+    for (const row of biosBootState.swarmRows) {
+        if (e >= row.startTime) {
+            const rowAge = e - row.startTime;
+            row.fillProgress = Math.min(1, rowAge / 0.06);
+            if (row.fillProgress >= 1 && !row.online) {
+                row.online = true;
+                SFX.biosSwarmBlip(biosBootState.swarmRows.indexOf(row));
+            }
+        }
+    }
+
+    // Download progress (1.65-2.0s)
+    if (e >= 1.65 && e < 2.0) {
+        biosBootState.downloadProgress = Math.min(1, (e - 1.65) / 0.35);
+        biosBootState.downloadSpeed = 18 + Math.random() * 10;
+        biosBootState.downloadReceived = biosBootState.downloadProgress * 47.3;
+        // Data click sounds
+        if (Math.random() < 0.3) SFX.biosDataClick();
+    } else if (e >= 2.0) {
+        biosBootState.downloadProgress = 1;
+    }
+
+    // System check progress
+    for (let i = 0; i < biosBootState.checkLines.length; i++) {
+        const cl = biosBootState.checkLines[i];
+        if (e >= cl.startTime && !cl.completed) {
+            cl.dotsProgress = Math.min(1, (e - cl.startTime) / 0.035);
+            if (cl.dotsProgress >= 1 && !cl.completed) {
+                cl.completed = true;
+                if (cl.status === 'OK') {
+                    SFX.biosCheckBeep(i);
+                } else {
+                    SFX.biosCheckSkip();
+                }
+            }
+        }
+    }
+
+    // Countdown (2.6-3.0s)
+    if (e >= 2.65 && e < 2.77) {
+        biosBootState.countdownValue = 3;
+        biosBootState.centerPanelAlpha = Math.min(1, (e - 2.65) / 0.05);
+        if (!biosBootState.soundFlags.count3) {
+            biosBootState.soundFlags.count3 = true;
+            SFX.biosCountdownThrob(3);
+        }
+    } else if (e >= 2.77 && e < 2.88) {
+        biosBootState.countdownValue = 2;
+        if (!biosBootState.soundFlags.count2) {
+            biosBootState.soundFlags.count2 = true;
+            SFX.biosCountdownThrob(2);
+        }
+    } else if (e >= 2.88 && e < 2.92) {
+        biosBootState.countdownValue = 1;
+        if (!biosBootState.soundFlags.count1) {
+            biosBootState.soundFlags.count1 = true;
+            SFX.biosCountdownThrob(1);
+        }
+    } else if (e >= 2.92) {
+        biosBootState.countdownValue = 0; // "LAUNCH"
+        biosBootState.flashActive = true;
+        biosBootState.flashPhase = Math.floor((e - 2.92) / 0.02) % 4;
+        if (!biosBootState.soundFlags.launch) {
+            biosBootState.soundFlags.launch = true;
+            SFX.biosLaunchBurst();
+        }
+    }
+}
+
+function renderBiosBootSequence() {
+    if (!biosBootState.active) return;
+    const e = biosBootState.elapsed;
+
+    // Full black background
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // CRT phosphor tint
+    ctx.fillStyle = 'rgba(0, 40, 0, 0.03)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const splitY = Math.floor(canvas.height * 0.55);
+    const splitX = Math.floor(canvas.width * 0.55);
+
+    // PANE 1 (TOP): POST + Orchestrator text
+    ctx.save();
+    const topPaneH = biosBootState.horizontalSplit ? splitY - 2 : canvas.height;
+    ctx.beginPath();
+    ctx.rect(0, 0, canvas.width, topPaneH);
+    ctx.clip();
+
+    // Render visible text lines (top pane)
+    ctx.font = '9px monospace';
+    const lineH = 12;
+    let lineY = 16;
+    for (let i = 0; i < biosBootState.lineIndex; i++) {
+        const line = biosBootState.lines[i];
+        if (line.pane !== 'top') continue;
+        ctx.fillStyle = line.color;
+        ctx.font = line.bold ? 'bold 9px monospace' : '9px monospace';
+        ctx.textAlign = 'left';
+
+        // Color-code status words
+        let text = line.text;
+        ctx.fillText(text, 12, lineY);
+
+        // Highlight OK/READY in green
+        if (text.includes('READY') || text.includes('ONLINE') || text.includes('OK') || text.includes('PASS') || text.includes('DETECTED')) {
+            const words = ['READY', 'ONLINE', 'OK', 'PASS', 'DETECTED'];
+            for (const w of words) {
+                const idx = text.indexOf(w);
+                if (idx >= 0) {
+                    const beforeW = text.substring(0, idx);
+                    const wWidth = ctx.measureText(beforeW).width;
+                    ctx.fillStyle = '#0f0';
+                    ctx.fillText(w, 12 + wWidth, lineY);
+                }
+            }
+        }
+
+        lineY += lineH;
+        if (lineY > topPaneH - 4) break;
+    }
+
+    // Blinking cursor
+    if (Math.floor(Date.now() / 400) % 2 === 0) {
+        ctx.fillStyle = '#0f0';
+        ctx.font = '9px monospace';
+        ctx.fillText('\u2588', 12 + (biosBootState.lineIndex > 0 ? ctx.measureText(biosBootState.lines[Math.min(biosBootState.lineIndex - 1, biosBootState.lines.length - 1)].text).width + 6 : 0), lineY);
+    }
+    ctx.restore();
+
+    // Horizontal split divider
+    if (biosBootState.horizontalSplit) {
+        ctx.fillStyle = 'rgba(0, 255, 0, 0.4)';
+        ctx.fillRect(0, splitY - 1, canvas.width, 2);
+
+        if (biosBootState.verticalSplit) {
+            // BOTTOM-LEFT: System check
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(0, splitY + 1, splitX - 2, canvas.height - splitY - 1);
+            ctx.clip();
+            renderBIOSSystemCheck(0, splitY + 1, splitX - 2, canvas.height - splitY - 1);
+            ctx.restore();
+
+            // Vertical divider
+            ctx.fillStyle = 'rgba(0, 255, 0, 0.4)';
+            ctx.fillRect(splitX - 1, splitY, 2, canvas.height - splitY);
+
+            // BOTTOM-RIGHT: Data stream
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(splitX + 1, splitY + 1, canvas.width - splitX - 1, canvas.height - splitY - 1);
+            ctx.clip();
+            renderBIOSDataStream(splitX + 1, splitY + 1, canvas.width - splitX - 1, canvas.height - splitY - 1);
+            ctx.restore();
+        } else {
+            // BOTTOM: Swarm table OR download
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(0, splitY + 1, canvas.width, canvas.height - splitY - 1);
+            ctx.clip();
+            if (e < 1.6) {
+                renderBIOSSwarmTable(0, splitY + 1, canvas.width, canvas.height - splitY - 1);
+            } else {
+                renderBIOSDownload(0, splitY + 1, canvas.width, canvas.height - splitY - 1);
+            }
+            ctx.restore();
+        }
+    }
+
+    // Center countdown panel
+    if (biosBootState.centerPanelAlpha > 0) {
+        const panelW = 320;
+        const panelH = 140;
+        const px = (canvas.width - panelW) / 2;
+        const py = (canvas.height - panelH) / 2;
+
+        ctx.save();
+        ctx.globalAlpha = biosBootState.centerPanelAlpha;
+
+        // Panel background
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+        ctx.fillRect(px, py, panelW, panelH);
+        ctx.strokeStyle = '#0ff';
+        ctx.lineWidth = 2;
+        ctx.shadowColor = '#0ff';
+        ctx.shadowBlur = 8;
+        ctx.strokeRect(px, py, panelW, panelH);
+        ctx.shadowBlur = 0;
+
+        // WAVE N
+        ctx.fillStyle = '#0ff';
+        ctx.font = 'bold 48px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('WAVE ' + biosBootState.waveInfo.wave, canvas.width / 2, py + 55);
+
+        // Countdown number or LAUNCH
+        if (biosBootState.countdownValue > 0) {
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 32px monospace';
+            ctx.fillText('>> ' + biosBootState.countdownValue + ' <<', canvas.width / 2, py + 105);
+        } else {
+            ctx.fillStyle = '#0ff';
+            ctx.font = 'bold 48px monospace';
+            ctx.fillText('LAUNCH', canvas.width / 2, py + 110);
+        }
+
+        ctx.restore();
+    }
+
+    // Launch flash (final 80ms strobe)
+    if (biosBootState.flashActive) {
+        const colors = ['rgba(255, 255, 0, 0.25)', 'rgba(0, 255, 255, 0.30)', 'rgba(255, 0, 255, 0.20)', 'rgba(255, 255, 255, 0.40)'];
+        ctx.fillStyle = colors[biosBootState.flashPhase];
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // CRT scanlines over everything
+    for (let sy = 0; sy < canvas.height; sy += 3) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+        ctx.fillRect(0, sy, canvas.width, 1);
+    }
+
+    // Countdown screen edge flash
+    if (biosBootState.centerPanelAlpha > 0 && biosBootState.countdownValue > 0) {
+        const flashAlpha = 0.05 + (3 - biosBootState.countdownValue) * 0.03;
+        ctx.fillStyle = `rgba(255, 255, 255, ${flashAlpha})`;
+        ctx.fillRect(0, 0, canvas.width, 2);
+        ctx.fillRect(0, canvas.height - 2, canvas.width, 2);
+        ctx.fillRect(0, 0, 2, canvas.height);
+        ctx.fillRect(canvas.width - 2, 0, 2, canvas.height);
+    }
+}
+
+function renderBIOSSwarmTable(px, py, pw, ph) {
+    ctx.fillStyle = '#0ff';
+    ctx.font = 'bold 9px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('AGENT SWARM STATUS', px + 12, py + 14);
+    ctx.fillStyle = '#444';
+    ctx.font = '9px monospace';
+    ctx.fillText('----------------------------------------', px + 12, py + 26);
+
+    for (let i = 0; i < biosBootState.swarmRows.length; i++) {
+        const row = biosBootState.swarmRows[i];
+        const rowY = py + 38 + i * 14;
+        if (biosBootState.elapsed < row.startTime) continue;
+
+        // Name
+        ctx.fillStyle = '#aaa';
+        ctx.font = '9px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText('  ' + row.name, px + 12, rowY);
+
+        // Loading bar
+        const barWidth = 12;
+        const filled = Math.floor(row.fillProgress * barWidth);
+        const empty = barWidth - filled;
+        const barText = '[' + '='.repeat(filled) + ' '.repeat(empty) + ']';
+        ctx.fillStyle = row.online ? '#0f0' : '#ff0';
+        const nameW = ctx.measureText('  ' + row.name + '  ').width;
+        ctx.fillText(barText, px + 12 + nameW, rowY);
+
+        // Status
+        const statusText = row.online ? 'ONLINE' : 'LOADING';
+        ctx.fillStyle = row.online ? row.color : '#ff0';
+        ctx.font = row.online ? 'bold 9px monospace' : '9px monospace';
+        ctx.fillText(statusText, px + 12 + nameW + barWidth * 6 + 30, rowY);
+    }
+
+    // All swarms online
+    const allOnline = biosBootState.swarmRows.every(r => r.online);
+    if (allOnline) {
+        const totalY = py + 38 + biosBootState.swarmRows.length * 14 + 14;
+        ctx.fillStyle = '#0f0';
+        ctx.font = 'bold 9px monospace';
+        ctx.fillText('  ALL SWARMS: ONLINE (' + biosBootState.swarmRows.length + ' ACTIVE)', px + 12, totalY);
+    }
+}
+
+function renderBIOSDownload(px, py, pw, ph) {
+    ctx.fillStyle = '#0ff';
+    ctx.font = 'bold 9px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('UPLINK DATA TRANSFER', px + 12, py + 14);
+    ctx.fillStyle = '#444';
+    ctx.font = '9px monospace';
+    ctx.fillText('============================================', px + 12, py + 26);
+
+    // Progress bar
+    const barX = px + 20;
+    const barY = py + 36;
+    const barW = pw - 80;
+    const barH = 12;
+    ctx.fillStyle = 'rgba(0, 255, 0, 0.1)';
+    ctx.fillRect(barX, barY, barW, barH);
+    ctx.strokeStyle = 'rgba(0, 255, 0, 0.4)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barX, barY, barW, barH);
+
+    // Segmented fill
+    const segs = 30;
+    const segW = (barW - (segs - 1) * 2) / segs;
+    const filledSegs = Math.floor(biosBootState.downloadProgress * segs);
+    for (let s = 0; s < filledSegs; s++) {
+        const sx = barX + s * (segW + 2);
+        ctx.fillStyle = '#0f0';
+        if (s === filledSegs - 1) {
+            ctx.shadowColor = '#0f0';
+            ctx.shadowBlur = 3;
+        }
+        ctx.fillRect(sx, barY + 1, segW, barH - 2);
+        ctx.shadowBlur = 0;
+    }
+
+    // Percentage
+    ctx.fillStyle = '#0f0';
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(Math.floor(biosBootState.downloadProgress * 100) + '%', barX + barW + 8, barY + 10);
+
+    // Speed and received
+    ctx.font = '9px monospace';
+    ctx.fillStyle = '#0ff';
+    ctx.fillText('SPEED: ' + biosBootState.downloadSpeed.toFixed(1) + ' TB/s', barX, barY + 24);
+    ctx.fillStyle = '#aaa';
+    ctx.fillText('RECV: ' + biosBootState.downloadReceived.toFixed(1) + ' / 47.3 TB', barX + 180, barY + 24);
+
+    // Hex data stream (decorative)
+    ctx.font = '7px monospace';
+    const now = Date.now();
+    for (let row = 0; row < 6; row++) {
+        const hy = barY + 38 + row * 11;
+        if (hy > py + ph - 4) break;
+        let hexStr = '';
+        for (let h = 0; h < 16; h++) {
+            hexStr += ((now * 7 + row * 31 + h * 13) % 256).toString(16).padStart(2, '0').toUpperCase() + ' ';
+        }
+        ctx.fillStyle = 'rgba(0, 255, 0, 0.15)';
+        ctx.fillText('0x' + (row * 16).toString(16).padStart(4, '0') + '  ' + hexStr, px + 12, hy);
+    }
+}
+
+function renderBIOSSystemCheck(px, py, pw, ph) {
+    ctx.fillStyle = '#0ff';
+    ctx.font = 'bold 9px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('SYSTEM CHECK', px + 12, py + 14);
+
+    for (let i = 0; i < biosBootState.checkLines.length; i++) {
+        const cl = biosBootState.checkLines[i];
+        const ly = py + 28 + i * 14;
+        if (ly > py + ph - 4) break;
+        if (biosBootState.elapsed < cl.startTime) continue;
+
+        // Name
+        ctx.fillStyle = '#aaa';
+        ctx.font = '9px monospace';
+        const name = '  ' + cl.name + ' ';
+
+        // Dots filling
+        const maxDots = 20 - cl.name.length;
+        const dotsProgress = cl.dotsProgress || 0;
+        const visibleDots = Math.floor(dotsProgress * maxDots);
+        const dots = '.'.repeat(visibleDots);
+        ctx.fillText(name + dots, px + 12, ly);
+
+        // Status
+        if (cl.completed) {
+            ctx.fillStyle = cl.statusColor;
+            ctx.font = 'bold 9px monospace';
+            ctx.fillText(' [' + cl.status + ']', px + 12 + ctx.measureText(name + '.'.repeat(maxDots)).width, ly);
+        }
+    }
+
+    // ALL SYSTEMS NOMINAL
+    const allDone = biosBootState.checkLines.every(c => c.completed);
+    if (allDone) {
+        const totalY = py + 28 + biosBootState.checkLines.length * 14 + 14;
+        ctx.fillStyle = '#0f0';
+        ctx.font = 'bold 9px monospace';
+        ctx.fillText('  ALL SYSTEMS NOMINAL', px + 12, totalY);
+    }
+}
+
+function renderBIOSDataStream(px, py, pw, ph) {
+    // Rapid scrolling hex dump (decorative)
+    ctx.font = '7px monospace';
+    const now = Date.now();
+    const scrollOffset = Math.floor(now / 30) * 11;
+    const visibleLines = Math.floor(ph / 11);
+
+    for (let row = 0; row < visibleLines; row++) {
+        const hy = py + 4 + row * 11;
+        const lineIdx = Math.floor(scrollOffset / 11) + row;
+        // Address column
+        ctx.fillStyle = 'rgba(0, 170, 68, 0.3)';
+        const addr = '0x' + ((lineIdx * 16) & 0xFFFF).toString(16).padStart(4, '0');
+        ctx.textAlign = 'left';
+        ctx.fillText(addr, px + 4, hy);
+
+        // Hex values
+        let hexStr = '';
+        for (let h = 0; h < 8; h++) {
+            hexStr += ((now * 3 + lineIdx * 17 + h * 31 + row * 7) % 256).toString(16).padStart(2, '0').toUpperCase() + ' ';
+        }
+        ctx.fillStyle = 'rgba(0, 255, 0, 0.15)';
+        ctx.fillText(hexStr, px + 48, hy);
+
+        // ASCII representation
+        let ascii = '|';
+        for (let a = 0; a < 8; a++) {
+            const code = (now * 3 + lineIdx * 17 + a * 31 + row * 7) % 94 + 33;
+            ascii += String.fromCharCode(code);
+        }
+        ascii += '|';
+        ctx.fillStyle = 'rgba(0, 255, 0, 0.08)';
+        ctx.fillText(ascii, px + 48 + 8 * 18, hy);
+    }
+}
+
 function updateWaveTransition(dt) {
     waveTransitionTimer -= dt;
 
@@ -20343,14 +21801,26 @@ function updateWaveTransition(dt) {
     updateParticles(dt);
     updateFloatingTexts(dt);
 
+    // Initialize BIOS sequence on first frame
+    if (!biosBootState.active) {
+        initBiosBootSequence();
+    }
+
+    // Update BIOS sequence
+    updateBiosBootSequence(dt);
+
     if (waveTransitionTimer <= 0) {
+        // End BIOS sequence
+        biosBootState.active = false;
+        biosBootState.phase = 'inactive';
+
         // Start the new wave
         animationPausedAt = null;
         resetWaveStats();
         waveTimer = CONFIG.WAVE_DURATION;
-        lastTimerWarningSecond = -1; // Reset timer warning
+        lastTimerWarningSecond = -1;
         gameState = 'PLAYING';
-        // Reset commander state so it doesn't carry over from previous wave
+        // Reset commander state
         missionCommanderState.visible = false;
         missionCommanderState.dialogue = '';
         missionCommanderState.typewriterIndex = 0;
@@ -20359,81 +21829,26 @@ function updateWaveTransition(dt) {
         missionCommanderState.cooldownTimer = 15;
         initHUDBoot();
 
-        // Reset auto-deploy cooldown so coordinators deploy immediately
+        // Reset auto-deploy cooldown
         autoDeployCooldown = 0;
 
         // Spawn tanks for new wave
         spawnTanks();
 
-        // Clear any remaining projectiles
+        // Clear projectiles
         projectiles = [];
     }
 }
 
 function renderWaveTransition() {
-    // Render the game scene frozen (background, targets, tanks, UFO)
-    ctx.save();
-
-    renderBackground();
-
-    // Render targets
-    for (const target of targets) {
-        target.render();
+    // Render BIOS boot sequence instead of old wave transition
+    if (biosBootState.active) {
+        renderBiosBootSequence();
+    } else {
+        // Fallback: simple black screen during last frames
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
-
-    // Render tanks
-    renderTanks();
-
-    // Render UFO
-    if (ufo) {
-        ufo.render();
-    }
-
-    // Render particles
-    renderParticles();
-
-    // Render floating texts
-    renderFloatingTexts();
-
-    ctx.restore();
-
-    // Semi-transparent overlay
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // Wave announcement
-    ctx.fillStyle = '#0ff';
-    ctx.font = 'bold 72px monospace';
-    ctx.textAlign = 'center';
-
-    // Pulsing effect
-    const pulse = 1 + Math.sin(Date.now() / 100) * 0.1;
-    ctx.save();
-    ctx.translate(canvas.width / 2, canvas.height / 2);
-    ctx.scale(pulse, pulse);
-    ctx.fillText(`WAVE ${wave}`, 0, 0);
-    ctx.restore();
-
-    // Countdown
-    const secondsLeft = Math.ceil(waveTransitionTimer);
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 32px monospace';
-    ctx.fillText(`Starting in ${secondsLeft}...`, canvas.width / 2, canvas.height / 2 + 60);
-
-    // Display wave info
-    const tankCount = Math.floor(CONFIG.TANKS_BASE + (wave - 1) * CONFIG.TANKS_INCREMENT);
-    let heavyTankCount = wave >= 5 ? (wave === 5 ? 1 : 2) : 0;
-    if (wave > 15) {
-        heavyTankCount += Math.floor((wave - 15) / 3);
-    }
-    ctx.font = '24px monospace';
-    ctx.fillStyle = '#aaa';
-    let waveText = `${tankCount} tank${tankCount > 1 ? 's' : ''}`;
-    if (heavyTankCount > 0) {
-        waveText += ` + ${heavyTankCount} HEAVY TANK${heavyTankCount > 1 ? 'S' : ''}`;
-    }
-    waveText += ' incoming!';
-    ctx.fillText(waveText, canvas.width / 2, canvas.height / 2 + 100);
 }
 
 // ============================================
@@ -22572,6 +23987,12 @@ function update(dt) {
                 const bonusBM = Math.floor(quotaTarget * 0.5);
                 bioMatter += bonusBM;
                 createFloatingText(canvas.width / 2, canvas.height / 2 + 80, `QUOTA EXCEEDED! +${bonusBM} BM`, '#4f4');
+                // Spawn upload rows for bio-matter panel
+                for (let _br = 0; _br < bonusBM; _br++) {
+                    bioUploadRows.push({ spawnTime: Date.now() + _br * 50, progress: 0, phase: 'uploading', flashStartTime: 0 });
+                    bioUploadState.bitRateSamples.push(Date.now() + _br * 50);
+                }
+                SFX.bioUploadBlip();
             }
         } else {
             consecutiveQuotaMisses++;
