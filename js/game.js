@@ -14068,8 +14068,8 @@ function getHUDLayout() {
         weaponsZone: { x: margin, y: 140, w: leftW, h: 200 },
         fleetZone: { x: canvas.width - rightW - margin, y: fleetY, w: rightW, h: 300 },
         commanderZone: { x: margin, y: canvas.height - 110, w: Math.min(260, canvas.width * 0.22), h: 100 },
-        diagnosticsZone: { x: margin, y: canvas.height - 390, w: leftW, h: 160 },
-        opsLogZone: { x: margin, y: canvas.height - 220, w: Math.min(240, canvas.width * 0.20), h: 100 }
+        diagnosticsZone: { x: canvas.width - rightW - margin, y: canvas.height - 290, w: rightW, h: 160 },
+        opsLogZone: { x: canvas.width - rightW - margin, y: canvas.height - 120, w: rightW, h: 100 }
     };
 }
 
@@ -14440,7 +14440,7 @@ function renderHUDFrame() {
             hudAnimState.diagPanelSlide = Math.min(1, hudAnimState.diagPanelSlide + 0.04);
         }
         ctx.save();
-        const diagSlideOffset = (1 - easeOutCubic(hudAnimState.diagPanelSlide)) * -layout.diagnosticsZone.w;
+        const diagSlideOffset = (1 - easeOutCubic(hudAnimState.diagPanelSlide)) * layout.diagnosticsZone.w;
         ctx.translate(diagSlideOffset, 0);
         if (panelReady('diagnostics')) {
             renderDiagnosticsZone(layout.diagnosticsZone);
@@ -14460,7 +14460,7 @@ function renderHUDFrame() {
             hudAnimState.opsLogPanelSlide = Math.min(1, hudAnimState.opsLogPanelSlide + 0.04);
         }
         ctx.save();
-        const opsSlideOffset = (1 - easeOutCubic(hudAnimState.opsLogPanelSlide)) * -layout.opsLogZone.w;
+        const opsSlideOffset = (1 - easeOutCubic(hudAnimState.opsLogPanelSlide)) * layout.opsLogZone.w;
         ctx.translate(opsSlideOffset, 0);
         if (panelReady('opslog')) {
             renderOpsLogZone(layout.opsLogZone);
