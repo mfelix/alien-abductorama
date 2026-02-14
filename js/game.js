@@ -22375,10 +22375,10 @@ function updateWaveSummary(dt) {
     if (waveSummaryState.elapsed >= 0.10) {
         waveSummaryState.panelFillAlpha = Math.min(0.88, ((waveSummaryState.elapsed - 0.10) / 0.20) * 0.88);
     }
-    waveSummaryState.labelTypewriterChars = Math.min(12, Math.floor(waveSummaryState.elapsed * 25));
+    waveSummaryState.labelTypewriterChars = Math.min(13, Math.floor(waveSummaryState.elapsed * 25));
     waveSummaryState.hexDecodeProgress = Math.min(1, waveSummaryState.elapsed / 0.40);
     if (waveSummaryState.elapsed >= 0.35) {
-        waveSummaryState.typewriterChars = Math.min(28, Math.floor((waveSummaryState.elapsed - 0.35) * 25));
+        waveSummaryState.typewriterChars = 0;
     }
 
     // Update commander typewriter during wave summary
@@ -22564,8 +22564,8 @@ function renderTargetRow(counts, totals, startX, y, iconSize, spacing, revealCou
 
         // Count text with mini hex-decode
         const label = totals ? `${count}/${spawned}` : count.toString();
-        const countY = y + iconSize / 2 + 16;
-        ctx.font = 'bold 14px monospace';
+        const countY = y + iconSize / 2 + 18;
+        ctx.font = 'bold 16px monospace';
         ctx.textAlign = 'center';
 
         if (timeSinceReveal < 0.10 && timeSinceReveal > 0) {
@@ -22590,7 +22590,7 @@ function renderTargetRow(counts, totals, startX, y, iconSize, spacing, revealCou
         }
 
         // Type abbreviation label
-        ctx.font = '9px monospace';
+        ctx.font = '10px monospace';
         ctx.fillStyle = '#445';
         ctx.fillText(TYPE_ABBR[i], x, countY + 13);
 
@@ -22893,21 +22893,56 @@ function renderWaveSummary() {
     ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // B. Panel dimensions
-    const panelW = Math.min(720, canvas.width * 0.85);
-    const panelH = Math.min(620, canvas.height * 0.88);
-    const panelX = (canvas.width - panelW) / 2;
-    const panelY = (canvas.height - panelH) / 2;
-    const contentLeft = panelX + 20;
-    const contentRight = panelX + panelW - 20;
-    const contentWidth = panelW - 40;
-    const centerX = panelX + panelW / 2;
     const st = waveSummaryState;
     const elapsed = st.elapsed;
+    const padH = 24;
+    const padV = 20;
+    const sectionGap = 16;
+    const bottomPad = 20;
+    const iconSize = 44;
 
-    // D. Panel rendering
+    // Panel width
+    const panelW = Math.min(720, canvas.width * 0.85);
+
+    // === Dynamic panel height calculation (data-driven, not animation-driven) ===
+    const hasBio = waveSummary.droneHarvests > 0 || waveSummary.bioMatterEarned > 0 || waveSummary.lostDeliveries > 0;
+    let measuredH = padV;
+    // Header
+    measuredH += 16 + 24 + 1 + sectionGap / 2;
+    // Targets
+    measuredH += 18 + iconSize + 24 + 8 + 1 + sectionGap / 2;
+    // Points
+    measuredH += 14 + 16 + 22 + 8 + 4 + 12;
+    if (waveSummary.bonusPoints > 0) measuredH += 22;
+    measuredH += waveSummary.bonuses.length * 20;
+    if (waveSummary.bonuses.filter(b => b.earned).length > 0) measuredH += 18;
+    measuredH += 1 + sectionGap / 2;
+    // Credits
+    measuredH += 14 + 16 + 14 + 14 + 10 + 1 + 12 + 22 + 8 + 1 + sectionGap / 2;
+    // Bio-matter (conditional)
+    if (hasBio) {
+        measuredH += 14 + 16;
+        if (waveSummary.droneHarvests > 0) measuredH += 18;
+        if (waveSummary.lostDeliveries > 0) measuredH += 18;
+        if (waveSummary.bioMatterEarned > 0) measuredH += 22;
+        measuredH += 8 + 1 + sectionGap / 2;
+    }
+    // Total score
+    measuredH += 24 + 12 + 1 + sectionGap / 2;
+    // Countdown
+    measuredH += 40;
+    measuredH += bottomPad;
+
+    const panelH = Math.min(measuredH, canvas.height * 0.92);
+    const panelX = (canvas.width - panelW) / 2;
+    const panelY = (canvas.height - panelH) / 2;
+    const contentLeft = panelX + padH;
+    const contentRight = panelX + panelW - padH;
+    const contentWidth = panelW - padH * 2;
+    const centerX = panelX + panelW / 2;
+
+    // === Panel rendering ===
     if (st.borderTraceProgress < 1) {
-        // Trace animation + fading fill
         if (st.panelFillAlpha > 0) {
             renderNGEPanel(panelX, panelY, panelW, panelH, { color: '#0ff', alpha: st.panelFillAlpha, cutCorners: ['tl', 'br'] });
         }
@@ -22916,102 +22951,98 @@ function renderWaveSummary() {
         renderNGEPanel(panelX, panelY, panelW, panelH, { color: '#0ff', alpha: 0.88, cutCorners: ['tl', 'br'] });
     }
 
-    // WAV.ANALYSIS label (11px, manual typewriter — matches HUD panel labels)
+    // Corner brackets
+    renderCornerBrackets(panelX, panelY, panelW, panelH, 8, 20, st.bracketAlpha);
+
+    // WAVE ANALYSIS label (14px, typewriter)
     if (st.labelTypewriterChars > 0) {
         ctx.save();
-        ctx.font = 'bold 11px monospace';
+        ctx.font = 'bold 14px monospace';
         ctx.fillStyle = '#0ff';
         ctx.textAlign = 'left';
-        ctx.fillText('WAV.ANALYSIS'.substring(0, st.labelTypewriterChars), panelX + 14, panelY + 13);
+        ctx.fillText('WAVE ANALYSIS'.substring(0, st.labelTypewriterChars), panelX + 14, panelY + 18);
         ctx.restore();
     }
 
-    let cursorY = panelY + 16;
+    // === Content rendering ===
+    let cursorY = panelY + padV;
 
-    // E. Section A: HEADER
-    cursorY += 14;
+    // ─── HEADER: Wave Number ───
+    cursorY += 16;
     ctx.save();
     ctx.textAlign = 'center';
-    renderHexDecodeText('WAVE ' + waveSummary.wave, centerX, cursorY, 22, st.hexDecodeProgress);
+    renderHexDecodeText('WAVE ' + waveSummary.wave, centerX, cursorY, 28, st.hexDecodeProgress);
     ctx.restore();
     ctx.shadowBlur = 0;
-    cursorY += 14;
+    cursorY += 24;
 
-    // Typewriter subheader
-    if (st.typewriterChars > 0) {
-        ctx.save();
-        ctx.font = '11px monospace';
-        ctx.fillStyle = 'rgba(0, 255, 255, 0.7)';
-        ctx.textAlign = 'center';
-        ctx.fillText('>> MISSION DEBRIEF INITIATED'.substring(0, st.typewriterChars), centerX, cursorY);
-        ctx.restore();
-    }
-    cursorY += 10;
-
-    // F. Divider
-    ctx.strokeStyle = 'rgba(0, 255, 255, 0.15)';
+    // Divider
+    ctx.strokeStyle = 'rgba(0, 255, 255, 0.2)';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(contentLeft, cursorY);
-    ctx.lineTo(contentRight, cursorY);
+    ctx.moveTo(panelX + 2, cursorY);
+    ctx.lineTo(panelX + panelW - 2, cursorY);
     ctx.stroke();
-    cursorY += 8;
+    cursorY += 1 + sectionGap / 2;
 
-    // G. Section B: TGT.TELEMETRY
+    // ─── TARGETS ───
     if (elapsed >= 0.50) {
         const sectionAge = elapsed - 0.50;
         const sectionAlpha = Math.min(1, sectionAge / 0.15);
         ctx.save();
         ctx.globalAlpha = sectionAlpha;
-        ctx.font = 'bold 11px monospace';
-        ctx.fillStyle = 'rgba(0, 255, 255, 0.6)';
+        ctx.font = 'bold 14px monospace';
+        ctx.fillStyle = 'rgba(0, 255, 255, 0.8)';
         ctx.textAlign = 'left';
-        ctx.fillText('TGT.TELEMETRY', contentLeft, cursorY);
+        ctx.fillText('TARGETS', contentLeft, cursorY + 12);
         ctx.restore();
     }
-    cursorY += 12;
+    cursorY += 18;
+
+    // Tinted background for targets
+    const targetBandH = iconSize + 24 + 8;
+    ctx.fillStyle = 'rgba(0, 255, 255, 0.04)';
+    ctx.fillRect(panelX + 2, cursorY - 4, panelW - 4, targetBandH);
 
     // Target row
-    const iconSize = 40;
     const iconSpacing = contentWidth / TARGET_TYPES.length;
     const iconStartX = contentLeft + iconSpacing / 2;
     renderTargetRow(waveSummary.targets, waveSummary.targetsSpawned, iconStartX, cursorY + iconSize / 2, iconSize, iconSpacing, st.targetsRevealed);
-    cursorY += iconSize + 28;
+    cursorY += iconSize + 24 + 8;
 
-    // H. Divider
-    ctx.strokeStyle = 'rgba(0, 255, 255, 0.15)';
+    // Divider
+    ctx.strokeStyle = 'rgba(0, 255, 255, 0.2)';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(contentLeft, cursorY);
-    ctx.lineTo(contentRight, cursorY);
+    ctx.moveTo(panelX + 2, cursorY);
+    ctx.lineTo(panelX + panelW - 2, cursorY);
     ctx.stroke();
-    cursorY += 8;
+    cursorY += 1 + sectionGap / 2;
 
-    // I. Section C: PTS.CALC
+    // ─── POINTS ───
     if (elapsed >= st.timings.targetsEnd) {
         const ptsSectionAge = elapsed - st.timings.targetsEnd;
         const ptsSectionAlpha = Math.min(1, ptsSectionAge / 0.15);
         ctx.save();
         ctx.globalAlpha = ptsSectionAlpha;
-        ctx.font = 'bold 11px monospace';
-        ctx.fillStyle = 'rgba(0, 255, 255, 0.6)';
+        ctx.font = 'bold 14px monospace';
+        ctx.fillStyle = 'rgba(255, 204, 0, 0.8)';
         ctx.textAlign = 'left';
-        ctx.fillText('PTS.CALC', contentLeft, cursorY);
+        ctx.fillText('POINTS', contentLeft, cursorY + 12);
         ctx.restore();
     }
-    cursorY += 14;
+    cursorY += 14 + 16;
 
-    // WAV.POINTS row
+    // Wave Points row
     const pointsValue = st.pointsStarted ? st.pointsCount.current : 0;
     if (st.pointsStarted || elapsed >= st.timings.targetsEnd) {
-        ctx.font = '12px monospace';
+        ctx.font = '14px monospace';
         ctx.fillStyle = '#aaa';
         ctx.textAlign = 'left';
-        ctx.fillText('WAV.POINTS', contentLeft, cursorY);
+        ctx.fillText('WAVE POINTS', contentLeft, cursorY);
 
-        // Points value with count-up glow and pop
         ctx.textAlign = 'right';
-        ctx.font = 'bold 18px monospace';
+        ctx.font = 'bold 22px monospace';
         if (st.pointsFinished && st.pointsFinishTime >= 0) {
             const popAge = elapsed - st.pointsFinishTime;
             const popScale = popAge < 0.2 ? 1 + 0.12 * Math.sin(Math.min(1, popAge / 0.2) * Math.PI) : 1;
@@ -23026,7 +23057,6 @@ function renderWaveSummary() {
             ctx.restore();
             ctx.shadowBlur = 0;
         } else if (st.pointsStarted && !st.pointsFinished) {
-            // Animated glow during count-up
             const glowPhase = Math.sin(elapsed * Math.PI * 8) * 0.5 + 0.5;
             ctx.shadowColor = '#fc0';
             ctx.shadowBlur = 2 + glowPhase * 4;
@@ -23037,30 +23067,30 @@ function renderWaveSummary() {
             ctx.fillStyle = '#fc0';
             ctx.fillText('0', contentRight, cursorY);
         }
-        cursorY += 6;
+        cursorY += 8;
 
         // Segmented bar
         const barMax = Math.max(waveSummary.wavePoints, 5000);
         const barPercent = waveSummary.wavePoints > 0 ? pointsValue / barMax : 0;
-        renderNGEBar(contentLeft, cursorY, contentWidth, 3, barPercent, '#fc0', { segments: 10 });
-        cursorY += 10;
+        renderNGEBar(contentLeft, cursorY, contentWidth, 4, barPercent, '#fc0', { segments: 10 });
+        cursorY += 12;
 
-        // BONUS.PTS row (only if > 0, appears after points finish)
+        // Bonus points row
         if (waveSummary.bonusPoints > 0 && st.pointsFinished) {
             const bonusPtsAge = Math.max(0, elapsed - st.pointsFinishTime);
             const bonusPtsAlpha = Math.min(1, bonusPtsAge / 0.15);
             ctx.save();
             ctx.globalAlpha = bonusPtsAlpha;
-            ctx.font = '12px monospace';
+            ctx.font = '14px monospace';
             ctx.fillStyle = '#666';
             ctx.textAlign = 'left';
-            ctx.fillText('BONUS.PTS', contentLeft, cursorY);
+            ctx.fillText('BONUS POINTS', contentLeft, cursorY);
             ctx.textAlign = 'right';
-            ctx.font = '14px monospace';
+            ctx.font = 'bold 16px monospace';
             ctx.fillStyle = '#0f0';
             ctx.fillText('+' + waveSummary.bonusPoints.toLocaleString(), contentRight, cursorY);
             ctx.restore();
-            cursorY += 14;
+            cursorY += 22;
         }
 
         // Bonus system check lines
@@ -23069,9 +23099,8 @@ function renderWaveSummary() {
             const bonus = waveSummary.bonuses[i];
             const bonusRevealTime = st.timings.pointsEnd + i * WAVE_SUMMARY_TIMING.bonusPer;
             const bonusAge = Math.max(0, elapsed - bonusRevealTime);
-            const dotLabel = bonus.label.replace(/\s+/g, '.');
-            renderSystemCheckLine(contentLeft, cursorY, contentWidth, dotLabel, bonus.earned, bonus.detail, bonusAge);
-            cursorY += 18;
+            renderSystemCheckLine(contentLeft, cursorY, contentWidth, bonus.label, bonus.earned, bonus.detail, bonusAge);
+            cursorY += 20;
         }
 
         // Bonus multiplier summary
@@ -23083,182 +23112,196 @@ function renderWaveSummary() {
             if (multAlpha > 0) {
                 ctx.save();
                 ctx.globalAlpha = multAlpha;
-                ctx.font = 'bold 11px monospace';
+                ctx.font = 'bold 13px monospace';
                 ctx.fillStyle = '#fc0';
                 ctx.textAlign = 'left';
                 ctx.fillText('BONUS MULT: +' + (earnedCount * 25) + '%', contentLeft, cursorY);
                 ctx.restore();
-                cursorY += 14;
+                cursorY += 18;
             }
-        }
-
-        // CRED.CALC sub-section
-        if (st.bucksStarted) {
-            // Dashed divider
-            cursorY += 4;
-            ctx.save();
-            ctx.strokeStyle = 'rgba(0, 255, 255, 0.1)';
-            ctx.lineWidth = 1;
-            ctx.setLineDash([3, 3]);
-            ctx.beginPath();
-            ctx.moveTo(contentLeft, cursorY);
-            ctx.lineTo(contentRight, cursorY);
-            ctx.stroke();
-            ctx.setLineDash([]);
-            ctx.restore();
-            cursorY += 8;
-
-            // CRED.CALC micro-label
-            ctx.font = '9px monospace';
-            ctx.fillStyle = 'rgba(0, 255, 255, 0.4)';
-            ctx.textAlign = 'left';
-            ctx.fillText('CRED.CALC', contentLeft, cursorY);
-            cursorY += 12;
-
-            // BASE.CRED row
-            ctx.font = '12px monospace';
-            ctx.fillStyle = '#aaa';
-            ctx.textAlign = 'left';
-            ctx.fillText('BASE.CRED', contentLeft, cursorY);
-            ctx.textAlign = 'right';
-            ctx.fillStyle = '#fff';
-            ctx.fillText(waveSummary.baseUfoBucks.toString(), contentRight, cursorY);
-            cursorY += 12;
-
-            // BONUS.CRED row
-            ctx.fillStyle = '#aaa';
-            ctx.textAlign = 'left';
-            ctx.fillText('BONUS.CRED', contentLeft, cursorY);
-            ctx.textAlign = 'right';
-            ctx.fillStyle = '#0f0';
-            ctx.fillText('+' + waveSummary.bonusUfoBucks.toString(), contentRight, cursorY);
-            cursorY += 8;
-
-            // Thin divider
-            ctx.strokeStyle = 'rgba(0, 255, 255, 0.15)';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(contentLeft, cursorY);
-            ctx.lineTo(contentLeft + contentWidth * 0.5, cursorY);
-            ctx.stroke();
-            cursorY += 10;
-
-            // TOTAL.CRED with diamond + count-up + pop
-            const bucksValue = st.bucksStarted ? st.bucksCount.current : 0;
-            renderNGEIndicator(contentLeft, cursorY - 3, 'diamond', '#fc0', 'steady', { rate: 99999 });
-            ctx.font = 'bold 14px monospace';
-            ctx.fillStyle = '#fc0';
-            ctx.textAlign = 'left';
-            ctx.fillText('TOTAL.CRED', contentLeft + 10, cursorY);
-            ctx.textAlign = 'right';
-
-            if (st.bucksFinished && st.bucksFinishTime >= 0) {
-                const bPopAge = elapsed - st.bucksFinishTime;
-                const bPopScale = bPopAge < 0.2 ? 1 + 0.12 * Math.sin(Math.min(1, bPopAge / 0.2) * Math.PI) : 1;
-                const bPopGlow = bPopAge < 0.3 ? (1 - bPopAge / 0.3) : 0;
-                ctx.save();
-                ctx.translate(contentRight, cursorY);
-                ctx.scale(bPopScale, bPopScale);
-                ctx.shadowColor = 'rgba(255, 204, 0, ' + bPopGlow + ')';
-                ctx.shadowBlur = 15;
-                ctx.fillText(bucksValue.toString(), 0, 0);
-                ctx.restore();
-                ctx.shadowBlur = 0;
-            } else if (st.bucksStarted && !st.bucksFinished) {
-                const glowPhase = Math.sin(elapsed * Math.PI * 8) * 0.5 + 0.5;
-                ctx.shadowColor = '#fc0';
-                ctx.shadowBlur = 2 + glowPhase * 4;
-                ctx.fillText(bucksValue.toString(), contentRight, cursorY);
-                ctx.shadowBlur = 0;
-            } else {
-                ctx.fillText('0', contentRight, cursorY);
-            }
-            cursorY += 14;
         }
     }
 
-    // J. Divider before bio/footer
-    if (elapsed >= st.timings.bucksEnd) {
-        cursorY += 2;
-        ctx.strokeStyle = 'rgba(0, 255, 255, 0.15)';
+    // Divider (points -> credits)
+    if (elapsed >= st.timings.targetsEnd) {
+        ctx.strokeStyle = 'rgba(0, 255, 255, 0.2)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(panelX + 2, cursorY);
+        ctx.lineTo(panelX + panelW - 2, cursorY);
+        ctx.stroke();
+        cursorY += 1 + sectionGap / 2;
+    }
+
+    // ─── CREDITS (UFO Bucks) ───
+    if (st.bucksStarted) {
+        ctx.font = 'bold 14px monospace';
+        ctx.fillStyle = 'rgba(255, 153, 0, 0.8)';
+        ctx.textAlign = 'left';
+        ctx.fillText('CREDITS', contentLeft, cursorY + 12);
+        cursorY += 14 + 16;
+
+        // BASE CREDITS row
+        ctx.font = '14px monospace';
+        ctx.fillStyle = '#aaa';
+        ctx.textAlign = 'left';
+        ctx.fillText('BASE CREDITS', contentLeft, cursorY);
+        ctx.textAlign = 'right';
+        ctx.font = '16px monospace';
+        ctx.fillStyle = '#f90';
+        ctx.fillText(waveSummary.baseUfoBucks.toString(), contentRight, cursorY);
+        cursorY += 14;
+
+        // BONUS CREDITS row
+        ctx.font = '14px monospace';
+        ctx.fillStyle = '#aaa';
+        ctx.textAlign = 'left';
+        ctx.fillText('BONUS CREDITS', contentLeft, cursorY);
+        ctx.textAlign = 'right';
+        ctx.font = '16px monospace';
+        ctx.fillStyle = '#0f0';
+        ctx.fillText('+' + waveSummary.bonusUfoBucks.toString(), contentRight, cursorY);
+        cursorY += 10;
+
+        // Thin half-width divider
+        ctx.strokeStyle = 'rgba(255, 153, 0, 0.2)';
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(contentLeft, cursorY);
-        ctx.lineTo(contentRight, cursorY);
+        ctx.lineTo(contentLeft + contentWidth * 0.5, cursorY);
         ctx.stroke();
-        cursorY += 8;
+        cursorY += 1 + 12;
+
+        // TOTAL CREDITS with diamond + count-up + pop
+        const bucksValue = st.bucksStarted ? st.bucksCount.current : 0;
+        renderNGEIndicator(contentLeft, cursorY - 3, 'diamond', '#f90', 'steady', { rate: 99999 });
+        ctx.font = 'bold 14px monospace';
+        ctx.fillStyle = '#f90';
+        ctx.textAlign = 'left';
+        ctx.fillText('TOTAL CREDITS', contentLeft + 12, cursorY);
+        ctx.textAlign = 'right';
+        ctx.font = 'bold 22px monospace';
+
+        if (st.bucksFinished && st.bucksFinishTime >= 0) {
+            const bPopAge = elapsed - st.bucksFinishTime;
+            const bPopScale = bPopAge < 0.2 ? 1 + 0.12 * Math.sin(Math.min(1, bPopAge / 0.2) * Math.PI) : 1;
+            const bPopGlow = bPopAge < 0.3 ? (1 - bPopAge / 0.3) : 0;
+            ctx.save();
+            ctx.translate(contentRight, cursorY);
+            ctx.scale(bPopScale, bPopScale);
+            ctx.shadowColor = 'rgba(255, 153, 0, ' + bPopGlow + ')';
+            ctx.shadowBlur = 15;
+            ctx.fillStyle = '#f90';
+            ctx.fillText(bucksValue.toString(), 0, 0);
+            ctx.restore();
+            ctx.shadowBlur = 0;
+        } else if (st.bucksStarted && !st.bucksFinished) {
+            const glowPhase = Math.sin(elapsed * Math.PI * 8) * 0.5 + 0.5;
+            ctx.shadowColor = '#f90';
+            ctx.shadowBlur = 2 + glowPhase * 4;
+            ctx.fillStyle = '#f90';
+            ctx.fillText(bucksValue.toString(), contentRight, cursorY);
+            ctx.shadowBlur = 0;
+        } else {
+            ctx.fillStyle = '#f90';
+            ctx.fillText('0', contentRight, cursorY);
+        }
+        cursorY += 22 + 8;
+
+        // Divider
+        ctx.strokeStyle = 'rgba(0, 255, 255, 0.2)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(panelX + 2, cursorY);
+        ctx.lineTo(panelX + panelW - 2, cursorY);
+        ctx.stroke();
+        cursorY += 1 + sectionGap / 2;
     }
 
-    // K. Section D: BIO.STATUS (conditional)
-    if (elapsed >= st.timings.bioEnd && (waveSummary.droneHarvests > 0 || waveSummary.bioMatterEarned > 0 || waveSummary.lostDeliveries > 0)) {
+    // ─── BIO-MATTER ─── (conditional)
+    if (elapsed >= st.timings.bioEnd && hasBio) {
         const bioAge = Math.max(0, elapsed - st.timings.bioEnd);
         const bioAlpha = Math.min(1, bioAge / 0.25);
         ctx.save();
         ctx.globalAlpha = bioAlpha;
 
-        // Section label
-        ctx.font = 'bold 11px monospace';
-        ctx.fillStyle = 'rgba(0, 255, 0, 0.6)';
-        ctx.textAlign = 'left';
-        ctx.fillText('BIO.STATUS', contentLeft, cursorY);
-        cursorY += 16;
+        // Tinted background
+        const bioBandTop = cursorY - 4;
+        let bioBandH = 14 + 16;
+        if (waveSummary.droneHarvests > 0) bioBandH += 18;
+        if (waveSummary.lostDeliveries > 0) bioBandH += 18;
+        if (waveSummary.bioMatterEarned > 0) bioBandH += 22;
+        bioBandH += 8;
+        ctx.fillStyle = 'rgba(0, 255, 0, 0.03)';
+        ctx.fillRect(panelX + 2, bioBandTop, panelW - 4, bioBandH);
 
-        ctx.font = '12px monospace';
-        // BM.DELIVERED
+        // Section header
+        ctx.font = 'bold 14px monospace';
+        ctx.fillStyle = 'rgba(0, 255, 0, 0.8)';
+        ctx.textAlign = 'left';
+        ctx.fillText('BIO-MATTER', contentLeft, cursorY + 12);
+        cursorY += 14 + 16;
+
+        // BIOMTR DELIVERED
         if (waveSummary.droneHarvests > 0) {
             renderNGEIndicator(contentLeft, cursorY - 3, 'diamond', '#0f0', 'steady', { rate: 99999 });
+            ctx.font = '14px monospace';
             ctx.fillStyle = '#aaa';
             ctx.textAlign = 'left';
-            ctx.fillText('BM.DELIVERED', contentLeft + 10, cursorY);
+            ctx.fillText('BIOMTR DELIVERED', contentLeft + 12, cursorY);
             ctx.textAlign = 'right';
+            ctx.font = 'bold 18px monospace';
             ctx.fillStyle = '#0f0';
             ctx.fillText(waveSummary.droneHarvests.toString(), contentRight, cursorY);
-            cursorY += 12;
+            cursorY += 18;
         }
 
-        // BM.LOST
+        // BIOMTR LOST
         if (waveSummary.lostDeliveries > 0) {
             renderNGEIndicator(contentLeft, cursorY - 3, 'diamond', '#f44', 'steady', { rate: 99999 });
+            ctx.font = '14px monospace';
             ctx.fillStyle = '#aaa';
             ctx.textAlign = 'left';
-            ctx.fillText('BM.LOST', contentLeft + 10, cursorY);
+            ctx.fillText('BIOMTR LOST', contentLeft + 12, cursorY);
             ctx.textAlign = 'right';
+            ctx.font = 'bold 18px monospace';
             ctx.fillStyle = '#f44';
             ctx.fillText(waveSummary.lostDeliveries.toString(), contentRight, cursorY);
-            cursorY += 12;
+            cursorY += 18;
         }
 
-        // BM.EARNED
+        // BIOMTR EARNED
         if (waveSummary.bioMatterEarned > 0) {
             renderNGEIndicator(contentLeft, cursorY - 3, 'diamond', '#0f0', 'steady', { rate: 99999 });
             if (bioAge < 0.5) {
                 ctx.shadowColor = '#0f0';
                 ctx.shadowBlur = 4 * (1 - bioAge / 0.5);
             }
-            ctx.font = 'bold 12px monospace';
+            ctx.font = 'bold 14px monospace';
             ctx.fillStyle = '#0f0';
             ctx.textAlign = 'left';
-            ctx.fillText('BM.EARNED', contentLeft + 10, cursorY);
+            ctx.fillText('BIOMTR EARNED', contentLeft + 12, cursorY);
             ctx.textAlign = 'right';
+            ctx.font = 'bold 18px monospace';
             ctx.fillText('+' + waveSummary.bioMatterEarned, contentRight, cursorY);
             ctx.shadowBlur = 0;
-            cursorY += 12;
+            cursorY += 22;
         }
 
         ctx.restore();
+        cursorY += 8;
 
-        // L. Footer divider
-        cursorY += 2;
-        ctx.strokeStyle = 'rgba(0, 255, 255, 0.15)';
+        // Divider
+        ctx.strokeStyle = 'rgba(0, 255, 255, 0.2)';
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.moveTo(contentLeft, cursorY);
-        ctx.lineTo(contentRight, cursorY);
+        ctx.moveTo(panelX + 2, cursorY);
+        ctx.lineTo(panelX + panelW - 2, cursorY);
         ctx.stroke();
-        cursorY += 8;
+        cursorY += 1 + sectionGap / 2;
     }
 
-    // M. CUMU.SCORE
+    // ─── TOTAL SCORE ───
     if (elapsed >= st.timings.totalsEnd) {
         const scoreAge = Math.max(0, elapsed - st.timings.totalsEnd);
         const scoreAlpha = Math.min(1, scoreAge / 0.25);
@@ -23266,13 +23309,13 @@ function renderWaveSummary() {
         ctx.globalAlpha = scoreAlpha;
 
         renderNGEIndicator(contentLeft, cursorY - 3, 'diamond', '#0ff', 'steady', { rate: 99999 });
-        ctx.font = 'bold 12px monospace';
+        ctx.font = 'bold 14px monospace';
         ctx.fillStyle = '#aaa';
         ctx.textAlign = 'left';
-        ctx.fillText('CUMU.SCORE', contentLeft + 10, cursorY);
+        ctx.fillText('TOTAL SCORE', contentLeft + 12, cursorY);
 
         ctx.textAlign = 'right';
-        ctx.font = 'bold 18px monospace';
+        ctx.font = 'bold 24px monospace';
         if (scoreAge < 0.4) {
             ctx.shadowColor = 'rgba(255, 255, 255, ' + (0.4 * (1 - scoreAge / 0.4)) + ')';
             ctx.shadowBlur = 12;
@@ -23282,34 +23325,80 @@ function renderWaveSummary() {
         ctx.shadowBlur = 0;
 
         ctx.restore();
+        cursorY += 24 + 12;
+
+        // Divider before countdown
+        ctx.strokeStyle = 'rgba(0, 255, 255, 0.2)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(panelX + 2, cursorY);
+        ctx.lineTo(panelX + panelW - 2, cursorY);
+        ctx.stroke();
+        cursorY += 1 + sectionGap / 2;
     }
 
-    // N. Countdown (inside panel, bottom-right)
+    // ─── COUNTDOWN ─── (full-width band with escalating pulse)
     if (st.complete) {
         const remaining = Math.max(0, Math.ceil(WAVE_SUMMARY_TIMING.autoContinue - st.postCompleteTimer));
-        const pulse = 0.4 + 0.4 * Math.sin(st.postCompleteTimer * Math.PI * 4);
+
+        // Escalating pulse frequency
+        let pulseHz, basePulseAlpha, pulseRange;
+        if (remaining >= 4) { pulseHz = 1; basePulseAlpha = 0.02; pulseRange = 0.04; }
+        else if (remaining >= 3) { pulseHz = 2; basePulseAlpha = 0.03; pulseRange = 0.05; }
+        else if (remaining >= 2) { pulseHz = 4; basePulseAlpha = 0.04; pulseRange = 0.06; }
+        else if (remaining >= 1) { pulseHz = 8; basePulseAlpha = 0.06; pulseRange = 0.09; }
+        else { pulseHz = 16; basePulseAlpha = 0.15; pulseRange = 0.10; }
+
+        const pulse = Math.sin(st.postCompleteTimer * Math.PI * 2 * pulseHz) * 0.5 + 0.5;
+        const bandTop = cursorY;
+        const bandH = 40;
+
+        // Pulsing background band
+        const bgAlpha = basePulseAlpha + pulseRange * pulse;
+        if (remaining <= 0) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+        } else if (remaining <= 1) {
+            const cyclePhase = (st.postCompleteTimer * 8) % 1;
+            const r = Math.round(cyclePhase < 0.5 ? 255 * (1 - cyclePhase * 2) : 0);
+            ctx.fillStyle = `rgba(${r}, 255, 255, ${bgAlpha})`;
+        } else {
+            ctx.fillStyle = `rgba(0, 255, 255, ${bgAlpha})`;
+        }
+        ctx.fillRect(panelX + 2, bandTop, panelW - 4, bandH);
+
+        // Countdown text
+        ctx.save();
+        const countTextY = bandTop + bandH / 2 + 5;
+        ctx.font = 'bold 16px monospace';
+        ctx.textAlign = 'center';
+
+        if (remaining <= 0) {
+            ctx.shadowColor = '#fff';
+            ctx.shadowBlur = 20;
+            ctx.fillStyle = '#fff';
+        } else if (remaining <= 1) {
+            const cyclePhase = (st.postCompleteTimer * 8) % 1;
+            const textPulse = Math.sin(cyclePhase * Math.PI * 2) * 0.5 + 0.5;
+            const r = Math.round(255 * textPulse);
+            ctx.fillStyle = `rgb(${r}, 255, 255)`;
+            ctx.shadowColor = `rgb(${r}, 255, 255)`;
+            ctx.shadowBlur = 4 + textPulse * 8;
+        } else {
+            const textAlpha = 0.5 + pulse * 0.5;
+            ctx.fillStyle = `rgba(0, 255, 255, ${textAlpha})`;
+        }
+
+        // Scale bounce on second change
         const secondFrac = st.postCompleteTimer % 1;
         const countScale = secondFrac < 0.1 ? 1 + 0.06 * (1 - secondFrac / 0.1) : 1;
-        const flashAlpha = secondFrac < 0.05 ? 1 - secondFrac / 0.05 : 0;
-
-        ctx.save();
-        const countX = contentRight;
-        const countY = panelY + panelH - 12;
-        ctx.translate(countX, countY);
+        ctx.translate(centerX, countTextY);
         ctx.scale(countScale, countScale);
-        ctx.font = 'bold 12px monospace';
-        ctx.textAlign = 'right';
-        if (flashAlpha > 0) {
-            ctx.shadowColor = 'rgba(255, 255, 255, ' + flashAlpha + ')';
-            ctx.shadowBlur = 6;
-        }
-        ctx.fillStyle = 'rgba(0, 255, 255, ' + pulse + ')';
-        ctx.fillText('>> SHOP.INTERFACE IN ' + remaining + '...', 0, 0);
+        ctx.fillText('>>> ENTERING SHOP IN ' + remaining + ' <<<', 0, 0);
         ctx.shadowBlur = 0;
         ctx.restore();
     }
 
-    // O. CRT Scanlines
+    // CRT Scanlines
     const scanOffset = (hudAnimState && hudAnimState.scanlineOffset) ? hudAnimState.scanlineOffset : 0;
     ctx.fillStyle = 'rgba(0, 255, 255, 0.06)';
     for (let sy = scanOffset % 3; sy < canvas.height; sy += 3) {
