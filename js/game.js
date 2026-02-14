@@ -21685,44 +21685,40 @@ function renderSystemCheckLine(x, y, width, label, earned, detail, age, opts = {
     ctx.globalAlpha = alpha;
     ctx.translate(-slideX, 0);
 
-    // Diamond indicator
-    const diamondColor = earned ? '#0f0' : '#445';
-    renderNGEIndicator(x, y - 3, 'diamond', diamondColor, 'steady', { rate: 99999 });
+    const indent = 20;
+    const rightMargin = x + width;
 
-    // >> prefix
-    ctx.font = '11px monospace';
+    // Label (indented for hierarchy under BONUS POINTS)
+    ctx.font = '12px monospace';
     ctx.textAlign = 'left';
-    ctx.fillStyle = 'rgba(0, 255, 255, 0.5)';
-    ctx.fillText('>>', x + 8, y);
+    ctx.fillStyle = earned ? '#cfc' : '#556';
+    ctx.fillText(label, x + indent, y);
 
-    // Label
-    ctx.fillStyle = earned ? '#0f0' : '#445';
-    ctx.fillText(label, x + 26, y);
+    // Detail text in middle zone
+    const labelEndX = x + indent + ctx.measureText(label).width + 8;
+    if (detail) {
+        ctx.font = '10px monospace';
+        ctx.fillStyle = '#667';
+        ctx.fillText(detail, labelEndX, y);
+    }
 
-    // Stamp
-    const stamp = earned ? '[OK]' : '[SKIP]';
-    const stampWidth = ctx.measureText(stamp).width;
-    const stampX = x + width - stampWidth - (detail ? ctx.measureText(`(${detail})`).width + 8 : 0);
+    // Dot leader from detail end to value
+    const detailEndX = detail ? labelEndX + ctx.measureText(detail).width + 6 : labelEndX;
+    const valueX = rightMargin;
+    const valueText = earned ? '+25%' : '\u2014';
+    ctx.font = 'bold 12px monospace';
+    const valueWidth = ctx.measureText(valueText).width;
+    renderDotLeader(detailEndX, valueX - valueWidth - 6, y);
 
-    // Dot leader between label end and stamp
-    const labelEndX = x + 26 + ctx.measureText(label).width + 4;
-    renderDotLeader(labelEndX, stampX - 4, y);
-
-    // Green glow on earned stamp
+    // Value on far right
+    ctx.textAlign = 'right';
     if (earned && age < 0.5) {
         ctx.shadowColor = '#0f0';
         ctx.shadowBlur = 4 * (1 - age / 0.5);
     }
     ctx.fillStyle = earned ? '#0f0' : '#445';
-    ctx.fillText(stamp, stampX, y);
+    ctx.fillText(valueText, rightMargin, y);
     ctx.shadowBlur = 0;
-
-    // Detail text
-    if (detail) {
-        ctx.font = '9px monospace';
-        ctx.fillStyle = '#666';
-        ctx.fillText(`(${detail})`, stampX + stampWidth + 4, y);
-    }
 
     ctx.restore();
 }
@@ -22377,9 +22373,6 @@ function updateWaveSummary(dt) {
     }
     waveSummaryState.labelTypewriterChars = Math.min(13, Math.floor(waveSummaryState.elapsed * 25));
     waveSummaryState.hexDecodeProgress = Math.min(1, waveSummaryState.elapsed / 0.40);
-    if (waveSummaryState.elapsed >= 0.35) {
-        waveSummaryState.typewriterChars = 0;
-    }
 
     // Update commander typewriter during wave summary
     updateCommanderTypewriter(dt);
@@ -22590,9 +22583,9 @@ function renderTargetRow(counts, totals, startX, y, iconSize, spacing, revealCou
         }
 
         // Type abbreviation label
-        ctx.font = '10px monospace';
-        ctx.fillStyle = '#445';
-        ctx.fillText(TYPE_ABBR[i], x, countY + 13);
+        ctx.font = '11px monospace';
+        ctx.fillStyle = '#99b';
+        ctx.fillText(TYPE_ABBR[i], x, countY + 15);
 
         ctx.restore();
     }
@@ -22904,21 +22897,21 @@ function renderWaveSummary() {
     // Panel width
     const panelW = Math.min(720, canvas.width * 0.85);
 
-    // === Dynamic panel height calculation (data-driven, not animation-driven) ===
+    // === Dynamic panel height calculation — must match cursorY increments exactly ===
     const hasBio = waveSummary.droneHarvests > 0 || waveSummary.bioMatterEarned > 0 || waveSummary.lostDeliveries > 0;
     let measuredH = padV;
-    // Header
+    // Header: title(16) + after-title(24) + divider(1 + gap/2)
     measuredH += 16 + 24 + 1 + sectionGap / 2;
-    // Targets
+    // Targets: header(18) + icons+counts(iconSize+24+8) + divider(1 + gap/2)
     measuredH += 18 + iconSize + 24 + 8 + 1 + sectionGap / 2;
-    // Points
-    measuredH += 14 + 16 + 22 + 8 + 4 + 12;
-    if (waveSummary.bonusPoints > 0) measuredH += 22;
+    // Points: header(14+16) + value-gap(14) + bar-gap(16)
+    measuredH += 14 + 16 + 14 + 16;
+    if (waveSummary.bonusPoints > 0) measuredH += 20;
     measuredH += waveSummary.bonuses.length * 20;
     if (waveSummary.bonuses.filter(b => b.earned).length > 0) measuredH += 18;
     measuredH += 1 + sectionGap / 2;
-    // Credits
-    measuredH += 14 + 16 + 14 + 14 + 10 + 1 + 12 + 22 + 8 + 1 + sectionGap / 2;
+    // UFO Bucks: header(14+16) + base(16) + bonus(12) + dashed-div(12) + total(22+8) + divider(1 + gap/2)
+    measuredH += 14 + 16 + 16 + 12 + 12 + 22 + 8 + 1 + sectionGap / 2;
     // Bio-matter (conditional)
     if (hasBio) {
         measuredH += 14 + 16;
@@ -22927,11 +22920,10 @@ function renderWaveSummary() {
         if (waveSummary.bioMatterEarned > 0) measuredH += 22;
         measuredH += 8 + 1 + sectionGap / 2;
     }
-    // Total score
-    measuredH += 24 + 12 + 1 + sectionGap / 2;
-    // Countdown
-    measuredH += 40;
-    measuredH += bottomPad;
+    // Total score: scoreRowH(32) + gap(12) + divider(1)
+    measuredH += 32 + 12 + 1;
+    // Countdown: minimum band height + 2px panel border clearance
+    measuredH += 38;
 
     const panelH = Math.min(measuredH, canvas.height * 0.92);
     const panelX = (canvas.width - panelW) / 2;
@@ -22950,9 +22942,6 @@ function renderWaveSummary() {
     } else {
         renderNGEPanel(panelX, panelY, panelW, panelH, { color: '#0ff', alpha: 0.88, cutCorners: ['tl', 'br'] });
     }
-
-    // Corner brackets
-    renderCornerBrackets(panelX, panelY, panelW, panelH, 8, 20, st.bracketAlpha);
 
     // WAVE ANALYSIS label (14px, typewriter)
     if (st.labelTypewriterChars > 0) {
@@ -22999,10 +22988,11 @@ function renderWaveSummary() {
     }
     cursorY += 18;
 
-    // Tinted background for targets
-    const targetBandH = iconSize + 24 + 8;
+    // Tinted background for targets — stretches from header through icons to divider
+    const targetBandTop = cursorY - 22;
+    const targetBandH = 4 + iconSize + 28 + 12;
     ctx.fillStyle = 'rgba(0, 255, 255, 0.04)';
-    ctx.fillRect(panelX + 2, cursorY - 4, panelW - 4, targetBandH);
+    ctx.fillRect(panelX + 2, targetBandTop, panelW - 4, targetBandH);
 
     // Target row
     const iconSpacing = contentWidth / TARGET_TYPES.length;
@@ -23067,13 +23057,13 @@ function renderWaveSummary() {
             ctx.fillStyle = '#fc0';
             ctx.fillText('0', contentRight, cursorY);
         }
-        cursorY += 8;
+        cursorY += 14;
 
         // Segmented bar
         const barMax = Math.max(waveSummary.wavePoints, 5000);
         const barPercent = waveSummary.wavePoints > 0 ? pointsValue / barMax : 0;
         renderNGEBar(contentLeft, cursorY, contentWidth, 4, barPercent, '#fc0', { segments: 10 });
-        cursorY += 12;
+        cursorY += 16;
 
         // Bonus points row
         if (waveSummary.bonusPoints > 0 && st.pointsFinished) {
@@ -23082,7 +23072,7 @@ function renderWaveSummary() {
             ctx.save();
             ctx.globalAlpha = bonusPtsAlpha;
             ctx.font = '14px monospace';
-            ctx.fillStyle = '#666';
+            ctx.fillStyle = '#888';
             ctx.textAlign = 'left';
             ctx.fillText('BONUS POINTS', contentLeft, cursorY);
             ctx.textAlign = 'right';
@@ -23090,7 +23080,7 @@ function renderWaveSummary() {
             ctx.fillStyle = '#0f0';
             ctx.fillText('+' + waveSummary.bonusPoints.toLocaleString(), contentRight, cursorY);
             ctx.restore();
-            cursorY += 22;
+            cursorY += 20;
         }
 
         // Bonus system check lines
@@ -23133,52 +23123,56 @@ function renderWaveSummary() {
         cursorY += 1 + sectionGap / 2;
     }
 
-    // ─── CREDITS (UFO Bucks) ───
+    // ─── UFO BUCKS ───
     if (st.bucksStarted) {
         ctx.font = 'bold 14px monospace';
         ctx.fillStyle = 'rgba(255, 153, 0, 0.8)';
         ctx.textAlign = 'left';
-        ctx.fillText('CREDITS', contentLeft, cursorY + 12);
+        ctx.fillText('UFO BUCKS', contentLeft, cursorY + 12);
         cursorY += 14 + 16;
 
-        // BASE CREDITS row
+        // BASE row
         ctx.font = '14px monospace';
         ctx.fillStyle = '#aaa';
         ctx.textAlign = 'left';
-        ctx.fillText('BASE CREDITS', contentLeft, cursorY);
+        ctx.fillText('BASE', contentLeft + 20, cursorY);
         ctx.textAlign = 'right';
         ctx.font = '16px monospace';
         ctx.fillStyle = '#f90';
         ctx.fillText(waveSummary.baseUfoBucks.toString(), contentRight, cursorY);
-        cursorY += 14;
+        cursorY += 16;
 
-        // BONUS CREDITS row
+        // BONUS row
         ctx.font = '14px monospace';
         ctx.fillStyle = '#aaa';
         ctx.textAlign = 'left';
-        ctx.fillText('BONUS CREDITS', contentLeft, cursorY);
+        ctx.fillText('BONUS', contentLeft + 20, cursorY);
         ctx.textAlign = 'right';
         ctx.font = '16px monospace';
         ctx.fillStyle = '#0f0';
         ctx.fillText('+' + waveSummary.bonusUfoBucks.toString(), contentRight, cursorY);
-        cursorY += 10;
+        cursorY += 12;
 
-        // Thin half-width divider
-        ctx.strokeStyle = 'rgba(255, 153, 0, 0.2)';
+        // Full-width dashed divider
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255, 153, 0, 0.15)';
         ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
         ctx.beginPath();
         ctx.moveTo(contentLeft, cursorY);
-        ctx.lineTo(contentLeft + contentWidth * 0.5, cursorY);
+        ctx.lineTo(contentRight, cursorY);
         ctx.stroke();
-        cursorY += 1 + 12;
+        ctx.setLineDash([]);
+        ctx.restore();
+        cursorY += 12;
 
-        // TOTAL CREDITS with diamond + count-up + pop
+        // TOTAL UFO BUCKS with diamond + count-up + pop
         const bucksValue = st.bucksStarted ? st.bucksCount.current : 0;
         renderNGEIndicator(contentLeft, cursorY - 3, 'diamond', '#f90', 'steady', { rate: 99999 });
         ctx.font = 'bold 14px monospace';
         ctx.fillStyle = '#f90';
         ctx.textAlign = 'left';
-        ctx.fillText('TOTAL CREDITS', contentLeft + 12, cursorY);
+        ctx.fillText('TOTAL UFO BUCKS', contentLeft + 12, cursorY);
         ctx.textAlign = 'right';
         ctx.font = 'bold 22px monospace';
 
@@ -23308,11 +23302,15 @@ function renderWaveSummary() {
         ctx.save();
         ctx.globalAlpha = scoreAlpha;
 
-        renderNGEIndicator(contentLeft, cursorY - 3, 'diamond', '#0ff', 'steady', { rate: 99999 });
+        // Total score gets its own clean row with vertical centering
+        const scoreRowH = 32;
+        const scoreBaseY = cursorY + scoreRowH / 2 + 4;
+
+        renderNGEIndicator(contentLeft, scoreBaseY - 3, 'diamond', '#0ff', 'steady', { rate: 99999 });
         ctx.font = 'bold 14px monospace';
         ctx.fillStyle = '#aaa';
         ctx.textAlign = 'left';
-        ctx.fillText('TOTAL SCORE', contentLeft + 12, cursorY);
+        ctx.fillText('TOTAL SCORE', contentLeft + 12, scoreBaseY);
 
         ctx.textAlign = 'right';
         ctx.font = 'bold 24px monospace';
@@ -23321,11 +23319,11 @@ function renderWaveSummary() {
             ctx.shadowBlur = 12;
         }
         ctx.fillStyle = '#fff';
-        ctx.fillText(waveSummary.cumulativeScore.toLocaleString(), contentRight, cursorY);
+        ctx.fillText(waveSummary.cumulativeScore.toLocaleString(), contentRight, scoreBaseY);
         ctx.shadowBlur = 0;
 
         ctx.restore();
-        cursorY += 24 + 12;
+        cursorY += scoreRowH + 12;
 
         // Divider before countdown
         ctx.strokeStyle = 'rgba(0, 255, 255, 0.2)';
@@ -23334,10 +23332,10 @@ function renderWaveSummary() {
         ctx.moveTo(panelX + 2, cursorY);
         ctx.lineTo(panelX + panelW - 2, cursorY);
         ctx.stroke();
-        cursorY += 1 + sectionGap / 2;
+        cursorY += 1;
     }
 
-    // ─── COUNTDOWN ─── (full-width band with escalating pulse)
+    // ─── COUNTDOWN ─── (fills remaining space to panel bottom)
     if (st.complete) {
         const remaining = Math.max(0, Math.ceil(WAVE_SUMMARY_TIMING.autoContinue - st.postCompleteTimer));
 
@@ -23351,9 +23349,10 @@ function renderWaveSummary() {
 
         const pulse = Math.sin(st.postCompleteTimer * Math.PI * 2 * pulseHz) * 0.5 + 0.5;
         const bandTop = cursorY;
-        const bandH = 40;
+        const bandBottom = panelY + panelH - 2;
+        const bandH = Math.max(36, bandBottom - bandTop);
 
-        // Pulsing background band
+        // Pulsing background band — stretches to panel bottom
         const bgAlpha = basePulseAlpha + pulseRange * pulse;
         if (remaining <= 0) {
             ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
@@ -23366,7 +23365,7 @@ function renderWaveSummary() {
         }
         ctx.fillRect(panelX + 2, bandTop, panelW - 4, bandH);
 
-        // Countdown text
+        // Countdown text — vertically centered in the band
         ctx.save();
         const countTextY = bandTop + bandH / 2 + 5;
         ctx.font = 'bold 16px monospace';
@@ -23393,7 +23392,7 @@ function renderWaveSummary() {
         const countScale = secondFrac < 0.1 ? 1 + 0.06 * (1 - secondFrac / 0.1) : 1;
         ctx.translate(centerX, countTextY);
         ctx.scale(countScale, countScale);
-        ctx.fillText('>>> ENTERING SHOP IN ' + remaining + ' <<<', 0, 0);
+        ctx.fillText('CONTINUING IN ' + remaining, 0, 0);
         ctx.shadowBlur = 0;
         ctx.restore();
     }
