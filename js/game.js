@@ -2243,6 +2243,63 @@ const SFX = {
         harm.start(t); harm.stop(t + 0.165);
     },
 
+    // Boot: Ascending crystalline 3-note chime for logo splash
+    logoChime: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const notes = [523, 659, 784]; // C5, E5, G5
+        for (let i = 0; i < 3; i++) {
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            osc.type = 'sine';
+            osc.frequency.value = notes[i];
+            const start = t + i * 0.12;
+            g.gain.setValueAtTime(0.001, start);
+            g.gain.linearRampToValueAtTime(0.08, start + 0.02);
+            g.gain.exponentialRampToValueAtTime(0.001, start + 0.4);
+            osc.connect(g);
+            g.connect(audioCtx.destination);
+            osc.start(start);
+            osc.stop(start + 0.4);
+            // Soft harmonic overtone for shimmer
+            const harm = audioCtx.createOscillator();
+            const hg = audioCtx.createGain();
+            harm.type = 'sine';
+            harm.frequency.value = notes[i] * 2;
+            hg.gain.setValueAtTime(0.001, start + 0.01);
+            hg.gain.linearRampToValueAtTime(0.025, start + 0.03);
+            hg.gain.exponentialRampToValueAtTime(0.001, start + 0.35);
+            harm.connect(hg);
+            hg.connect(audioCtx.destination);
+            harm.start(start + 0.01);
+            harm.stop(start + 0.35);
+        }
+    },
+
+    // Boot: Sharp white noise snap for logo flash
+    logoFlashNoise: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const bufLen = Math.floor(audioCtx.sampleRate * 0.15);
+        const buf = audioCtx.createBuffer(1, bufLen, audioCtx.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < bufLen; i++) data[i] = (Math.random() * 2 - 1);
+        const src = audioCtx.createBufferSource();
+        src.buffer = buf;
+        const bp = audioCtx.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.frequency.value = 2000;
+        bp.Q.value = 1.0;
+        const g = audioCtx.createGain();
+        g.gain.setValueAtTime(0.15, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+        src.connect(bp);
+        bp.connect(g);
+        g.connect(audioCtx.destination);
+        src.start(t);
+        src.stop(t + 0.15);
+    },
+
     // Boot: Post-boot "online" confirmation
     alienQuantumOnline: () => {
         if (!audioCtx) return;
@@ -4038,7 +4095,8 @@ const imageSources = {
     sheep: 'assets/sheep.png',
     cat: 'assets/cat.png',
     dog: 'assets/dog.png',
-    tank: 'assets/tanks.png'
+    tank: 'assets/tanks.png',
+    quantumOsLogo: 'assets/alien-quantum-os-logo.png'
 };
 
 let imagesLoaded = 0;
@@ -13811,7 +13869,7 @@ let techTreeAnimState = {
 
 // Enhanced boot sequence
 let preBootState = {
-    phase: 'inactive',       // 'inactive'|'crt'|'logo'|'dissolve'|'trace'|'panel_boot'|'post'
+    phase: 'inactive',       // 'inactive'|'crt'|'logo'|'dissolve'|'logo_splash'|'logo_shader'|'logo_flash'|'trace'|'panel_boot'|'post'
     timer: 0,
     crtProgress: 0,
     logoAlpha: 0,
@@ -17490,6 +17548,11 @@ function initHUDBoot() {
     preBootState._chimeSoundPlayed = false;
     preBootState._onlineSoundPlayed = false;
     preBootState._cornerSoundsPlayed = [false, false, false, false];
+    preBootState._logoChimePlayed = false;
+    preBootState._logoFlashNoisePlayed = false;
+    preBootState._logoSplashAlpha = 0;
+    preBootState._logoShaderProgress = 0;
+    preBootState._logoFlashAlpha = 0;
     preBootState._systemStatusFrame = { trace: 0, checkLines: [], checkTimer: 0, barProgress: 0, nominalTyped: 0, diamondPhase: 0, holdTimer: 0, fadeAlpha: 1 };
     preBootState._declaration = { timer: 0, hexSeeds: [], scanY: -1, accentLen: 0, frameTrace: 0, resolved: 0, resolved2: 0, holdTimer: 0, fadeAlpha: 1 };
 
