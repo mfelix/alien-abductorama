@@ -19,6 +19,8 @@ dist/
 .agent/
 .claude/
 .worktrees/
+.auto-claude/
+.quibble/
 
 # Processed sounds (generated at build time)
 assets/sounds/processed/

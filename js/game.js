@@ -2276,6 +2276,134 @@ const SFX = {
         }
     },
 
+    // Boot: 14.4k modem handshake — continuous V.32bis negotiation screech
+    modemGlitch: () => {
+        if (!audioCtx) return;
+        const t = audioCtx.currentTime;
+        const dest = audioCtx.destination;
+
+        // Phase 1: CED answer tone — 2100Hz held tone (the first sound you hear)
+        const ced = audioCtx.createOscillator();
+        const cedG = audioCtx.createGain();
+        ced.type = 'sine';
+        ced.frequency.value = 2100;
+        cedG.gain.setValueAtTime(0.001, t);
+        cedG.gain.linearRampToValueAtTime(0.07, t + 0.02);
+        cedG.gain.setValueAtTime(0.07, t + 0.2);
+        cedG.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+        ced.connect(cedG);
+        cedG.connect(dest);
+        ced.start(t);
+        ced.stop(t + 0.35);
+
+        // Phase 2: V.32bis training — 1800Hz carrier with phase-scramble FM
+        // This is the core "screeeee" sound: a sustained carrier rapidly
+        // frequency-modulated to simulate QAM symbol training
+        const train = audioCtx.createOscillator();
+        const trainG = audioCtx.createGain();
+        const trainLfo = audioCtx.createOscillator();
+        const trainLfoG = audioCtx.createGain();
+        train.type = 'sine';
+        train.frequency.value = 1800;
+        trainLfo.type = 'sine';
+        trainLfo.frequency.setValueAtTime(25, t + 0.2);
+        trainLfo.frequency.linearRampToValueAtTime(45, t + 0.55);
+        trainLfo.frequency.linearRampToValueAtTime(35, t + 0.95);
+        trainLfoG.gain.setValueAtTime(200, t + 0.2);
+        trainLfoG.gain.linearRampToValueAtTime(500, t + 0.55);
+        trainLfoG.gain.linearRampToValueAtTime(300, t + 0.95);
+        trainLfo.connect(trainLfoG);
+        trainLfoG.connect(train.frequency);
+        trainG.gain.setValueAtTime(0.001, t + 0.2);
+        trainG.gain.linearRampToValueAtTime(0.06, t + 0.26);
+        trainG.gain.setValueAtTime(0.06, t + 0.8);
+        trainG.gain.exponentialRampToValueAtTime(0.001, t + 1.0);
+        train.connect(trainG);
+        trainG.connect(dest);
+        train.start(t + 0.2);
+        train.stop(t + 1.0);
+        trainLfo.start(t + 0.2);
+        trainLfo.stop(t + 1.0);
+
+        // Phase 2b: Second carrier at 1200Hz — modems use two carriers
+        // that beat against each other during training
+        const train2 = audioCtx.createOscillator();
+        const train2G = audioCtx.createGain();
+        const train2Lfo = audioCtx.createOscillator();
+        const train2LfoG = audioCtx.createGain();
+        train2.type = 'sine';
+        train2.frequency.value = 1200;
+        train2Lfo.type = 'sine';
+        train2Lfo.frequency.setValueAtTime(33, t + 0.28);
+        train2Lfo.frequency.linearRampToValueAtTime(50, t + 0.65);
+        train2Lfo.frequency.linearRampToValueAtTime(40, t + 0.95);
+        train2LfoG.gain.setValueAtTime(150, t + 0.28);
+        train2LfoG.gain.linearRampToValueAtTime(350, t + 0.6);
+        train2LfoG.gain.linearRampToValueAtTime(200, t + 0.95);
+        train2Lfo.connect(train2LfoG);
+        train2LfoG.connect(train2.frequency);
+        train2G.gain.setValueAtTime(0.001, t + 0.28);
+        train2G.gain.linearRampToValueAtTime(0.04, t + 0.34);
+        train2G.gain.setValueAtTime(0.04, t + 0.75);
+        train2G.gain.exponentialRampToValueAtTime(0.001, t + 0.95);
+        train2.connect(train2G);
+        train2G.connect(dest);
+        train2.start(t + 0.28);
+        train2.stop(t + 0.95);
+        train2Lfo.start(t + 0.28);
+        train2Lfo.stop(t + 0.95);
+
+        // Phase 3: Equalizer training — higher pitched warble that
+        // sweeps upward as the modem tests the line
+        const eq = audioCtx.createOscillator();
+        const eqG = audioCtx.createGain();
+        const eqLfo = audioCtx.createOscillator();
+        const eqLfoG = audioCtx.createGain();
+        eq.type = 'sine';
+        eq.frequency.setValueAtTime(2400, t + 0.4);
+        eq.frequency.linearRampToValueAtTime(2800, t + 0.65);
+        eq.frequency.linearRampToValueAtTime(2200, t + 0.95);
+        eqLfo.type = 'sine';
+        eqLfo.frequency.value = 55;
+        eqLfoG.gain.value = 250;
+        eqLfo.connect(eqLfoG);
+        eqLfoG.connect(eq.frequency);
+        eqG.gain.setValueAtTime(0.001, t + 0.4);
+        eqG.gain.linearRampToValueAtTime(0.035, t + 0.46);
+        eqG.gain.setValueAtTime(0.035, t + 0.75);
+        eqG.gain.exponentialRampToValueAtTime(0.001, t + 0.95);
+        eq.connect(eqG);
+        eqG.connect(dest);
+        eq.start(t + 0.4);
+        eq.stop(t + 0.95);
+        eqLfo.start(t + 0.4);
+        eqLfo.stop(t + 0.95);
+
+        // Phase 4: Data mode hiss — bandpass-filtered white noise
+        const bufLen = Math.floor(audioCtx.sampleRate * 1.1);
+        const buf = audioCtx.createBuffer(1, bufLen, audioCtx.sampleRate);
+        const nd = buf.getChannelData(0);
+        for (let i = 0; i < bufLen; i++) nd[i] = Math.random() * 2 - 1;
+        const noise = audioCtx.createBufferSource();
+        noise.buffer = buf;
+        const bp = audioCtx.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.frequency.setValueAtTime(1800, t);
+        bp.frequency.linearRampToValueAtTime(2400, t + 0.5);
+        bp.frequency.linearRampToValueAtTime(3000, t + 0.9);
+        bp.Q.value = 1.5;
+        const ng = audioCtx.createGain();
+        ng.gain.setValueAtTime(0.001, t + 0.12);
+        ng.gain.linearRampToValueAtTime(0.03, t + 0.25);
+        ng.gain.setValueAtTime(0.03, t + 0.85);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 1.1);
+        noise.connect(bp);
+        bp.connect(ng);
+        ng.connect(dest);
+        noise.start(t);
+        noise.stop(t + 1.1);
+    },
+
     // Boot: Sharp white noise snap for logo flash
     logoFlashNoise: () => {
         if (!audioCtx) return;
@@ -17700,6 +17828,7 @@ function initHUDBoot() {
     preBootState._cornerSoundsPlayed = [false, false, false, false];
     preBootState._logoChimePlayed = false;
     preBootState._logoFlashNoisePlayed = false;
+    preBootState._modemGlitchPlayed = false;
     preBootState._logoSplashAlpha = 0;
     preBootState._logoShaderProgress = 0;
     preBootState._logoFlashAlpha = 0;
@@ -17820,21 +17949,25 @@ function updateHUDBoot(dt) {
         }
     } else if (preBoot.phase === 'logo_splash') {
         preBoot.timer += dt;
-        // Fade in over 0.15s
-        preBoot._logoSplashAlpha = Math.min(1, preBoot.timer / 0.15);
-        // Play chime at 0.15s (after fade-in)
-        if (preBoot.timer >= 0.15 && !preBoot._logoChimePlayed) {
+        // Fade in over 0.1s
+        preBoot._logoSplashAlpha = Math.min(1, preBoot.timer / 0.1);
+        // Play chime at 0.1s (after fade-in)
+        if (preBoot.timer >= 0.1 && !preBoot._logoChimePlayed) {
             preBoot._logoChimePlayed = true;
             SFX.logoChime();
         }
-        // Hold for chime resonance, then transition at 0.6s
-        if (preBoot.timer >= 0.6) {
+        // Hold for chime resonance, then transition at 0.35s
+        if (preBoot.timer >= 0.35) {
             preBoot.phase = 'logo_shader';
             preBoot.timer = 0;
             preBoot._logoShaderProgress = 0;
         }
     } else if (preBoot.phase === 'logo_shader') {
         preBoot.timer += dt;
+        if (!preBoot._modemGlitchPlayed && preBoot.timer >= 0.25) {
+            preBoot._modemGlitchPlayed = true;
+            SFX.modemGlitch();
+        }
         preBoot._logoShaderProgress = Math.min(1, preBoot.timer / 0.5);
         if (preBoot.timer >= 0.5) {
             preBoot.phase = 'logo_flash';
@@ -17848,14 +17981,14 @@ function updateHUDBoot(dt) {
         }
     } else if (preBoot.phase === 'logo_flash') {
         preBoot.timer += dt;
-        if (preBoot.timer < 0.12) {
-            // White flash decays: 0.9 → 0 over 120ms
-            preBoot._logoFlashAlpha = 0.9 * (1 - preBoot.timer / 0.12);
+        if (preBoot.timer < 0.08) {
+            // White flash decays: 0.9 → 0 over 80ms
+            preBoot._logoFlashAlpha = 0.9 * (1 - preBoot.timer / 0.08);
         } else {
             preBoot._logoFlashAlpha = 0;
         }
-        // Hold black, then transition to trace at 0.3s
-        if (preBoot.timer >= 0.3) {
+        // Hold black, then transition to trace at 0.15s
+        if (preBoot.timer >= 0.15) {
             preBoot.phase = 'trace';
             preBoot.timer = 0;
         }
@@ -18439,31 +18572,32 @@ function renderHUDBootGlobalEffects() {
         ctx.stroke();
         ctx.shadowBlur = 0;
 
-        // Title: "ALIEN QUANTUM OS" - 32px with double glow
+        // SimCity-style cycling loading messages (replaces "ALIEN QUANTUM OS" title)
+        const bootMessages = [
+            'QUANTUM CORE INITIALIZING',
+            'RETICULATING QUANTUM SPLINES',
+            'CALIBRATING ABDUCTION BEAM ARRAY',
+            'DEFRAGMENTING SPECIMEN DATABASE',
+            'ALIGNING TRACTOR BEAM HARMONICS',
+            'INITIALIZING CROP CIRCLE PROTOCOLS'
+        ];
+        const msgIndex = Math.floor(now / 800) % bootMessages.length;
+        const msgText = bootMessages[msgIndex];
         const hueShift = Math.sin(now / 3000) * 15;
         const h = 180 + hueShift;
-        const titleColor = `hsl(${h}, 100%, 50%)`;
 
         ctx.textAlign = 'center';
-        // Wide soft glow pass
-        ctx.fillStyle = titleColor;
-        ctx.font = 'bold 32px monospace';
-        ctx.shadowColor = '#0ff';
-        ctx.shadowBlur = 16;
-        ctx.globalAlpha = pb.logoAlpha * 0.4;
-        ctx.fillText('ALIEN QUANTUM OS', centerX, centerY - 20);
-        // Tight bright glow pass
+        ctx.fillStyle = `hsl(${h}, 100%, 50%)`;
+        ctx.font = '300 24px monospace';
         ctx.globalAlpha = pb.logoAlpha;
-        ctx.shadowBlur = 6;
-        ctx.fillText('ALIEN QUANTUM OS', centerX, centerY - 20);
-        ctx.shadowBlur = 0;
+        ctx.fillText(msgText, centerX, centerY - 20);
 
-        // Version text
+        // Version + BOOTING subtitle
         ctx.fillStyle = 'rgba(0, 255, 255, 0.7)';
         ctx.font = '10px monospace';
         const vBlink = Math.floor(now / 1200) % 2 === 0;
         const vPrefix = vBlink ? 'v7.3.1' : '      ';
-        ctx.fillText(vPrefix + ' // QUANTUM ENTANGLEMENT CORE', centerX, centerY + 16);
+        ctx.fillText(vPrefix + ' // BOOTING', centerX, centerY + 6);
 
         // Loading bar (sweeping pulse)
         const barY = centerY + 38;
@@ -18482,14 +18616,6 @@ function renderHUDBootGlobalEffects() {
         grad.addColorStop(1, 'rgba(0, 255, 255, 0)');
         ctx.fillStyle = grad;
         ctx.fillRect(barX, barY, barW, 4);
-
-        // Loading label typewriter
-        const loadText = 'QUANTUM CORE INITIALIZING';
-        const charsPer = Math.floor(now / 20) % (loadText.length + 25);
-        const visibleChars = Math.min(loadText.length, charsPer);
-        ctx.fillStyle = 'rgba(0, 255, 255, 0.35)';
-        ctx.font = '7px monospace';
-        ctx.fillText(loadText.substring(0, visibleChars), centerX, barY + 14);
 
         // Initializing text (cycling dots)
         const dots = '.'.repeat(1 + Math.floor(now / 200) % 3);
@@ -18682,7 +18808,7 @@ function renderHUDBootGlobalEffects() {
 
         const img = images.quantumOsLogo;
         if (img && img.complete && img.naturalWidth > 0) {
-            const maxW = canvas.width * 0.6;
+            const maxW = canvas.width * 0.45;
             const scale = Math.min(1, maxW / img.naturalWidth);
             const drawW = img.naturalWidth * scale;
             const drawH = img.naturalHeight * scale;
@@ -18695,111 +18821,191 @@ function renderHUDBootGlobalEffects() {
             }
             ctx.drawImage(img, drawX, drawY, drawW, drawH);
 
-            // Apply Bayer dither shader during logo_shader phase
+            // Apply datamosh / pixel-sort shader during logo_shader phase
             if (pb.phase === 'logo_shader') {
                 const shaderT = pb._logoShaderProgress;
-                if (shaderT > 0 && shaderT < 1) {
-                    const regionX = 0;
-                    const regionY = 0;
-                    const regionW = canvas.width;
-                    const regionH = canvas.height;
-                    const sweepLocalX = Math.floor(shaderT * regionW);
-                    const imgData = ctx.getImageData(regionX, regionY, regionW, regionH);
+                if (shaderT > 0) {
+                    const intensity = shaderT * shaderT; // quadratic ease-in
+                    const w = canvas.width;
+                    const h = canvas.height;
+
+                    // Seeded random — pattern changes ~8 times over duration
+                    let _rs = (((Math.floor(shaderT * 8) + 1) * 2654435761) | 0) || 1;
+                    function glitchRand() {
+                        _rs ^= _rs << 13;
+                        _rs ^= _rs >> 17;
+                        _rs ^= _rs << 5;
+                        return (_rs >>> 0) / 4294967296;
+                    }
+
+                    // --- Block displacement (drawImage, GPU-fast) ---
+                    const numBlocks = Math.floor(3 + intensity * 12);
+                    for (let b = 0; b < numBlocks; b++) {
+                        const bw = Math.floor(30 + glitchRand() * 100 * (0.5 + intensity));
+                        const bh = Math.floor(8 + glitchRand() * 30 * (0.5 + intensity));
+                        const bx = Math.floor(glitchRand() * (w - bw));
+                        const by = Math.floor(glitchRand() * (h - bh));
+                        const ox = Math.floor((glitchRand() - 0.5) * 2 * intensity * 50);
+                        const oy = Math.floor((glitchRand() - 0.5) * 2 * intensity * 15);
+                        ctx.drawImage(canvas, bx, by, bw, bh, bx + ox, by + oy, bw, bh);
+                    }
+
+                    // --- Strip smearing (drawImage, GPU-fast) ---
+                    const numSmears = Math.floor(intensity * 10);
+                    for (let s = 0; s < numSmears; s++) {
+                        const sy = Math.floor(glitchRand() * h);
+                        const sh = 1 + Math.floor(glitchRand() * 3);
+                        const sx = Math.floor(glitchRand() * w * 0.7 + w * 0.15);
+                        const smearW = Math.floor(30 + glitchRand() * intensity * w * 0.25);
+                        const smearX = glitchRand() > 0.5 ? sx : sx - smearW;
+                        ctx.drawImage(canvas, sx, sy, 2, sh, smearX, sy, smearW, sh);
+                    }
+
+                    // --- Pixel-level effects: sorting + RGB split ---
+                    const imgData = ctx.getImageData(0, 0, w, h);
                     const data = imgData.data;
+
+                    // Pixel sorting on random horizontal strips
+                    const numSortStrips = Math.floor(5 + intensity * 40);
+                    for (let s = 0; s < numSortStrips; s++) {
+                        const row = Math.floor(glitchRand() * h);
+                        const len = Math.floor(30 + glitchRand() * intensity * w * 0.4);
+                        const startX = Math.max(0, Math.floor(glitchRand() * w - len / 2));
+                        const endX = Math.min(w, startX + len);
+                        const count = endX - startX;
+                        if (count < 4) continue;
+
+                        const indices = [];
+                        for (let j = 0; j < count; j++) indices[j] = j;
+                        indices.sort((a, b) => {
+                            const ai = (row * w + startX + a) * 4;
+                            const bi = (row * w + startX + b) * 4;
+                            return (data[ai] * 77 + data[ai + 1] * 150 + data[ai + 2] * 29)
+                                 - (data[bi] * 77 + data[bi + 1] * 150 + data[bi + 2] * 29);
+                        });
+
+                        const temp = new Uint8Array(count * 4);
+                        for (let j = 0; j < count; j++) {
+                            const si = (row * w + startX + indices[j]) * 4;
+                            const ti = j * 4;
+                            temp[ti] = data[si]; temp[ti + 1] = data[si + 1];
+                            temp[ti + 2] = data[si + 2]; temp[ti + 3] = data[si + 3];
+                        }
+                        for (let j = 0; j < count; j++) {
+                            const di = (row * w + startX + j) * 4;
+                            const ti = j * 4;
+                            data[di] = temp[ti]; data[di + 1] = temp[ti + 1];
+                            data[di + 2] = temp[ti + 2]; data[di + 3] = temp[ti + 3];
+                        }
+                    }
+
+                    // RGB channel separation in random horizontal bands
+                    const rgbShift = Math.floor(intensity * 10);
+                    if (rgbShift > 0) {
+                        const numRgbBands = Math.floor(3 + intensity * 12);
+                        for (let b = 0; b < numRgbBands; b++) {
+                            const bandY = Math.floor(glitchRand() * h);
+                            const bandH = 2 + Math.floor(glitchRand() * 5);
+                            for (let y = bandY; y < Math.min(h, bandY + bandH); y++) {
+                                for (let x = w - 1; x >= 0; x--) {
+                                    const di = (y * w + x) * 4;
+                                    const rSrc = Math.min(w - 1, x + rgbShift);
+                                    data[di] = data[(y * w + rSrc) * 4];
+                                }
+                                for (let x = 0; x < w; x++) {
+                                    const di = (y * w + x) * 4;
+                                    const bSrc = Math.max(0, x - rgbShift);
+                                    data[di + 2] = data[(y * w + bSrc) * 4 + 2];
+                                }
+                            }
+                        }
+                    }
+
+                    // --- Bayer dither sweep left-to-right ---
+                    const sweepX = Math.floor(shaderT * w);
                     const blockSize = 6;
 
-                    // Pixelate area BEHIND sweep (left of sweep front = already dissolved)
-                    for (let by = 0; by < regionH; by += blockSize) {
-                        for (let bx = 0; bx < sweepLocalX; bx += blockSize) {
-                            const dist = (sweepLocalX - bx) / (sweepLocalX + 1);
-                            const effectiveBlock = Math.max(2, Math.floor(blockSize + dist * 6));
-                            const sx = Math.min(bx + (effectiveBlock >> 1), regionW - 1);
-                            const sy = Math.min(by + (effectiveBlock >> 1), regionH - 1);
-                            const si = (sy * regionW + sx) * 4;
+                    // Pixelate behind sweep front (already passed)
+                    for (let by = 0; by < h; by += blockSize) {
+                        for (let bx = 0; bx < sweepX; bx += blockSize) {
+                            const dist = (sweepX - bx) / (sweepX + 1);
+                            const eb = Math.max(2, Math.floor(blockSize + dist * 6));
+                            const sx = Math.min(bx + (eb >> 1), w - 1);
+                            const sy = Math.min(by + (eb >> 1), h - 1);
+                            const si = (sy * w + sx) * 4;
                             const sr = data[si], sg = data[si + 1], sb = data[si + 2];
-
-                            const endBx = Math.min(bx + effectiveBlock, regionW);
-                            const endBy = Math.min(by + effectiveBlock, regionH);
+                            const endBx = Math.min(bx + eb, w);
+                            const endBy = Math.min(by + eb, h);
                             for (let py = by; py < endBy; py++) {
                                 for (let px = bx; px < endBx; px++) {
-                                    const di = (py * regionW + px) * 4;
-                                    const bayerVal = BAYER4x4[py & 3][px & 3] / 16;
-                                    const quantize = 32;
-                                    const dr = Math.floor(sr / quantize) * quantize;
-                                    const dg = Math.floor(sg / quantize) * quantize;
-                                    const db = Math.floor(sb / quantize) * quantize;
-                                    data[di]     = Math.min(255, dr + ((sr % quantize) / quantize > bayerVal ? quantize : 0));
-                                    data[di + 1] = Math.min(255, dg + ((sg % quantize) / quantize > bayerVal ? quantize : 0));
-                                    data[di + 2] = Math.min(255, db + ((sb % quantize) / quantize > bayerVal ? quantize : 0));
+                                    const di = (py * w + px) * 4;
+                                    const bv = BAYER4x4[py & 3][px & 3] / 16;
+                                    const q = 32;
+                                    data[di]     = Math.min(255, Math.floor(sr / q) * q + ((sr % q) / q > bv ? q : 0));
+                                    data[di + 1] = Math.min(255, Math.floor(sg / q) * q + ((sg % q) / q > bv ? q : 0));
+                                    data[di + 2] = Math.min(255, Math.floor(sb / q) * q + ((sb % q) / q > bv ? q : 0));
                                 }
                             }
                         }
                     }
 
-                    // Pixelate area AHEAD of sweep (right of front = being reached)
-                    const aheadRange = Math.min(Math.floor(regionW * 0.15), regionW - sweepLocalX);
-                    for (let by = 0; by < regionH; by += blockSize) {
-                        for (let bx = sweepLocalX; bx < sweepLocalX + aheadRange; bx += blockSize) {
-                            const dist = (bx - sweepLocalX) / (aheadRange + 1);
-                            const effectiveBlock = Math.max(2, Math.floor(2 + dist * 4));
-                            const sx = Math.min(bx + (effectiveBlock >> 1), regionW - 1);
-                            const sy = Math.min(by + (effectiveBlock >> 1), regionH - 1);
-                            const si = (sy * regionW + sx) * 4;
+                    // Pixelate ahead of sweep front
+                    const aheadRange = Math.min(Math.floor(w * 0.15), w - sweepX);
+                    for (let by = 0; by < h; by += blockSize) {
+                        for (let bx = sweepX; bx < sweepX + aheadRange; bx += blockSize) {
+                            const dist = (bx - sweepX) / (aheadRange + 1);
+                            const eb = Math.max(2, Math.floor(2 + dist * 4));
+                            const sx = Math.min(bx + (eb >> 1), w - 1);
+                            const sy = Math.min(by + (eb >> 1), h - 1);
+                            const si = (sy * w + sx) * 4;
                             const sr = data[si], sg = data[si + 1], sb = data[si + 2];
-
-                            const endBx = Math.min(bx + effectiveBlock, regionW);
-                            const endBy = Math.min(by + effectiveBlock, regionH);
+                            const endBx = Math.min(bx + eb, w);
+                            const endBy = Math.min(by + eb, h);
                             for (let py = by; py < endBy; py++) {
                                 for (let px = bx; px < endBx; px++) {
-                                    const di = (py * regionW + px) * 4;
-                                    const bayerVal = BAYER4x4[py & 3][px & 3] / 16;
-                                    const quantize = 32;
-                                    const dr = Math.floor(sr / quantize) * quantize;
-                                    const dg = Math.floor(sg / quantize) * quantize;
-                                    const db = Math.floor(sb / quantize) * quantize;
-                                    data[di]     = Math.min(255, dr + ((sr % quantize) / quantize > bayerVal ? quantize : 0));
-                                    data[di + 1] = Math.min(255, dg + ((sg % quantize) / quantize > bayerVal ? quantize : 0));
-                                    data[di + 2] = Math.min(255, db + ((sb % quantize) / quantize > bayerVal ? quantize : 0));
+                                    const di = (py * w + px) * 4;
+                                    const bv = BAYER4x4[py & 3][px & 3] / 16;
+                                    const q = 32;
+                                    data[di]     = Math.min(255, Math.floor(sr / q) * q + ((sr % q) / q > bv ? q : 0));
+                                    data[di + 1] = Math.min(255, Math.floor(sg / q) * q + ((sg % q) / q > bv ? q : 0));
+                                    data[di + 2] = Math.min(255, Math.floor(sb / q) * q + ((sb % q) / q > bv ? q : 0));
                                 }
                             }
                         }
                     }
 
-                    ctx.putImageData(imgData, regionX, regionY);
+                    ctx.putImageData(imgData, 0, 0);
 
                     // Screen warp near sweep front
-                    const warpAmplitude = 5;
                     const stripH = 2;
-                    const frontX = sweepLocalX;
                     const now = Date.now();
-                    for (let wy = 0; wy < regionH; wy += stripH) {
-                        const verticalFalloff = Math.max(0, 1 - Math.abs(wy - regionH * 0.5) / (regionH * 0.5));
-                        const warpShift = Math.sin(wy * 0.08 + now * 0.003) * warpAmplitude * verticalFalloff * (1 - shaderT);
-                        const shift = Math.round(warpShift);
+                    for (let wy = 0; wy < h; wy += stripH) {
+                        const falloff = Math.max(0, 1 - Math.abs(wy - h * 0.5) / (h * 0.5));
+                        const shift = Math.round(Math.sin(wy * 0.08 + now * 0.003) * 5 * falloff * (1 - shaderT));
                         if (shift !== 0) {
-                            const srcX = Math.max(0, frontX - 80);
-                            const srcW = Math.min(160, canvas.width - srcX);
-                            const clampedH = Math.min(stripH, canvas.height - wy);
-                            ctx.drawImage(canvas, srcX, wy, srcW, clampedH, srcX + shift, wy, srcW, clampedH);
+                            const srcX = Math.max(0, sweepX - 80);
+                            const srcW = Math.min(160, w - srcX);
+                            const clampH = Math.min(stripH, h - wy);
+                            ctx.drawImage(canvas, srcX, wy, srcW, clampH, srcX + shift, wy, srcW, clampH);
                         }
                     }
 
-                    // Cyan scan front line
+                    // Cyan scan line at sweep front
                     ctx.save();
                     ctx.strokeStyle = 'rgba(0, 255, 255, 0.9)';
                     ctx.shadowColor = '#0ff';
                     ctx.shadowBlur = 20;
                     ctx.lineWidth = 2;
                     ctx.beginPath();
-                    ctx.moveTo(frontX, 0);
-                    ctx.lineTo(frontX, canvas.height);
+                    ctx.moveTo(sweepX, 0);
+                    ctx.lineTo(sweepX, h);
                     ctx.stroke();
                     ctx.strokeStyle = 'rgba(0, 255, 255, 0.3)';
                     ctx.shadowBlur = 40;
                     ctx.lineWidth = 1;
                     ctx.beginPath();
-                    ctx.moveTo(frontX - 4, 0);
-                    ctx.lineTo(frontX - 4, canvas.height);
+                    ctx.moveTo(sweepX - 4, 0);
+                    ctx.lineTo(sweepX - 4, h);
                     ctx.stroke();
                     ctx.shadowBlur = 0;
                     ctx.restore();
@@ -24418,30 +24624,35 @@ function renderBiosBootSequence() {
         ctx.save();
         ctx.globalAlpha = biosBootState.centerPanelAlpha;
 
-        // Panel background
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+        // Panel background — rapid red flash when LAUNCH
+        const isLaunch = biosBootState.countdownValue === 0;
+        if (isLaunch) {
+            const flashT = biosBootState.elapsed - 2.92;
+            const flashCycle = Math.floor(flashT / 0.08) % 10; // 5 on/off cycles at 80ms each
+            const flashOn = flashCycle < 10 && flashCycle % 2 === 0;
+            ctx.fillStyle = flashOn ? 'rgba(220, 0, 0, 0.95)' : 'rgba(0, 0, 0, 0.9)';
+        } else {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+        }
         ctx.fillRect(px, py, panelW, panelH);
-        ctx.strokeStyle = '#0ff';
-        ctx.lineWidth = 2;
-        ctx.shadowColor = '#0ff';
-        ctx.shadowBlur = 8;
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1;
         ctx.strokeRect(px, py, panelW, panelH);
-        ctx.shadowBlur = 0;
 
         // WAVE N
-        ctx.fillStyle = '#0ff';
-        ctx.font = 'bold 48px monospace';
+        ctx.fillStyle = isLaunch ? '#fff' : '#0ff';
+        ctx.font = '300 48px monospace';
         ctx.textAlign = 'center';
         ctx.fillText('WAVE ' + biosBootState.waveInfo.wave, canvas.width / 2, py + 55);
 
         // Countdown number or LAUNCH
         if (biosBootState.countdownValue > 0) {
             ctx.fillStyle = '#fff';
-            ctx.font = 'bold 32px monospace';
+            ctx.font = '300 32px monospace';
             ctx.fillText('>> ' + biosBootState.countdownValue + ' <<', canvas.width / 2, py + 105);
         } else {
-            ctx.fillStyle = '#0ff';
-            ctx.font = 'bold 48px monospace';
+            ctx.fillStyle = '#fff';
+            ctx.font = '300 48px monospace';
             ctx.fillText('LAUNCH', canvas.width / 2, py + 110);
         }
 
