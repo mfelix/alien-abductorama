@@ -17854,7 +17854,7 @@ function updateHUDBoot(dt) {
         } else {
             preBoot._logoFlashAlpha = 0;
         }
-        // Fade to black over 150ms, then transition to trace at 0.3s
+        // Hold black, then transition to trace at 0.3s
         if (preBoot.timer >= 0.3) {
             preBoot.phase = 'trace';
             preBoot.timer = 0;
