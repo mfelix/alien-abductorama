@@ -18675,6 +18675,150 @@ function renderHUDBootGlobalEffects() {
         ctx.restore();
     }
 
+    // Logo splash: PNG image centered on screen
+    if (pb.phase === 'logo_splash' || pb.phase === 'logo_shader') {
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        const img = images.quantumOsLogo;
+        if (img && img.complete && img.naturalWidth > 0) {
+            const maxW = canvas.width * 0.6;
+            const scale = Math.min(1, maxW / img.naturalWidth);
+            const drawW = img.naturalWidth * scale;
+            const drawH = img.naturalHeight * scale;
+            const drawX = (canvas.width - drawW) / 2;
+            const drawY = (canvas.height - drawH) / 2;
+
+            ctx.save();
+            if (pb.phase === 'logo_splash') {
+                ctx.globalAlpha = pb._logoSplashAlpha;
+            }
+            ctx.drawImage(img, drawX, drawY, drawW, drawH);
+
+            // Apply Bayer dither shader during logo_shader phase
+            if (pb.phase === 'logo_shader') {
+                const shaderT = pb._logoShaderProgress;
+                if (shaderT > 0 && shaderT < 1) {
+                    const regionX = 0;
+                    const regionY = 0;
+                    const regionW = canvas.width;
+                    const regionH = canvas.height;
+                    const sweepLocalX = Math.floor(shaderT * regionW);
+                    const imgData = ctx.getImageData(regionX, regionY, regionW, regionH);
+                    const data = imgData.data;
+                    const blockSize = 6;
+
+                    // Pixelate area BEHIND sweep (left of sweep front = already dissolved)
+                    for (let by = 0; by < regionH; by += blockSize) {
+                        for (let bx = 0; bx < sweepLocalX; bx += blockSize) {
+                            const dist = (sweepLocalX - bx) / (sweepLocalX + 1);
+                            const effectiveBlock = Math.max(2, Math.floor(blockSize + dist * 6));
+                            const sx = Math.min(bx + (effectiveBlock >> 1), regionW - 1);
+                            const sy = Math.min(by + (effectiveBlock >> 1), regionH - 1);
+                            const si = (sy * regionW + sx) * 4;
+                            const sr = data[si], sg = data[si + 1], sb = data[si + 2];
+
+                            const endBx = Math.min(bx + effectiveBlock, regionW);
+                            const endBy = Math.min(by + effectiveBlock, regionH);
+                            for (let py = by; py < endBy; py++) {
+                                for (let px = bx; px < endBx; px++) {
+                                    const di = (py * regionW + px) * 4;
+                                    const bayerVal = BAYER4x4[py & 3][px & 3] / 16;
+                                    const quantize = 32;
+                                    const dr = Math.floor(sr / quantize) * quantize;
+                                    const dg = Math.floor(sg / quantize) * quantize;
+                                    const db = Math.floor(sb / quantize) * quantize;
+                                    data[di]     = Math.min(255, dr + ((sr % quantize) / quantize > bayerVal ? quantize : 0));
+                                    data[di + 1] = Math.min(255, dg + ((sg % quantize) / quantize > bayerVal ? quantize : 0));
+                                    data[di + 2] = Math.min(255, db + ((sb % quantize) / quantize > bayerVal ? quantize : 0));
+                                }
+                            }
+                        }
+                    }
+
+                    // Pixelate area AHEAD of sweep (right of front = being reached)
+                    const aheadRange = Math.min(Math.floor(regionW * 0.15), regionW - sweepLocalX);
+                    for (let by = 0; by < regionH; by += blockSize) {
+                        for (let bx = sweepLocalX; bx < sweepLocalX + aheadRange; bx += blockSize) {
+                            const dist = (bx - sweepLocalX) / (aheadRange + 1);
+                            const effectiveBlock = Math.max(2, Math.floor(2 + dist * 4));
+                            const sx = Math.min(bx + (effectiveBlock >> 1), regionW - 1);
+                            const sy = Math.min(by + (effectiveBlock >> 1), regionH - 1);
+                            const si = (sy * regionW + sx) * 4;
+                            const sr = data[si], sg = data[si + 1], sb = data[si + 2];
+
+                            const endBx = Math.min(bx + effectiveBlock, regionW);
+                            const endBy = Math.min(by + effectiveBlock, regionH);
+                            for (let py = by; py < endBy; py++) {
+                                for (let px = bx; px < endBx; px++) {
+                                    const di = (py * regionW + px) * 4;
+                                    const bayerVal = BAYER4x4[py & 3][px & 3] / 16;
+                                    const quantize = 32;
+                                    const dr = Math.floor(sr / quantize) * quantize;
+                                    const dg = Math.floor(sg / quantize) * quantize;
+                                    const db = Math.floor(sb / quantize) * quantize;
+                                    data[di]     = Math.min(255, dr + ((sr % quantize) / quantize > bayerVal ? quantize : 0));
+                                    data[di + 1] = Math.min(255, dg + ((sg % quantize) / quantize > bayerVal ? quantize : 0));
+                                    data[di + 2] = Math.min(255, db + ((sb % quantize) / quantize > bayerVal ? quantize : 0));
+                                }
+                            }
+                        }
+                    }
+
+                    ctx.putImageData(imgData, regionX, regionY);
+
+                    // Screen warp near sweep front
+                    const warpAmplitude = 5;
+                    const stripH = 2;
+                    const frontX = sweepLocalX;
+                    const now = Date.now();
+                    for (let wy = 0; wy < regionH; wy += stripH) {
+                        const verticalFalloff = Math.max(0, 1 - Math.abs(wy - regionH * 0.5) / (regionH * 0.5));
+                        const warpShift = Math.sin(wy * 0.08 + now * 0.003) * warpAmplitude * verticalFalloff * (1 - shaderT);
+                        const shift = Math.round(warpShift);
+                        if (shift !== 0) {
+                            const srcX = Math.max(0, frontX - 80);
+                            const srcW = Math.min(160, canvas.width - srcX);
+                            const clampedH = Math.min(stripH, canvas.height - wy);
+                            ctx.drawImage(canvas, srcX, wy, srcW, clampedH, srcX + shift, wy, srcW, clampedH);
+                        }
+                    }
+
+                    // Cyan scan front line
+                    ctx.save();
+                    ctx.strokeStyle = 'rgba(0, 255, 255, 0.9)';
+                    ctx.shadowColor = '#0ff';
+                    ctx.shadowBlur = 20;
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(frontX, 0);
+                    ctx.lineTo(frontX, canvas.height);
+                    ctx.stroke();
+                    ctx.strokeStyle = 'rgba(0, 255, 255, 0.3)';
+                    ctx.shadowBlur = 40;
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(frontX - 4, 0);
+                    ctx.lineTo(frontX - 4, canvas.height);
+                    ctx.stroke();
+                    ctx.shadowBlur = 0;
+                    ctx.restore();
+                }
+            }
+            ctx.restore();
+        }
+    }
+
+    // Logo flash: white burst then fade to black
+    if (pb.phase === 'logo_flash') {
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        if (pb._logoFlashAlpha > 0) {
+            ctx.fillStyle = `rgba(255, 255, 255, ${pb._logoFlashAlpha})`;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+    }
+
     // Border trace
     if (pb.phase === 'trace' || (pb.phase === 'panel_boot' && pb.timer < 0.5)) {
         const progress = Math.min(1, pb.traceProgress);
