@@ -3074,7 +3074,8 @@ resize();
 // GAME STATE
 // ============================================
 
-let gameState = 'TITLE'; // TITLE, PLAYING, GAME_OVER, WAVE_TRANSITION, WAVE_SUMMARY, SHOP
+let gameState = 'TITLE'; // TITLE, PLAYING, GAME_OVER, WAVE_TRANSITION, WAVE_SUMMARY, SHOP, PROMOTION_CINEMATIC, COMMAND, COMMAND_SUMMARY
+let commandPhaseActive = false;
 let ufo = null;
 let targets = [];
 let tanks = [];
@@ -3223,6 +3224,7 @@ let rightTapHistory = [];
 // Shop state
 let shopTimer = 0;
 let shopCheatBuffer = '';
+let allTechCheatBuffer = '';
 let techCheatActive = false;
 let selectedShopItem = 0;
 let shopItemBounds = []; // For click detection on shop items
@@ -3419,6 +3421,9 @@ let bombDamageTier = 0;
 let bombs = [];
 
 let titleCheatBuffer = '';
+let titleP2CheatActive = false;   // true when user typed P2 and is entering zone count
+let titleP2ZoneInput = '';         // digit string for zone count
+let commandPhaseZoneCount = 2;    // zone count passed to initCommandPhase()
 
 // Title screen UFO animation state
 let titleUfo = {
@@ -3646,6 +3651,65 @@ window.addEventListener('keydown', (e) => {
             }
         }
 
+        // "ALLTECH" cheat code detection — max out everything
+        if (e.key.length === 1) {
+            allTechCheatBuffer += e.key.toLowerCase();
+            if (allTechCheatBuffer.length > 7) allTechCheatBuffer = allTechCheatBuffer.slice(-7);
+            if (allTechCheatBuffer.endsWith('alltech')) {
+                allTechCheatBuffer = '';
+                // Research all 15 tech tree nodes
+                const allTracks = CONFIG.TECH_TREE;
+                for (const track of Object.values(allTracks)) {
+                    for (const node of track) {
+                        if (!techTree.researched.has(node.id)) {
+                            techTree.researched.add(node.id);
+                            applyTechEffect(node.id);
+                        }
+                    }
+                }
+                techTree.queue = [];
+                techTree.activeResearch = null;
+                // Also enable tech cheat clicking
+                techCheatActive = true;
+                // Give 69420 bio-matter and UFO bucks
+                bioMatter = 69420;
+                ufoBucks = 69420;
+                // Max out bombs
+                playerInventory.maxBombs = CONFIG.BOMB_MAX_COUNT;
+                playerInventory.bombs = CONFIG.BOMB_MAX_COUNT;
+                playerInventory.bombRechargeTimers = [];
+                // Max out bomb upgrades
+                bombBlastTier = CONFIG.BOMB_BLAST_TIERS.length - 1;
+                bombDamageTier = CONFIG.BOMB_DAMAGE_TIERS.length - 1;
+                // Max out missiles
+                missileUnlocked = true;
+                missileGroupCount = CONFIG.MISSILE_MAX_GROUPS;
+                missileGroups = [];
+                for (let i = 0; i < missileGroupCount; i++) {
+                    missileGroups.push({ ready: true, rechargeTimer: 0, index: i, launchFlashTime: 0 });
+                }
+                missileDamage = 3;
+                // Max out drones
+                harvesterUnlocked = true;
+                battleDroneUnlocked = true;
+                droneSlots = CONFIG.DRONE_MAX_SLOTS;
+                // Max out energy and speed
+                playerInventory.maxEnergyBonus = 1.0;
+                playerInventory.speedBonus = 1.0;
+                playerInventory.energyRechargeBonus = 1.0;
+                playerInventory.energyCells = 3;
+                if (ufo) {
+                    ufo.maxEnergy = CONFIG.ENERGY_MAX * (1 + playerInventory.maxEnergyBonus);
+                    ufo.energy = ufo.maxEnergy;
+                    ufo.health = CONFIG.UFO_START_HEALTH;
+                }
+                createFloatingText(canvas.width / 2, canvas.height / 2, 'ALL TECH MAXED!', '#f0f', { fontSize: 32, duration: 3 });
+                createFloatingText(canvas.width / 2, canvas.height / 2 + 40, '$69420 BIO + BUCKS', '#ff0', { fontSize: 24, duration: 3 });
+                SFX.researchComplete && SFX.researchComplete();
+                screenShake = 0.5;
+            }
+        }
+
         return;
     }
 
@@ -3714,7 +3778,7 @@ window.addEventListener('keydown', (e) => {
 
     // Handle game state transitions
     if (gameState === 'TITLE') {
-        if (e.code === 'Space') {
+        if (e.code === 'Space' && !titleP2CheatActive) {
             startGame();
         }
 
@@ -3730,9 +3794,79 @@ window.addEventListener('keydown', (e) => {
             }
         }
 
+        // P2 cheat: zone count input mode — intercept all keys when active
+        if (titleP2CheatActive) {
+            if (e.key >= '0' && e.key <= '9' && titleP2ZoneInput.length < 3) {
+                titleP2ZoneInput += e.key;
+            } else if (e.code === 'Backspace') {
+                titleP2ZoneInput = titleP2ZoneInput.slice(0, -1);
+            } else if (e.code === 'Enter') {
+                // Parse zone count, clamp to valid values (2, 4, 16)
+                let zc = parseInt(titleP2ZoneInput, 10) || 2;
+                if (zc <= 3) zc = 2;
+                else if (zc <= 10) zc = 4;
+                else zc = 16;
+                titleP2CheatActive = false;
+                titleP2ZoneInput = '';
+                // Launch Phase 2 with chosen zone count
+                commandPhaseZoneCount = zc;
+                startGame();
+                cleanupTutorial();
+                // Set reasonable Phase 1 completion values
+                wave = 16;
+                score = 50000;
+                ufoBucks = 10000;
+                bioMatter = 500;
+                totalBioMatterEarned = 2000;
+                // Research all 15 tech tree nodes
+                const allTracks = CONFIG.TECH_TREE;
+                for (const track of Object.values(allTracks)) {
+                    for (const node of track) {
+                        if (!techTree.researched.has(node.id)) {
+                            techTree.researched.add(node.id);
+                            applyTechEffect(node.id);
+                        }
+                    }
+                }
+                techTree.queue = [];
+                techTree.activeResearch = null;
+                // Max out combat equipment
+                playerInventory.maxBombs = CONFIG.BOMB_MAX_COUNT;
+                playerInventory.bombs = CONFIG.BOMB_MAX_COUNT;
+                playerInventory.bombRechargeTimers = [];
+                bombBlastTier = CONFIG.BOMB_BLAST_TIERS.length - 1;
+                bombDamageTier = CONFIG.BOMB_DAMAGE_TIERS.length - 1;
+                missileUnlocked = true;
+                missileGroupCount = 4;
+                missileGroups = [];
+                for (let i = 0; i < missileGroupCount; i++) {
+                    missileGroups.push({ ready: true, rechargeTimer: 0, index: i, launchFlashTime: 0 });
+                }
+                harvesterUnlocked = true;
+                battleDroneUnlocked = true;
+                droneSlots = CONFIG.DRONE_MAX_SLOTS;
+                // Trigger promotion cinematic into Phase 2
+                commandPhaseActive = true;
+                gameState = 'PROMOTION_CINEMATIC';
+                initPromotionCinematic();
+            } else if (e.code === 'Escape') {
+                titleP2CheatActive = false;
+                titleP2ZoneInput = '';
+            }
+            // Consume all input while P2 input mode is active
+            return;
+        }
+
         // Easter egg: W + number + Enter to warp to a wave's shop
         if (e.code === 'KeyW' && !e.repeat) {
             titleCheatBuffer = 'W';
+        } else if (e.code === 'KeyP' && !e.repeat) {
+            titleCheatBuffer = 'P';
+        } else if (titleCheatBuffer === 'P' && (e.key === '2')) {
+            // P2 detected — activate zone count input mode
+            titleP2CheatActive = true;
+            titleP2ZoneInput = '';
+            titleCheatBuffer = '';
         } else if (titleCheatBuffer.startsWith('W') && titleCheatBuffer.length < 4 && e.key >= '0' && e.key <= '9') {
             titleCheatBuffer += e.key;
         } else if (e.code === 'Enter' && titleCheatBuffer.length >= 2 && titleCheatBuffer.startsWith('W')) {
@@ -13248,10 +13382,13 @@ function renderNGEPanel(x, y, w, h, opts = {}) {
         label = '',
         labelColor = null,
         filled = true,
-        borderOnly = false
+        borderOnly = false,
+        lineWidth = 1.5,
+        cutSize = 10,
+        noTexture = false
     } = opts;
 
-    const cut = 10; // 45-degree corner cut size
+    const cut = cutSize; // 45-degree corner cut size
 
     ctx.save();
 
@@ -13298,26 +13435,28 @@ function renderNGEPanel(x, y, w, h, opts = {}) {
         ctx.fillStyle = `rgba(5, 8, 18, ${alpha})`;
         ctx.fill();
 
-        // Inner hex-grid texture (subtle)
-        ctx.save();
-        ctx.clip();
-        ctx.globalAlpha = 0.04;
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 0.5;
-        const hexSize = 12;
-        for (let hx = x; hx < x + w + hexSize; hx += hexSize * 1.5) {
-            for (let hy = y; hy < y + h + hexSize; hy += hexSize * 1.7) {
-                const offsetX = (Math.floor((hy - y) / (hexSize * 1.7)) % 2) * hexSize * 0.75;
-                renderHexagon(hx + offsetX, hy, hexSize * 0.5);
+        // Inner hex-grid texture (subtle) — skip for small panels (noTexture)
+        if (!noTexture) {
+            ctx.save();
+            ctx.clip();
+            ctx.globalAlpha = 0.04;
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 0.5;
+            const hexSize = 12;
+            for (let hx = x; hx < x + w + hexSize; hx += hexSize * 1.5) {
+                for (let hy = y; hy < y + h + hexSize; hy += hexSize * 1.7) {
+                    const offsetX = (Math.floor((hy - y) / (hexSize * 1.7)) % 2) * hexSize * 0.75;
+                    renderHexagon(hx + offsetX, hy, hexSize * 0.5);
+                }
             }
+            ctx.globalAlpha = 1;
+            ctx.restore();
         }
-        ctx.globalAlpha = 1;
-        ctx.restore();
     }
 
     // Border
     ctx.strokeStyle = color;
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = lineWidth;
     // Rebuild path for stroke
     ctx.beginPath();
     if (cutCorners.includes('tl')) {
@@ -13352,9 +13491,9 @@ function renderNGEPanel(x, y, w, h, opts = {}) {
     ctx.closePath();
     ctx.stroke();
 
-    // Inner glow line (1px inset, dimmer)
+    // Inner glow line (scaled inset, dimmer)
     ctx.strokeStyle = `rgba(${hexToRgb(color)}, 0.15)`;
-    ctx.lineWidth = 1;
+    ctx.lineWidth = Math.max(0.5, lineWidth * 0.67);
     ctx.beginPath();
     const inset = 2;
     if (cutCorners.includes('tl')) {
@@ -13428,6 +13567,7 @@ function hexToRgb(hex) {
 
 // NGE-style segmented progress bar
 function renderNGEBar(x, y, w, h, percent, color, opts = {}) {
+    ctx.save();
     const {
         segments = 10,
         glow = false,
@@ -13532,6 +13672,7 @@ function renderNGEBar(x, y, w, h, percent, color, opts = {}) {
         ctx.textAlign = 'right';
         ctx.fillText(valueText, x + w - 2, y + h - 2);
     }
+    ctx.restore();
 }
 
 // NGE status indicator dot
@@ -13667,17 +13808,17 @@ function renderNGEChevrons(x, y, w, color = '#0ff', speed = 1) {
 }
 
 // Blinking status light
-function renderNGEBlinkLight(x, y, color = '#0f0', rate = 500) {
+function renderNGEBlinkLight(x, y, color = '#0f0', rate = 500, size = 4) {
     const on = Math.floor(Date.now() / rate) % 2 === 0;
     if (on) {
         ctx.fillStyle = color;
         ctx.shadowColor = color;
-        ctx.shadowBlur = 4;
-        ctx.fillRect(x, y, 4, 4);
+        ctx.shadowBlur = size;
+        ctx.fillRect(x, y, size, size);
         ctx.shadowBlur = 0;
     } else {
         ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-        ctx.fillRect(x, y, 4, 4);
+        ctx.fillRect(x, y, size, size);
     }
 }
 
@@ -13913,6 +14054,15 @@ let biosBootState = {
     verticalSplit: false,    // true after t=2.0s
     splitHProgress: 0,       // 0..1, horizontal split line draw
     splitVProgress: 0,       // 0..1, vertical split line draw
+
+    // Additional pane splits (progressive complexity)
+    splitV2: false,          // vertical split in TOP half (pane F: diagnostics)
+    splitV2Progress: 0,
+    splitH2: false,          // horizontal split in BOTTOM-RIGHT (pane G: power grid)
+    splitH2Progress: 0,
+    splitH3: false,          // horizontal split in BOTTOM-LEFT (pane H: drone telemetry)
+    splitH3Progress: 0,
+    paneTier: 0,             // 0-5, progressive pane complexity based on wave + tech
 
     // Phase tracking
     phase: 'inactive',       // 'inactive'|'post'|'orchestrator'|'swarm'|'uplink'|'check'|'countdown'|'launch'
@@ -17665,6 +17815,47 @@ function updateHUDBoot(dt) {
         preBoot.timer += dt;
         preBoot.logoAlpha = Math.max(0, 1 - preBoot.timer / 0.2);
         if (preBoot.timer >= 0.2) {
+            preBoot.phase = 'logo_splash';
+            preBoot.timer = 0;
+        }
+    } else if (preBoot.phase === 'logo_splash') {
+        preBoot.timer += dt;
+        // Fade in over 0.15s
+        preBoot._logoSplashAlpha = Math.min(1, preBoot.timer / 0.15);
+        // Play chime at 0.15s (after fade-in)
+        if (preBoot.timer >= 0.15 && !preBoot._logoChimePlayed) {
+            preBoot._logoChimePlayed = true;
+            SFX.logoChime();
+        }
+        // Hold for chime resonance, then transition at 0.6s
+        if (preBoot.timer >= 0.6) {
+            preBoot.phase = 'logo_shader';
+            preBoot.timer = 0;
+            preBoot._logoShaderProgress = 0;
+        }
+    } else if (preBoot.phase === 'logo_shader') {
+        preBoot.timer += dt;
+        preBoot._logoShaderProgress = Math.min(1, preBoot.timer / 0.5);
+        if (preBoot.timer >= 0.5) {
+            preBoot.phase = 'logo_flash';
+            preBoot.timer = 0;
+            preBoot._logoFlashAlpha = 1;
+            // Play flash noise at transition
+            if (!preBoot._logoFlashNoisePlayed) {
+                preBoot._logoFlashNoisePlayed = true;
+                SFX.logoFlashNoise();
+            }
+        }
+    } else if (preBoot.phase === 'logo_flash') {
+        preBoot.timer += dt;
+        if (preBoot.timer < 0.12) {
+            // White flash decays: 0.9 → 0 over 120ms
+            preBoot._logoFlashAlpha = 0.9 * (1 - preBoot.timer / 0.12);
+        } else {
+            preBoot._logoFlashAlpha = 0;
+        }
+        // Fade to black over 150ms, then transition to trace at 0.3s
+        if (preBoot.timer >= 0.3) {
             preBoot.phase = 'trace';
             preBoot.timer = 0;
         }
@@ -20906,6 +21097,31 @@ function renderTitleScreen() {
 
     ctx.restore();
 
+    // Render P2 zone count input prompt if active
+    if (titleP2CheatActive) {
+        ctx.save();
+        const promptText = 'ZONES: ' + (titleP2ZoneInput || '') + '_';
+        ctx.font = 'bold 18px monospace';
+        const promptW = ctx.measureText(promptText).width + 24;
+        const promptH = 32;
+        const promptX = canvas.width / 2 - promptW / 2;
+        const promptY = canvas.height / 2 - promptH / 2;
+        // Dark panel background
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+        ctx.beginPath();
+        ctx.roundRect(promptX, promptY, promptW, promptH, 6);
+        ctx.fill();
+        ctx.strokeStyle = '#d4a017';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        // Gold text
+        ctx.fillStyle = '#d4a017';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(promptText, canvas.width / 2, canvas.height / 2);
+        ctx.restore();
+    }
+
     // Render feature request modal on top if open
     if (featureModalOpen) {
         renderFeatureModal();
@@ -23501,6 +23717,16 @@ function initBiosBootSequence() {
     else if (wave >= 4) info.threatLevel = 'ELEVATED';
     else info.threatLevel = 'MODERATE';
 
+    // Compute pane layout tier (progressive TMUX complexity)
+    const w = info.wave;
+    const tc = info.techCount;
+    if (w >= 11 && tc >= 12) biosBootState.paneTier = 5;
+    else if (w >= 9 && tc >= 8) biosBootState.paneTier = 4;
+    else if (w >= 7 && tc >= 5) biosBootState.paneTier = 3;
+    else if (w >= 4 && tc >= 3) biosBootState.paneTier = 2;
+    else if (tc >= 1) biosBootState.paneTier = 1;
+    else biosBootState.paneTier = 0;
+
     // Generate BIOS text lines
     const lines = [];
     const addLine = (text, color, bold, pane, time) => {
@@ -23698,6 +23924,12 @@ function initBiosBootSequence() {
     biosBootState.verticalSplit = false;
     biosBootState.splitHProgress = 0;
     biosBootState.splitVProgress = 0;
+    biosBootState.splitV2 = false;
+    biosBootState.splitV2Progress = 0;
+    biosBootState.splitH2 = false;
+    biosBootState.splitH2Progress = 0;
+    biosBootState.splitH3 = false;
+    biosBootState.splitH3Progress = 0;
     biosBootState.downloadProgress = 0;
     biosBootState.downloadSpeed = 0;
     biosBootState.downloadReceived = 0;
@@ -23727,6 +23959,19 @@ function updateBiosBootSequence(dt) {
         biosBootState.phase = 'check';
         if (!biosBootState.verticalSplit) {
             biosBootState.verticalSplit = true;
+            SFX.biosTmuxCrack();
+        }
+        // Progressive splits for higher pane tiers
+        if (biosBootState.paneTier >= 3 && e >= 2.15 && !biosBootState.splitV2) {
+            biosBootState.splitV2 = true;
+            SFX.biosTmuxCrack();
+        }
+        if (biosBootState.paneTier >= 4 && e >= 2.30 && !biosBootState.splitH2) {
+            biosBootState.splitH2 = true;
+            SFX.biosTmuxCrack();
+        }
+        if (biosBootState.paneTier >= 5 && e >= 2.45 && !biosBootState.splitH3) {
+            biosBootState.splitH3 = true;
             SFX.biosTmuxCrack();
         }
     } else {
@@ -23925,31 +24170,80 @@ function renderBiosBootSequence() {
         ctx.restore();
     }
 
+    // Pane F: Top-left diagnostics strip — tier 3+
+    if (biosBootState.splitV2 && biosBootState.horizontalSplit) {
+        const diagPaneW = topSplitX - (hasTopRight ? 2 : 0);
+        const diagSplitX = Math.floor(diagPaneW * 0.45);
+        if (diagSplitX > 100) {
+            ctx.fillStyle = 'rgba(0, 255, 0, 0.4)';
+            ctx.fillRect(diagSplitX - 1, 0, 2, topPaneH);
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(diagSplitX + 1, 0, diagPaneW - diagSplitX - 1, topPaneH);
+            ctx.clip();
+            renderBIOSDiagnostics(diagSplitX + 1, 0, diagPaneW - diagSplitX - 1, topPaneH);
+            ctx.restore();
+        }
+    }
+
     // Horizontal split divider
     if (biosBootState.horizontalSplit) {
         ctx.fillStyle = 'rgba(0, 255, 0, 0.4)';
         ctx.fillRect(0, splitY - 1, canvas.width, 2);
 
         if (biosBootState.verticalSplit) {
-            // BOTTOM-LEFT: System check
+            const bottomH = canvas.height - splitY - 1;
+
+            // BOTTOM-LEFT region (may split horizontally for pane H)
+            const blH = biosBootState.splitH3 ? Math.floor(bottomH * 0.5) : bottomH;
             ctx.save();
             ctx.beginPath();
-            ctx.rect(0, splitY + 1, splitX - 2, canvas.height - splitY - 1);
+            ctx.rect(0, splitY + 1, splitX - 2, blH);
             ctx.clip();
-            renderBIOSSystemCheck(0, splitY + 1, splitX - 2, canvas.height - splitY - 1);
+            renderBIOSSystemCheck(0, splitY + 1, splitX - 2, blH);
             ctx.restore();
+
+            // Pane H: Bottom-left lower (drone telemetry) — tier 5
+            if (biosBootState.splitH3) {
+                const splitH3Y = splitY + 1 + blH;
+                ctx.fillStyle = 'rgba(0, 255, 0, 0.4)';
+                ctx.fillRect(0, splitH3Y - 1, splitX - 2, 2);
+
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(0, splitH3Y + 1, splitX - 2, bottomH - blH - 2);
+                ctx.clip();
+                renderBIOSDroneTelemetry(0, splitH3Y + 1, splitX - 2, bottomH - blH - 2);
+                ctx.restore();
+            }
 
             // Vertical divider
             ctx.fillStyle = 'rgba(0, 255, 0, 0.4)';
-            ctx.fillRect(splitX - 1, splitY, 2, canvas.height - splitY);
+            ctx.fillRect(splitX - 1, splitY, 2, bottomH + 1);
 
-            // BOTTOM-RIGHT: Data stream
+            // BOTTOM-RIGHT region (may split horizontally for pane G)
+            const brH = biosBootState.splitH2 ? Math.floor(bottomH * 0.55) : bottomH;
             ctx.save();
             ctx.beginPath();
-            ctx.rect(splitX + 1, splitY + 1, canvas.width - splitX - 1, canvas.height - splitY - 1);
+            ctx.rect(splitX + 1, splitY + 1, canvas.width - splitX - 1, brH);
             ctx.clip();
-            renderBIOSDataStreamEnhanced(splitX + 1, splitY + 1, canvas.width - splitX - 1, canvas.height - splitY - 1);
+            renderBIOSDataStreamEnhanced(splitX + 1, splitY + 1, canvas.width - splitX - 1, brH);
             ctx.restore();
+
+            // Pane G: Bottom-right lower (power grid monitor) — tier 4
+            if (biosBootState.splitH2) {
+                const splitH2Y = splitY + 1 + brH;
+                ctx.fillStyle = 'rgba(0, 255, 0, 0.4)';
+                ctx.fillRect(splitX + 1, splitH2Y - 1, canvas.width - splitX - 1, 2);
+
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(splitX + 1, splitH2Y + 1, canvas.width - splitX - 1, bottomH - brH - 2);
+                ctx.clip();
+                renderBIOSPowerGridMonitor(splitX + 1, splitH2Y + 1, canvas.width - splitX - 1, bottomH - brH - 2);
+                ctx.restore();
+            }
         } else {
             // BOTTOM: Swarm table OR download
             ctx.save();
@@ -24404,27 +24698,30 @@ function renderBIOSTechModals() {
         ], data: 'HP: 15/DRN' },
     };
 
-    // Per-modal placement, size, and color scheme — scattered across the full screen
-    // Each entry: [xFrac, yFrac, width, fontSize, artFontSize, borderColor, titleBg, contentColor, dataColor]
+    // Per-modal placement, size, and color scheme — 4 dramatically different size tiers:
+    // MICRO (70-80px): tiny status chips, minimal art
+    // STANDARD (160-180px): current-style windows
+    // LARGE (280-300px): prominent feature windows
+    // MEGA (400-460px): imposing system-critical displays
     const modalLayouts = [
-        // Power Grid (pg1-5): warm oranges and ambers, various sizes
-        { id: 'pg1', xF: 0.02, yF: 0.04, w: 200, fs: 9,  afs: 8,  border: 'rgba(255, 160, 0, 0.7)',  titleBg: 'rgba(120, 60, 0, 0.85)',  content: [255, 160, 0],  data: '#ffa000' },
-        { id: 'pg2', xF: 0.55, yF: 0.08, w: 170, fs: 8,  afs: 7,  border: 'rgba(255, 120, 0, 0.6)',  titleBg: 'rgba(100, 50, 0, 0.85)',  content: [255, 120, 0],  data: '#ff8800' },
-        { id: 'pg3', xF: 0.78, yF: 0.52, w: 160, fs: 8,  afs: 7,  border: 'rgba(255, 200, 50, 0.6)', titleBg: 'rgba(110, 80, 0, 0.85)',  content: [255, 200, 50], data: '#ffc832' },
-        { id: 'pg4', xF: 0.12, yF: 0.62, w: 190, fs: 9,  afs: 8,  border: 'rgba(255, 140, 30, 0.65)', titleBg: 'rgba(100, 55, 0, 0.85)', content: [255, 140, 30], data: '#ff8c1e' },
-        { id: 'pg5', xF: 0.38, yF: 0.35, w: 150, fs: 7,  afs: 6,  border: 'rgba(200, 130, 0, 0.55)', titleBg: 'rgba(80, 50, 0, 0.85)',   content: [200, 130, 0],  data: '#c88200' },
+        // Power Grid (pg1-5): warm oranges and ambers
+        { id: 'pg1', xF: 0.02, yF: 0.04, w: 300, fs: 11, afs: 10, padTop: 20, padBot: 22, border: 'rgba(255, 160, 0, 0.7)',  titleBg: 'rgba(120, 60, 0, 0.85)',  content: [255, 160, 0],  data: '#ffa000' },   // LARGE
+        { id: 'pg2', xF: 0.55, yF: 0.08, w: 75,  fs: 7,  afs: 6,  padTop: 12, padBot: 10, border: 'rgba(255, 120, 0, 0.6)',  titleBg: 'rgba(100, 50, 0, 0.85)',  content: [255, 120, 0],  data: '#ff8800' },   // MICRO
+        { id: 'pg3', xF: 0.78, yF: 0.52, w: 70,  fs: 7,  afs: 6,  padTop: 12, padBot: 10, border: 'rgba(255, 200, 50, 0.6)', titleBg: 'rgba(110, 80, 0, 0.85)',  content: [255, 200, 50], data: '#ffc832' },   // MICRO
+        { id: 'pg4', xF: 0.12, yF: 0.62, w: 170, fs: 9,  afs: 8,  padTop: 16, padBot: 18, border: 'rgba(255, 140, 30, 0.65)',titleBg: 'rgba(100, 55, 0, 0.85)',  content: [255, 140, 30], data: '#ff8c1e' },   // STANDARD
+        { id: 'pg5', xF: 0.32, yF: 0.30, w: 440, fs: 12, afs: 11, padTop: 22, padBot: 26, border: 'rgba(200, 130, 0, 0.75)', titleBg: 'rgba(80, 50, 0, 0.9)',    content: [200, 130, 0],  data: '#c88200' },   // MEGA
         // Drone Command (dc1-5): cool blues and cyans
-        { id: 'dc1', xF: 0.30, yF: 0.06, w: 210, fs: 9,  afs: 8,  border: 'rgba(50, 140, 255, 0.7)',  titleBg: 'rgba(0, 40, 120, 0.85)',  content: [50, 140, 255],  data: '#338cff' },
-        { id: 'dc2', xF: 0.72, yF: 0.22, w: 175, fs: 8,  afs: 7,  border: 'rgba(80, 180, 255, 0.6)',  titleBg: 'rgba(0, 50, 100, 0.85)',  content: [80, 180, 255],  data: '#50b4ff' },
-        { id: 'dc3', xF: 0.05, yF: 0.38, w: 185, fs: 8,  afs: 7,  border: 'rgba(0, 200, 255, 0.65)',  titleBg: 'rgba(0, 60, 90, 0.85)',   content: [0, 200, 255],   data: '#00c8ff' },
-        { id: 'dc4', xF: 0.50, yF: 0.55, w: 220, fs: 10, afs: 9,  border: 'rgba(60, 120, 255, 0.7)',  titleBg: 'rgba(10, 30, 100, 0.85)', content: [60, 120, 255],  data: '#3c78ff' },
-        { id: 'dc5', xF: 0.82, yF: 0.74, w: 155, fs: 7,  afs: 6,  border: 'rgba(100, 160, 255, 0.55)',titleBg: 'rgba(20, 40, 80, 0.85)',  content: [100, 160, 255], data: '#64a0ff' },
+        { id: 'dc1', xF: 0.28, yF: 0.06, w: 165, fs: 9,  afs: 8,  padTop: 16, padBot: 18, border: 'rgba(50, 140, 255, 0.7)', titleBg: 'rgba(0, 40, 120, 0.85)',  content: [50, 140, 255],  data: '#338cff' },   // STANDARD
+        { id: 'dc2', xF: 0.72, yF: 0.22, w: 80,  fs: 7,  afs: 6,  padTop: 12, padBot: 10, border: 'rgba(80, 180, 255, 0.6)', titleBg: 'rgba(0, 50, 100, 0.85)',  content: [80, 180, 255],  data: '#50b4ff' },   // MICRO
+        { id: 'dc3', xF: 0.05, yF: 0.38, w: 75,  fs: 7,  afs: 6,  padTop: 12, padBot: 10, border: 'rgba(0, 200, 255, 0.65)', titleBg: 'rgba(0, 60, 90, 0.85)',   content: [0, 200, 255],   data: '#00c8ff' },   // MICRO
+        { id: 'dc4', xF: 0.45, yF: 0.50, w: 290, fs: 11, afs: 10, padTop: 20, padBot: 22, border: 'rgba(60, 120, 255, 0.7)', titleBg: 'rgba(10, 30, 100, 0.85)', content: [60, 120, 255],  data: '#3c78ff' },   // LARGE
+        { id: 'dc5', xF: 0.60, yF: 0.68, w: 420, fs: 12, afs: 11, padTop: 22, padBot: 26, border: 'rgba(100, 160, 255, 0.7)',titleBg: 'rgba(20, 40, 80, 0.9)',   content: [100, 160, 255], data: '#64a0ff' },   // MEGA
         // Defense Network (dn1-5): reds, magentas, and crimsons
-        { id: 'dn1', xF: 0.65, yF: 0.38, w: 180, fs: 8,  afs: 7,  border: 'rgba(255, 50, 50, 0.7)',   titleBg: 'rgba(120, 0, 0, 0.85)',   content: [255, 50, 50],   data: '#ff3232' },
-        { id: 'dn2', xF: 0.18, yF: 0.18, w: 165, fs: 8,  afs: 7,  border: 'rgba(255, 80, 120, 0.6)',  titleBg: 'rgba(100, 0, 40, 0.85)',  content: [255, 80, 120],  data: '#ff5078' },
-        { id: 'dn3', xF: 0.42, yF: 0.72, w: 195, fs: 9,  afs: 8,  border: 'rgba(220, 40, 80, 0.65)',  titleBg: 'rgba(90, 0, 30, 0.85)',   content: [220, 40, 80],   data: '#dc2850' },
-        { id: 'dn4', xF: 0.88, yF: 0.10, w: 145, fs: 7,  afs: 6,  border: 'rgba(180, 30, 30, 0.55)',  titleBg: 'rgba(70, 0, 0, 0.85)',    content: [180, 30, 30],   data: '#b41e1e' },
-        { id: 'dn5', xF: 0.25, yF: 0.82, w: 205, fs: 9,  afs: 8,  border: 'rgba(255, 60, 90, 0.7)',   titleBg: 'rgba(110, 0, 30, 0.85)',  content: [255, 60, 90],   data: '#ff3c5a' },
+        { id: 'dn1', xF: 0.65, yF: 0.38, w: 70,  fs: 7,  afs: 6,  padTop: 12, padBot: 10, border: 'rgba(255, 50, 50, 0.7)',  titleBg: 'rgba(120, 0, 0, 0.85)',   content: [255, 50, 50],   data: '#ff3232' },   // MICRO (originally dn1)
+        { id: 'dn2', xF: 0.18, yF: 0.18, w: 175, fs: 9,  afs: 8,  padTop: 16, padBot: 18, border: 'rgba(255, 80, 120, 0.6)', titleBg: 'rgba(100, 0, 40, 0.85)',  content: [255, 80, 120],  data: '#ff5078' },   // STANDARD
+        { id: 'dn3', xF: 0.42, yF: 0.72, w: 75,  fs: 7,  afs: 6,  padTop: 12, padBot: 10, border: 'rgba(220, 40, 80, 0.65)', titleBg: 'rgba(90, 0, 30, 0.85)',   content: [220, 40, 80],   data: '#dc2850' },   // MICRO
+        { id: 'dn4', xF: 0.82, yF: 0.08, w: 280, fs: 11, afs: 10, padTop: 20, padBot: 22, border: 'rgba(180, 30, 30, 0.7)',  titleBg: 'rgba(70, 0, 0, 0.9)',     content: [180, 30, 30],   data: '#b41e1e' },   // LARGE
+        { id: 'dn5', xF: 0.20, yF: 0.78, w: 160, fs: 9,  afs: 8,  padTop: 16, padBot: 18, border: 'rgba(255, 60, 90, 0.7)',  titleBg: 'rgba(110, 0, 30, 0.85)',  content: [255, 60, 90],   data: '#ff3c5a' },   // STANDARD
     ];
 
     // Build a lookup from tech id to layout
@@ -24451,7 +24748,9 @@ function renderBIOSTechModals() {
         const modalW = layout.w;
         const artLines = modal.art;
         const lineH = layout.afs + 3;
-        const modalH = 16 + artLines.length * lineH + 24;
+        const padTop = layout.padTop || 16;
+        const padBot = layout.padBot || 24;
+        const modalH = padTop + artLines.length * lineH + padBot;
 
         // Position using fractional screen coordinates, clamped to stay on-screen
         let mx = Math.min(cw - modalW - 4, Math.max(4, layout.xF * cw));
@@ -24468,32 +24767,38 @@ function renderBIOSTechModals() {
         ctx.fillStyle = 'rgba(0, 5, 15, 0.92)';
         ctx.fillRect(mx, my, modalW, modalH);
 
+        // Clip content to modal bounds
+        ctx.beginPath();
+        ctx.rect(mx, my, modalW, modalH);
+        ctx.clip();
+
         // Window border — unique color per modal
         ctx.strokeStyle = layout.border;
         ctx.lineWidth = 1;
         ctx.strokeRect(mx, my, modalW, modalH);
         ctx.strokeRect(mx + 1, my + 1, modalW - 2, modalH - 2);
 
-        // Title bar — unique background per modal
+        // Title bar — unique background per modal, scaled to font size
+        const titleH = Math.max(10, layout.fs + 4);
         ctx.fillStyle = layout.titleBg;
-        ctx.fillRect(mx + 2, my + 2, modalW - 4, 13);
+        ctx.fillRect(mx + 2, my + 2, modalW - 4, titleH);
 
         // Title text (typewriter effect)
         const titleChars = Math.min(modal.title.length, Math.floor(modalAge / 0.02));
         ctx.font = 'bold ' + layout.fs + 'px monospace';
         ctx.fillStyle = '#fff';
         ctx.textAlign = 'left';
-        ctx.fillText(' \u25A0 ' + modal.title.substring(0, titleChars), mx + 3, my + 12);
+        ctx.fillText(' \u25A0 ' + modal.title.substring(0, titleChars), mx + 3, my + titleH - 1);
 
         // Window controls (right side of title bar)
         ctx.fillStyle = '#888';
-        ctx.fillText('\u2500 \u25A1', mx + modalW - 30, my + 12);
+        ctx.fillText('\u2500 \u25A1', mx + modalW - 30, my + titleH - 1);
 
         // Title bar separator — matches border color
         ctx.strokeStyle = layout.border.replace(/[\d.]+\)$/, '0.4)');
         ctx.beginPath();
-        ctx.moveTo(mx + 2, my + 15);
-        ctx.lineTo(mx + modalW - 2, my + 15);
+        ctx.moveTo(mx + 2, my + titleH + 2);
+        ctx.lineTo(mx + modalW - 2, my + titleH + 2);
         ctx.stroke();
 
         // ASCII art content — unique color per modal
@@ -24505,11 +24810,11 @@ function renderBIOSTechModals() {
 
             const lineAlpha = Math.min(1, lineAppearTime / 0.05);
             ctx.fillStyle = 'rgba(' + cr + ', ' + cg + ', ' + cb + ', ' + (lineAlpha * 0.85) + ')';
-            ctx.fillText(artLines[lineIdx], mx + 6, my + 26 + lineIdx * lineH);
+            ctx.fillText(artLines[lineIdx], mx + 6, my + titleH + 11 + lineIdx * lineH);
         }
 
         // Data readout at bottom — unique accent color per modal
-        const dataY = my + 26 + artLines.length * lineH + 5;
+        const dataY = my + titleH + 11 + artLines.length * lineH + 5;
         if (modalAge > 0.2) {
             ctx.font = 'bold ' + layout.fs + 'px monospace';
             ctx.fillStyle = layout.data;
@@ -24585,6 +24890,209 @@ function renderBIOSDataStreamEnhanced(px, py, pw, ph) {
         }
         ctx.fillText(hexStr, px + 4, lineY);
         lineY += lineH;
+    }
+}
+
+// ── NEW PANE CONTENT RENDERERS (Progressive TMUX) ────────────────────────────
+
+function renderBIOSDiagnostics(px, py, pw, ph) {
+    const info = biosBootState.waveInfo;
+    const now = Date.now();
+
+    ctx.fillStyle = '#0ff';
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('DIAG.CORE', px + 6, py + 12);
+
+    ctx.fillStyle = '#444';
+    ctx.font = '9px monospace';
+    ctx.fillText('────────────────', px + 6, py + 22);
+
+    let lineY = py + 34;
+    const lineH = 14;
+
+    // CPU threads gauge
+    const cpuLoad = 0.3 + Math.sin(now / 300) * 0.15 + info.techCount * 0.04;
+    const cpuPct = Math.min(99, Math.floor(cpuLoad * 100));
+    ctx.fillStyle = cpuPct > 80 ? '#f44' : cpuPct > 60 ? '#ff0' : '#0f0';
+    ctx.font = '9px monospace';
+    ctx.fillText('CPU ' + String(cpuPct).padStart(2) + '% ', px + 6, lineY);
+    const barW = Math.min(pw - 60, 50);
+    const filled = Math.floor(Math.min(1, cpuLoad) * barW);
+    ctx.fillRect(px + 50, lineY - 7, filled, 6);
+    ctx.strokeStyle = 'rgba(0,255,0,0.3)';
+    ctx.strokeRect(px + 50, lineY - 7, barW, 6);
+    lineY += lineH;
+
+    // Memory gauge
+    const memUsed = 512 + info.droneCount * 64 + info.techCount * 128;
+    const memTotal = 4096;
+    const memPct = Math.floor(memUsed / memTotal * 100);
+    ctx.fillStyle = '#0f0';
+    ctx.fillText('MEM ' + String(memPct).padStart(2) + '% ', px + 6, lineY);
+    const memFilled = Math.floor(memUsed / memTotal * barW);
+    ctx.fillRect(px + 50, lineY - 7, memFilled, 6);
+    ctx.strokeStyle = 'rgba(0,255,0,0.3)';
+    ctx.strokeRect(px + 50, lineY - 7, barW, 6);
+    lineY += lineH;
+
+    // I/O throughput
+    const ioBandwidth = info.techCount > 5 ? 'HIGH' : info.techCount > 2 ? 'MED' : 'LOW';
+    ctx.fillStyle = ioBandwidth === 'HIGH' ? '#0ff' : ioBandwidth === 'MED' ? '#ff0' : '#888';
+    ctx.fillText('I/O  ' + ioBandwidth, px + 6, lineY);
+    lineY += lineH;
+
+    // Interrupt table
+    ctx.fillStyle = '#888';
+    ctx.fillText('IRQ TABLE:', px + 6, lineY); lineY += lineH;
+    const irqs = [
+        { id: 3, name: 'ORD', active: info.hasBombs || info.hasMissiles },
+        { id: 5, name: 'FLT', active: info.hasDrones },
+        { id: 7, name: 'NRG', active: true },
+    ];
+    for (const irq of irqs) {
+        if (lineY > py + ph - 8) break;
+        ctx.fillStyle = irq.active ? '#0f0' : '#444';
+        ctx.fillText(' IRQ' + irq.id + ' ' + irq.name + (irq.active ? ' [ON]' : ' [--]'), px + 6, lineY);
+        lineY += lineH - 2;
+    }
+
+    // Scrolling register dump at bottom
+    ctx.font = '8px monospace';
+    ctx.fillStyle = 'rgba(0, 255, 0, 0.12)';
+    const scrollOff = Math.floor(now / 80);
+    while (lineY < py + ph - 4) {
+        const regIdx = Math.floor((lineY + scrollOff) / 10) & 0xF;
+        ctx.fillText('R' + regIdx.toString(16).toUpperCase() + ': 0x' + ((now * 7 + regIdx * 31) % 65536).toString(16).padStart(4, '0').toUpperCase(), px + 6, lineY);
+        lineY += 10;
+    }
+}
+
+function renderBIOSPowerGridMonitor(px, py, pw, ph) {
+    const info = biosBootState.waveInfo;
+    const now = Date.now();
+
+    ctx.fillStyle = '#f90';
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('PWR.GRID MONITOR', px + 6, py + 12);
+
+    ctx.fillStyle = '#444';
+    ctx.font = '9px monospace';
+    ctx.fillText('════════════════════', px + 6, py + 22);
+
+    let lineY = py + 34;
+    const lineH = 13;
+
+    // Power nodes with animated levels
+    const pgTechs = info.techResearched.filter(function(t) { return t.startsWith('pg'); });
+    const nodeCount = 3 + pgTechs.length * 2;
+    ctx.fillStyle = '#fa0';
+    ctx.fillText('NODES: ' + nodeCount + '  TOPOLOGY: ' + (pgTechs.length >= 5 ? 'MESH' : pgTechs.length >= 3 ? 'RING' : 'STAR'), px + 6, lineY);
+    lineY += lineH;
+
+    // Power distribution bars
+    const subsystems = [
+        { name: 'BEAM', pct: 0.85 + Math.sin(now / 400) * 0.05, color: '#0ff' },
+        { name: 'SHLD', pct: (info.health / info.maxHealth) * 0.9 + Math.sin(now / 500 + 1) * 0.03, color: '#0f0' },
+        { name: 'FLOT', pct: info.hasDrones ? 0.7 + Math.sin(now / 350 + 2) * 0.08 : 0, color: '#58f' },
+        { name: 'WEAP', pct: info.hasBombs ? 0.6 + Math.sin(now / 450 + 3) * 0.06 : 0, color: '#f44' },
+    ];
+
+    const maxBarW = Math.min(pw - 70, 80);
+    for (const sub of subsystems) {
+        if (lineY > py + ph - 8) break;
+        ctx.fillStyle = '#aaa';
+        ctx.fillText(sub.name, px + 6, lineY);
+        const barFill = Math.floor(Math.max(0, Math.min(1, sub.pct)) * maxBarW);
+        ctx.fillStyle = sub.color;
+        ctx.fillRect(px + 40, lineY - 7, barFill, 6);
+        ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+        ctx.strokeRect(px + 40, lineY - 7, maxBarW, 6);
+        ctx.fillStyle = '#888';
+        ctx.fillText(Math.floor(Math.max(0, Math.min(1, sub.pct)) * 100) + '%', px + 44 + maxBarW, lineY);
+        lineY += lineH;
+    }
+
+    // Power flow animation
+    lineY += 4;
+    if (lineY < py + ph - 14) {
+        ctx.fillStyle = '#f90';
+        ctx.font = '8px monospace';
+        const flowPhase = Math.floor(now / 100) % 12;
+        let flowStr = '';
+        for (let fp = 0; fp < 12; fp++) flowStr += fp < flowPhase ? '·' : (fp === flowPhase ? '>>>' : '·');
+        ctx.fillText('FLOW: ' + flowStr, px + 6, lineY);
+        lineY += 10;
+        const totalOutput = pgTechs.length >= 5 ? 'MAX' : (100 + pgTechs.length * 40) + ' GW';
+        ctx.fillStyle = '#fd0';
+        ctx.fillText('OUTPUT: ' + totalOutput, px + 6, lineY);
+    }
+}
+
+function renderBIOSDroneTelemetry(px, py, pw, ph) {
+    const info = biosBootState.waveInfo;
+    const now = Date.now();
+
+    ctx.fillStyle = '#58f';
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('DRN.TELEMETRY', px + 6, py + 12);
+
+    ctx.fillStyle = '#444';
+    ctx.font = '9px monospace';
+    ctx.fillText('────────────────', px + 6, py + 22);
+
+    let lineY = py + 34;
+    const lineH = 13;
+
+    if (!info.hasDrones) {
+        ctx.fillStyle = '#444';
+        ctx.fillText('NO FLEET DETECTED', px + 6, lineY);
+        return;
+    }
+
+    // Unit count and sync rate
+    ctx.fillStyle = '#78f';
+    ctx.fillText('UNITS: ' + info.droneCount + '  SYNC: ' + (97 + Math.floor(Math.sin(now / 700) * 2.5)) + '%', px + 6, lineY);
+    lineY += lineH;
+
+    // Mini fleet grid (each drone = a blinking dot)
+    ctx.fillStyle = '#888';
+    ctx.fillText('FLEET.MAP:', px + 6, lineY);
+    lineY += lineH;
+    const gridCols = Math.min(8, Math.max(3, Math.floor((pw - 20) / 14)));
+    const gridRows = Math.ceil(info.droneCount / gridCols);
+    for (let r = 0; r < gridRows && lineY < py + ph - 20; r++) {
+        let rowStr = ' ';
+        for (let c = 0; c < gridCols; c++) {
+            const idx = r * gridCols + c;
+            if (idx < info.droneCount) {
+                const blink = Math.sin(now / 200 + idx * 0.7) > 0;
+                rowStr += blink ? '\u25A0 ' : '\u25A1 ';
+            } else {
+                rowStr += '  ';
+            }
+        }
+        ctx.fillStyle = '#58f';
+        ctx.fillText(rowStr, px + 6, lineY);
+        lineY += lineH - 2;
+    }
+
+    // Fleet bus activity
+    lineY += 4;
+    if (lineY < py + ph - 12) {
+        ctx.fillStyle = '#888';
+        ctx.font = '8px monospace';
+        const busPhase = Math.floor(now / 60) % 16;
+        let busStr = '';
+        for (let b = 0; b < 16; b++) {
+            busStr += b === busPhase ? '|' : '.';
+        }
+        ctx.fillText('BUS: [' + busStr + ']', px + 6, lineY);
+        lineY += 10;
+        ctx.fillStyle = info.hasCoordinators ? '#0ff' : '#444';
+        ctx.fillText('COORD: ' + (info.hasCoordinators ? 'ACTIVE' : 'NONE'), px + 6, lineY);
     }
 }
 
@@ -26701,6 +27209,21 @@ function gameLoop(timestamp) {
             updateFeedback(dt);
             renderFeedbackScreen();
             break;
+
+        case 'PROMOTION_CINEMATIC':
+            updatePromotionCinematic(dt);
+            renderPromotionCinematic();
+            break;
+
+        case 'COMMAND':
+            updateCommand(dt);
+            renderCommand();
+            break;
+
+        case 'COMMAND_SUMMARY':
+            updateCommandSummary(dt);
+            renderCommandSummary();
+            break;
     }
 
     requestAnimationFrame(gameLoop);
@@ -26936,6 +27459,14 @@ function update(dt) {
         }
 
         wave++;
+
+        // Check for promotion to Command Phase (all 15 techs researched)
+        if (techTree.researched.size === 15 && !commandPhaseActive) {
+            commandPhaseActive = true;
+            gameState = 'PROMOTION_CINEMATIC';
+            initPromotionCinematic();
+            return;
+        }
 
         startWaveSummary(completedWave);
 
