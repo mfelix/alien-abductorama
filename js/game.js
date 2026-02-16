@@ -638,18 +638,19 @@ const SFX = {
 
     beamLoop: null,
     beamLoopGain: null,
+    beamLoopLfo: null,
 
     startBeamLoop: () => {
         if (!audioCtx || SFX.beamLoop) return;
         // Warbling hum
         SFX.beamLoop = audioCtx.createOscillator();
-        const lfo = audioCtx.createOscillator();
+        SFX.beamLoopLfo = audioCtx.createOscillator();
         SFX.beamLoopGain = audioCtx.createGain();
         const lfoGain = audioCtx.createGain();
 
-        lfo.frequency.setValueAtTime(8, audioCtx.currentTime);
+        SFX.beamLoopLfo.frequency.setValueAtTime(8, audioCtx.currentTime);
         lfoGain.gain.setValueAtTime(50, audioCtx.currentTime);
-        lfo.connect(lfoGain);
+        SFX.beamLoopLfo.connect(lfoGain);
         lfoGain.connect(SFX.beamLoop.frequency);
 
         SFX.beamLoop.type = 'sawtooth';
@@ -659,15 +660,17 @@ const SFX = {
         SFX.beamLoopGain.connect(audioCtx.destination);
 
         SFX.beamLoop.start();
-        lfo.start();
+        SFX.beamLoopLfo.start();
     },
 
     stopBeamLoop: () => {
         if (SFX.beamLoop) {
             SFX.beamLoopGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
             SFX.beamLoop.stop(audioCtx.currentTime + 0.1);
+            SFX.beamLoopLfo.stop(audioCtx.currentTime + 0.1);
             SFX.beamLoop = null;
             SFX.beamLoopGain = null;
+            SFX.beamLoopLfo = null;
         }
     },
 
@@ -743,17 +746,18 @@ const SFX = {
     // Charging beam hum - warm electrical hum, distinct from beam loop
     chargingHumLoop: null,
     chargingHumGain: null,
+    chargingHumLfo: null,
 
     startChargingHum: () => {
         if (!audioCtx || SFX.chargingHumLoop) return;
         SFX.chargingHumLoop = audioCtx.createOscillator();
-        const lfo = audioCtx.createOscillator();
+        SFX.chargingHumLfo = audioCtx.createOscillator();
         SFX.chargingHumGain = audioCtx.createGain();
         const lfoGain = audioCtx.createGain();
 
-        lfo.frequency.setValueAtTime(4, audioCtx.currentTime);
+        SFX.chargingHumLfo.frequency.setValueAtTime(4, audioCtx.currentTime);
         lfoGain.gain.setValueAtTime(15, audioCtx.currentTime);
-        lfo.connect(lfoGain);
+        SFX.chargingHumLfo.connect(lfoGain);
         lfoGain.connect(SFX.chargingHumLoop.frequency);
 
         SFX.chargingHumLoop.type = 'triangle';
@@ -763,15 +767,17 @@ const SFX = {
         SFX.chargingHumGain.connect(audioCtx.destination);
 
         SFX.chargingHumLoop.start();
-        lfo.start();
+        SFX.chargingHumLfo.start();
     },
 
     stopChargingHum: () => {
         if (SFX.chargingHumLoop) {
             SFX.chargingHumGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
             SFX.chargingHumLoop.stop(audioCtx.currentTime + 0.15);
+            SFX.chargingHumLfo.stop(audioCtx.currentTime + 0.15);
             SFX.chargingHumLoop = null;
             SFX.chargingHumGain = null;
+            SFX.chargingHumLfo = null;
         }
     },
 
@@ -12692,9 +12698,10 @@ function triggerGameOver() {
     // Freeze sprite animations
     animationPausedAt = Date.now();
 
-    // Stop beam sound if active
+    // Stop all looping sounds
     SFX.stopBeamLoop();
     SFX.stopMoveLoop();
+    SFX.stopChargingHum();
 
     // Mark that user has played a game this session
     hasPlayedThisSession = true;
